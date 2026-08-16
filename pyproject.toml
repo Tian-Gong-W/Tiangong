@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tonmen"
-version = "0.1.0.dev0"
+version = "0.2.0.dev0"
 description = "TONMEN — Autonomous Security Agent Runtime by Top-Men AI"
 readme = "README.md"
 requires-python = ">=3.10"

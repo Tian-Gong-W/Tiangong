@@ -5,14 +5,14 @@ from .core.runtime import TonmenRuntime
 BANNER = """\
 ╔══════════════════════════════════════════════╗
 ║              雲 頂 天 宮                    ║
-║              TONMEN Genesis                ║
+║               TONMEN Forge                 ║
 ║              by Top-Men AI                 ║
 ╚══════════════════════════════════════════════╝
 """
 
 
 def main() -> int:
-    runtime = TonmenRuntime.genesis()
+    runtime = TonmenRuntime.forge()
     print(BANNER)
     print(runtime.status_text())
     print("\n人予其意，宮成其事。")
