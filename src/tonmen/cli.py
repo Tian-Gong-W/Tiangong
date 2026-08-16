@@ -11,7 +11,7 @@ from .missions import MissionRunState, StepExecutionState
 BANNER = """\
 ╔══════════════════════════════════════════════╗
 ║              雲 頂 天 宮                    ║
-║              TONMEN Chronicle              ║
+║              TONMEN Intelligence           ║
 ║              by Top-Men AI                 ║
 ╚══════════════════════════════════════════════╝
 """

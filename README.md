@@ -4,11 +4,11 @@
 
 **TONMEN** is the governed autonomous security-agent runtime by **Top-Men AI**.
 
-TONMEN turns authorized intent into a visible mission, executes only in-scope autonomous discovery, records raw evidence and observations, pauses before higher-risk validation, and persists that state so a human can explicitly resume it later.
+TONMEN now does more than execute authorized tools: **天鑑 Intelligence** deterministically interprets evidence into provenance-linked facts. It does not guess from raw output and does not use an LLM to invent findings.
 
-> **人予其意，宮成其事；事有所止，止於天律。**
+> **宮，不但能行，而且能知；所知必有據，所斷必有源。**
 
-## Chronicle / 天冊
+## Intelligence / 天鑑
 
 ```text
 Intent
@@ -18,56 +18,67 @@ Intent
 天域 Scope + 天律 Policy
   ↓
 天命 Coordinator
-  ├─ discovery → evidence → observation
-  └─ validation → 候旨 / WAITING_APPROVAL
-                    ↓
-              天冊 Chronicle
-             plan + run + evidence
-                    ↓
-              human --approve
-                    ↓
-                resume only
+  ↓
+天工 Executor
+  ↓
+Raw Evidence
+  ↓
+天鑑 Deterministic Parsers
+  ├─ Nmap   → host / service facts
+  ├─ HTTPx  → web endpoint facts
+  └─ Nuclei → vulnerability findings
+  ↓
+Observation
+  ↓
+Evidence Graph
+  ↓
+天冊 Chronicle
 ```
 
-Mission plans and runtime state are separate. Completed discovery steps are never replayed merely because the process restarted.
-
-Chronicle stores mission files under the TONMEN workspace with restrictive local permissions where the operating system supports them. Approval tokens are intentionally never persisted.
+Every intelligence node stores its source tool, target, confidence, evidence ID and structured data. Evidence Graph remains the single provenance store, so intelligence survives Chronicle persistence without introducing a second competing knowledge database.
 
 ### CLI
 
 ```bash
-# runtime status
+# governed runtime status
 tonmen status
 
-# dry-run only
+# plan only
 tonmen plan localhost
 
-# execute safe discovery and persist the resulting mission
+# execute in-scope discovery; parsed intelligence is shown in the run output
 tonmen run localhost
 
-# list/show persisted runs
+# inspect persisted knowledge later
 tonmen missions
 tonmen show <run-id>
 
-# show the approval boundary without crossing it
+# approval boundary remains explicit
 tonmen resume <run-id>
-
-# explicit human approval of the current waiting step, then resume
 tonmen resume <run-id> --approve
 ```
 
-The default scope remains localhost-only. External targets are denied unless explicitly configured into the authorized scope.
+Example shape:
+
+```text
+天鑑所見
+  · host    Host observed: localhost
+  · service 80/tcp open http (nginx 1.24.0)
+  · web     https://localhost [200] Welcome
+  · finding [high] Demo Exposure
+```
 
 ### Current invariants
 
 - No arbitrary shell API.
 - Structured adapter argv only; Executor enforces `shell=False`.
 - External targets deny-by-default.
-- Unknown tool parameters are rejected.
 - Validation/intrusive actions require a bound, single-use grant.
 - Planner and Coordinator cannot self-approve.
-- Approval tokens are not written to Chronicle.
-- Mission persistence rejects unsafe/path-traversal run IDs.
-- Raw stdout/stderr evidence survives pause/restart and remains linked to observations.
+- Approval tokens are never persisted.
+- Raw stdout/stderr remains the source evidence.
+- Intelligence facts must point back to an Evidence ID.
+- Unparseable output remains evidence; TONMEN does not manufacture a fact merely to fill a result.
+- Chronicle persists the Evidence Graph, including intelligence provenance.
 
-> **谋而后行，行而有据；事可暂止，志不可失。**
+> **见一叶而知秋，察一隙而知危；然无据之言，不录于鑑。**
