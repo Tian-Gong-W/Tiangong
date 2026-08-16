@@ -10,7 +10,7 @@ from tonmen.missions import MissionPlan
 from tonmen.missions.run import MissionRun, MissionRunState, StepExecutionState
 from tonmen.observations import Observation
 from tonmen.reasoning import MissionReasoner, ReasoningAction, ReasoningDecision
-from tonmen.tools import ToolRequest
+from tonmen.tools import RiskLevel, ToolRequest
 
 
 class MissionRunDenied(RuntimeError):
@@ -89,7 +89,7 @@ class MissionCoordinator:
 
     @staticmethod
     def _record_execution_evidence(run: MissionRun, execution, evidence) -> None:
-        """Persist raw execution evidence even when the command exits non-zero."""
+        """Persist raw execution evidence even when the command exits non-zero or times out."""
         if all(item.id != evidence.id for item in run.evidence):
             run.evidence.append(evidence)
         execution.evidence_id = evidence.id
@@ -149,7 +149,11 @@ class MissionCoordinator:
         mission_run.state = MissionRunState.RUNNING
 
         for step, execution in zip(plan.steps, mission_run.steps, strict=True):
-            if execution.state in {StepExecutionState.SUCCEEDED, StepExecutionState.SKIPPED}:
+            if execution.state in {
+                StepExecutionState.SUCCEEDED,
+                StepExecutionState.DEGRADED,
+                StepExecutionState.SKIPPED,
+            }:
                 continue
 
             token = tokens.get(step.id)
@@ -176,6 +180,14 @@ class MissionCoordinator:
                 if job.outcome is not None:
                     self._record_execution_evidence(mission_run, execution, job.outcome.evidence)
                     execution.error = job.error or job.outcome.result.summary
+                    timed_out = bool(job.outcome.result.evidence.get("timed_out"))
+                    if timed_out and step.risk <= int(RiskLevel.DISCOVERY):
+                        execution.state = StepExecutionState.DEGRADED
+                        execution.metadata["timed_out"] = True
+                        execution.metadata["timeout_seconds"] = job.outcome.result.evidence.get("timeout_seconds")
+                        execution.metadata["degraded_reason"] = "discovery_timeout"
+                        mission_run.state = MissionRunState.RUNNING
+                        return mission_run
                 else:
                     execution.error = job.error or "execution failed"
                 mission_run.finish(MissionRunState.FAILED)
@@ -234,7 +246,11 @@ class MissionCoordinator:
                 mission_run.graph.link(mission_run.id, "knows", fact.id)
 
             if all(
-                item.state in {StepExecutionState.SUCCEEDED, StepExecutionState.SKIPPED}
+                item.state in {
+                    StepExecutionState.SUCCEEDED,
+                    StepExecutionState.DEGRADED,
+                    StepExecutionState.SKIPPED,
+                }
                 for item in mission_run.steps
             ):
                 mission_run.finish(MissionRunState.SUCCEEDED)
