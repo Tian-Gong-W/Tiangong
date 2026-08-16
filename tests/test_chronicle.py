@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 
 from tonmen.agents import MissionCoordinator, MissionPlanner
@@ -15,7 +16,24 @@ def _runtime(tmp_path, calls):
 
     def fake_runner(argv, **kwargs):
         calls.append(list(argv))
-        return subprocess.CompletedProcess(argv, 0, stdout=f"{argv[0]} output\n", stderr="")
+        output = {
+            "nmap": """Nmap scan report for localhost
+Host is up.
+PORT   STATE SERVICE VERSION
+80/tcp open  http    nginx 1.24.0
+""",
+            "httpx": "https://localhost [200] [Welcome] [nginx]\n",
+            "nuclei": json.dumps(
+                {
+                    "template-id": "demo-check",
+                    "info": {"name": "Demo Exposure", "severity": "medium"},
+                    "matched-at": "https://localhost/demo",
+                    "type": "http",
+                }
+            )
+            + "\n",
+        }[argv[0]]
+        return subprocess.CompletedProcess(argv, 0, stdout=output, stderr="")
 
     runtime.executor._runner = fake_runner
     runtime.jobs = JobManager(runtime.executor)
@@ -37,9 +55,10 @@ def test_chronicle_roundtrip_preserves_evidence_and_graph(tmp_path):
     assert loaded_run.id == run.id
     assert loaded_run.state is MissionRunState.WAITING_APPROVAL
     assert len(loaded_run.evidence) == 2
-    assert loaded_run.evidence[0].stdout.startswith("nmap output")
+    assert loaded_run.evidence[0].stdout.startswith("Nmap scan report")
     assert len(loaded_run.observations) == 2
     assert len(loaded_run.graph.nodes) == len(run.graph.nodes)
+    assert any(node.kind == "reasoning.request_approval" for node in loaded_run.graph.nodes.values())
     assert [entry.run_id for entry in store.list()] == [run.id]
 
 
