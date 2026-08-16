@@ -5,60 +5,60 @@
 
 **TONMEN** is the governed autonomous security-agent runtime by **Top-Men AI**.
 
-**v0.4.0 Alpha** is the first usability baseline: project configuration, persistent authorized scope, dependency diagnostics, bounded mission loops, evidence-backed intelligence, and explicit human approval boundaries are now wired into one CLI.
+**v0.4.0 Alpha** now includes project configuration, persistent authorized scope, dependency diagnostics, bounded mission loops, evidence-backed intelligence, explicit human approval boundaries, and a local visual control panel.
 
 ## Install
 
-Requires Python **3.10+** plus these external command-line tools:
-
-- Nmap (`nmap`)
-- ProjectDiscovery HTTPx (`httpx`) — not the Python package with the same name
-- ProjectDiscovery Nuclei (`nuclei`)
+Requires Python **3.10+** plus Nmap (`nmap`), ProjectDiscovery HTTPx (`httpx`) and ProjectDiscovery Nuclei (`nuclei`).
 
 ```bash
 git clone https://github.com/Top-Men-AI/TONMEN.git
 cd TONMEN
-
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -U pip
 python -m pip install -e .
-```
 
-Then:
-
-```bash
 tonmen doctor
 tonmen init
 tonmen scope show
 ```
+
+## Visual Console / 可視控制面板
+
+Launch the real local TONMEN dashboard:
+
+```bash
+tonmen console
+```
+
+It opens **雲頂天宮 Console** on `http://127.0.0.1:8888/`. The panel reads and controls the same governed runtime as the CLI: status, Scope, missions, Chronicle, Intelligence, Reasoner decisions, Evidence Graph, raw Evidence, bounded resume, and the human Approval Gate.
+
+```bash
+tonmen console --port 8899
+tonmen console --no-open
+tonmen --config /path/to/tonmen.toml console
+```
+
+The Console is loopback-only. State-changing browser requests require a per-process CSRF token; approval still uses the existing single-use Tool + Target Grant. See **[Console Guide](docs/CONSOLE.md)**.
 
 ## Authorize a target
 
 TONMEN remains **deny-by-default**. Loopback is always authorized; external assets must be explicitly added to the project configuration.
 
 ```bash
-# exact host
 tonmen scope add app.example.test
-
-# CIDR
 tonmen scope add 10.20.30.0/24
-
-# wildcard subdomains
 tonmen scope add '*.example.test'
-
 tonmen scope show
 ```
 
-Only add targets you own or are explicitly authorized to assess.
+Only add targets you own or are explicitly authorized to assess. The same rules can be managed from **天域 Scope** in the visual Console.
 
 ## Plan, then run
 
 ```bash
-# dry-run only
 tonmen plan app.example.test
-
-# bounded observe → reason → act loop
 tonmen loop app.example.test
 ```
 
@@ -71,18 +71,13 @@ Intent
   ↓
 天域 Scope + 天律 Policy
   ↓
-┌────────────── 天衡 Mission Loop ──────────────┐
-│  天命 Coordinator → 天工 Executor             │
-│          ↓                                    │
-│       Evidence                                │
-│          ↓                                    │
-│  天鑑 Intelligence                            │
-│          ↓                                    │
-│    天策 Reasoner                              │
-│          ↓                                    │
-│  CONTINUE / SKIP / COMPLETE ────────┐         │
-│  REQUEST_APPROVAL / REVIEW / STOP ──┴─► STOP  │
-└───────────────────────────────────────────────┘
+天衡 Mission Loop
+  ↓
+天命 Coordinator → 天工 Executor
+  ↓
+Evidence → 天鑑 Intelligence → 天策 Reasoner
+  ↓
+CONTINUE / SKIP / COMPLETE / REQUEST_APPROVAL / REVIEW / STOP
 ```
 
 The built-in tool path is currently Nmap → HTTPx → Nuclei. Discovery may run inside authorized scope. Nuclei validation remains approval-gated when evidence supports it.
@@ -91,8 +86,6 @@ The built-in tool path is currently Nmap → HTTPx → Nuclei. Discovery may run
 tonmen missions
 tonmen show <run-id>
 tonmen reason <run-id>
-
-# crossing an approval boundary requires a fresh explicit human act
 tonmen resume <run-id> --approve
 ```
 
@@ -100,22 +93,7 @@ Approval tokens are never persisted.
 
 ## Project config
 
-Create `tonmen.toml` with:
-
-```bash
-tonmen init
-```
-
-Or start from [`tonmen.toml.example`](tonmen.toml.example).
-
-Use a non-default config:
-
-```bash
-tonmen --config /path/to/tonmen.toml doctor
-tonmen --config /path/to/tonmen.toml loop app.example.test
-```
-
-See **[Getting Started](docs/GETTING_STARTED.md)** for the complete first-run flow.
+Create `tonmen.toml` with `tonmen init`, or start from [`tonmen.toml.example`](tonmen.toml.example). See **[Getting Started](docs/GETTING_STARTED.md)** for the complete first-run flow.
 
 ## Current invariants
 
@@ -131,6 +109,7 @@ See **[Getting Started](docs/GETTING_STARTED.md)** for the complete first-run fl
 - Unparseable output remains evidence; it does not become a guessed fact.
 - Every loop session has bounded iterations, executions, duration and repeat tolerance.
 - Reasoning and loop-governance provenance persist through Chronicle.
+- Visual Console is loopback-only and cannot bypass Scope, Policy or Approval.
 
 > **所知必有據，所斷必有源；萬器可行，必先有衡。**
 

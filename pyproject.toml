@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tonmen"
-version = "0.4.0a1"
+version = "0.4.0a2"
 description = "TONMEN — Autonomous Security Agent Runtime by Top-Men AI"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.scripts]
-tonmen = "tonmen.cli:main"
+tonmen = "tonmen.entry:main"
 
 [project.optional-dependencies]
 mcp = ["fastmcp>=0.2.0,<1.0.0"]
@@ -24,6 +24,9 @@ dev = ["pytest>=8.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"tonmen.dashboard.static" = ["*.html", "*.css", "*.js"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
