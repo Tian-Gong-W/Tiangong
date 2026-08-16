@@ -24,7 +24,11 @@ def test_dashboard_assets_are_packaged():
     assert "雲頂天宮" in static.joinpath("index.html").read_text(encoding="utf-8")
     assert "Evidence Graph" in static.joinpath("index.html").read_text(encoding="utf-8")
     assert "--cyan" in static.joinpath("app.css").read_text(encoding="utf-8")
-    assert "X-TONMEN-CSRF" in static.joinpath("app.js").read_text(encoding="utf-8")
+    app_js = static.joinpath("app.js").read_text(encoding="utf-8")
+    assert "X-TONMEN-CSRF" in app_js
+    assert "▶ 執行任務" in app_js
+    assert "查看原始證據" in app_js
+    assert "無法載入任務詳情" in app_js
 
 
 def test_dashboard_scope_uses_project_config(tmp_path):
