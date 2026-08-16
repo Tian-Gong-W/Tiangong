@@ -340,12 +340,10 @@ class TonmenDashboardHandler(BaseHTTPRequestHandler):
                 if content_type is None:
                     self._error(404, "asset not found")
                     return
-                self._send_bytes(
-                    200,
-                    content_type,
-                    self._asset(name),
-                    cache="public, max-age=300",
-                )
+                payload = self._asset(name)
+                if name == "app.js":
+                    payload += b"\n" + self._asset("deck.js")
+                self._send_bytes(200, content_type, payload, cache="public, max-age=300")
                 return
             if path == "/api/status":
                 self._json(200, self.server.state.status())
