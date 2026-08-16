@@ -4,57 +4,70 @@
 
 **TONMEN** is the governed autonomous security-agent runtime by **Top-Men AI**.
 
-TONMEN turns authorized intent into a visible mission plan, executes only autonomous discovery steps inside scope, records evidence and observations, and stops at approval boundaries before higher-risk validation.
+TONMEN turns authorized intent into a visible mission, executes only in-scope autonomous discovery, records raw evidence and observations, pauses before higher-risk validation, and persists that state so a human can explicitly resume it later.
 
 > **人予其意，宮成其事；事有所止，止於天律。**
 
-## Mission Coordinator
+## Chronicle / 天冊
 
 ```text
 Intent
   ↓
-天機 Mission Planner
+天機 Planner
   ↓
-天域 Scope
+天域 Scope + 天律 Policy
   ↓
-天律 Policy
-  ↓
-天命 Mission Coordinator
-  ├─ Nmap    → execute → evidence → observation
-  ├─ HTTPx   → execute → evidence → observation
-  └─ Nuclei  → WAITING APPROVAL
-                  ↓ human grant only
-               resume
-                  ↓
-              execute safely
+天命 Coordinator
+  ├─ discovery → evidence → observation
+  └─ validation → 候旨 / WAITING_APPROVAL
+                    ↓
+              天冊 Chronicle
+             plan + run + evidence
+                    ↓
+              human --approve
+                    ↓
+                resume only
 ```
 
-The plan remains immutable. Runtime state lives in a separate `MissionRun`, so execution can pause at an approval boundary and resume without repeating completed discovery steps.
+Mission plans and runtime state are separate. Completed discovery steps are never replayed merely because the process restarted.
+
+Chronicle stores mission files under the TONMEN workspace with restrictive local permissions where the operating system supports them. Approval tokens are intentionally never persisted.
 
 ### CLI
 
 ```bash
-# governed runtime status
+# runtime status
 tonmen status
 
 # dry-run only
 tonmen plan localhost
 
-# execute autonomous in-scope discovery; stops before validation
+# execute safe discovery and persist the resulting mission
 tonmen run localhost
+
+# list/show persisted runs
+tonmen missions
+tonmen show <run-id>
+
+# show the approval boundary without crossing it
+tonmen resume <run-id>
+
+# explicit human approval of the current waiting step, then resume
+tonmen resume <run-id> --approve
 ```
 
-The default target scope remains localhost-only. External targets are denied unless they are explicitly configured into the authorized scope.
+The default scope remains localhost-only. External targets are denied unless explicitly configured into the authorized scope.
 
-### Current safety invariants
+### Current invariants
 
-- No arbitrary shell API exists.
-- Adapter execution always uses structured argv with `shell=False`.
-- External targets are deny-by-default.
+- No arbitrary shell API.
+- Structured adapter argv only; Executor enforces `shell=False`.
+- External targets deny-by-default.
 - Unknown tool parameters are rejected.
-- Validation/intrusive actions require a bound, single-use approval grant.
-- Mission Coordinator never issues its own approval.
-- Completed discovery steps are not replayed when a paused mission resumes.
-- Every successful step is connected to evidence and an observation in the provenance graph.
+- Validation/intrusive actions require a bound, single-use grant.
+- Planner and Coordinator cannot self-approve.
+- Approval tokens are not written to Chronicle.
+- Mission persistence rejects unsafe/path-traversal run IDs.
+- Raw stdout/stderr evidence survives pause/restart and remains linked to observations.
 
-> **谋而后行，行而有据；力有所界，智有所止。**
+> **谋而后行，行而有据；事可暂止，志不可失。**
