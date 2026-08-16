@@ -1,0 +1,75 @@
+:root{--tonmen-header-h:94px}
+
+/* Viewport resilience: controls must remain reachable on laptop/short screens. */
+html,body{min-height:100%}
+.console-frame{min-height:100vh;min-height:100dvh}
+.console-workspace{min-height:0}
+.main-stage{min-width:0}
+.content{min-width:0}
+
+/* The left rail used to clip Approval / Settings on ~768px-high screens. */
+.sidebar{
+  min-height:0;
+  max-height:calc(100vh - var(--tonmen-header-h));
+  max-height:calc(100dvh - var(--tonmen-header-h));
+  overflow-y:auto;
+  overflow-x:hidden;
+  overscroll-behavior:contain;
+  scrollbar-width:thin;
+  scrollbar-color:#31546a transparent;
+}
+.sidebar::-webkit-scrollbar{width:6px}
+.sidebar::-webkit-scrollbar-track{background:transparent}
+.sidebar::-webkit-scrollbar-thumb{background:#31546a;border-radius:999px}
+.sidebar .nav,.sidebar-art,.sidebar-poem{flex:0 0 auto}
+
+/* Action groups should wrap instead of disappearing outside narrow cards. */
+.panel-head,.mission-selector,.inline-form,.top-actions,.header-actions{min-width:0}
+.mission-selector{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px}
+.mission-selector select{min-width:160px;max-width:min(320px,48vw)}
+.inline-form{flex-wrap:wrap}
+.inline-form input{min-width:180px;flex:1 1 220px}
+.inline-form button{flex:0 0 auto}
+button{min-height:32px}
+
+/* Approval and modal actions must remain visible without guessing where to scroll. */
+.approval-body{overflow:visible}
+.approval-body button{min-height:38px}
+dialog{max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);overflow:auto}
+.dialog-card{max-height:calc(100vh - 48px);max-height:calc(100dvh - 48px);overflow:auto}
+.dialog-actions{position:sticky;bottom:0;z-index:2;padding-top:10px;padding-bottom:4px;background:linear-gradient(180deg,rgba(8,22,34,0),#081622 28%)}
+
+/* Compact vertical rhythm for typical 1366x768 / 1440x810 laptops. */
+@media (max-height:850px){
+  :root{--tonmen-header-h:76px}
+  .global-header{min-height:76px;height:76px;padding-top:8px;padding-bottom:8px}
+  .header-slogan span{font-size:20px}
+  .header-slogan small{font-size:8px}
+  .sidebar{padding-top:8px;padding-bottom:8px}
+  .nav{gap:1px}
+  .nav-item{padding-top:7px;padding-bottom:7px;min-height:38px}
+  .sidebar-art{display:none}
+  .sidebar-poem{display:none}
+  .content{padding-top:10px}
+  .status-card{min-height:82px;padding-top:11px;padding-bottom:11px}
+  .panel-head{min-height:48px;padding-top:8px;padding-bottom:8px}
+  .mission-layout{padding-top:10px;padding-bottom:10px}
+  .approval-body{padding-top:14px;padding-bottom:14px}
+}
+
+@media (max-height:700px){
+  :root{--tonmen-header-h:68px}
+  .global-header{min-height:68px;height:68px}
+  .brand-tagline,.header-slogan small{display:none}
+  .nav-item{padding-top:5px;padding-bottom:5px;min-height:34px}
+  .nav-item small{display:none}
+  .status-grid{gap:7px}
+  .status-card{min-height:70px;padding:9px}
+}
+
+/* Narrow screens: preserve buttons by stacking controls before hiding anything. */
+@media (max-width:1180px){
+  .mission-selector{width:100%;justify-content:flex-start}
+  .mission-selector select{flex:1 1 220px;max-width:none}
+  .panel-head.compact-head{flex-wrap:wrap}
+}
