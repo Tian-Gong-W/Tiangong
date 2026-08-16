@@ -3,6 +3,47 @@
 
   const $ = (selector) => document.querySelector(selector);
 
+  const moduleRoutes = [
+    ["儀表總覽", "/"],
+    ["任務", "/missions"],
+    ["天域", "/scope"],
+    ["天律", "/guard"],
+    ["天工", "/tools"],
+    ["天鑑", "/intelligence"],
+    ["天策", "/reasoner"],
+    ["天衡", "/loop"],
+    ["天冊", "/chronicle"],
+    ["審批", "/approval"],
+    ["設定", "/settings"],
+  ];
+
+  function routeForNav(item) {
+    const text = item?.textContent?.trim() || "";
+    return moduleRoutes.find(([label]) => text.startsWith(label))?.[1] || null;
+  }
+
+  /*
+   * Hard navigation intentionally runs in capture phase. The original Overview
+   * UI registered bubble-phase scrollIntoView handlers on .nav-item. Without
+   * this guard, a sidebar click can remain on the dashboard instead of opening
+   * the routed detailed workspace. A module click now always resolves to its
+   * real Console URL first.
+   */
+  document.addEventListener("click", (event) => {
+    const item = event.target.closest?.(".nav-item");
+    if (!item) return;
+    const route = routeForNav(item);
+    if (!route) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+
+    const current = location.pathname.replace(/\/+$/, "") || "/";
+    if (current === route) return;
+    location.assign(route);
+  }, true);
+
   function clickProxy(selector, unavailableMessage) {
     const source = $(selector);
     if (!source || source.disabled) {
