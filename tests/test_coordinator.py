@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 
 from tonmen.agents import MissionCoordinator, MissionPlanner
@@ -15,7 +16,26 @@ def _runtime(tmp_path, *, returncode: int = 0):
 
     def fake_runner(argv, **kwargs):
         calls.append(list(argv))
-        return subprocess.CompletedProcess(argv, returncode, stdout="ok\n" if returncode == 0 else "", stderr="boom\n" if returncode else "")
+        if returncode:
+            return subprocess.CompletedProcess(argv, returncode, stdout="", stderr="boom\n")
+        output = {
+            "nmap": """Nmap scan report for localhost
+Host is up.
+PORT   STATE SERVICE VERSION
+80/tcp open  http    nginx 1.24.0
+""",
+            "httpx": "https://localhost [200] [Welcome] [nginx]\n",
+            "nuclei": json.dumps(
+                {
+                    "template-id": "demo-check",
+                    "info": {"name": "Demo Exposure", "severity": "medium"},
+                    "matched-at": "https://localhost/demo",
+                    "type": "http",
+                }
+            )
+            + "\n",
+        }[argv[0]]
+        return subprocess.CompletedProcess(argv, 0, stdout=output, stderr="")
 
     runtime.executor._runner = fake_runner
     runtime.jobs = JobManager(runtime.executor)
@@ -39,6 +59,7 @@ def test_coordinator_executes_discovery_and_stops_at_approval(tmp_path):
     assert calls[1][0] == "httpx"
     assert len(run.observations) == 2
     assert all(observation.evidence_id for observation in run.observations)
+    assert any(node.kind == "reasoning.request_approval" for node in run.graph.nodes.values())
 
 
 def test_coordinator_can_resume_with_bound_approval(tmp_path):
@@ -70,3 +91,4 @@ def test_coordinator_stops_after_execution_failure(tmp_path):
     assert run.steps[1].state is StepExecutionState.PENDING
     assert len(calls) == 1
     assert run.finished_at is not None
+    assert any(node.kind == "reasoning.stop" for node in run.graph.nodes.values())

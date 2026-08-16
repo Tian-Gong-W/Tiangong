@@ -9,6 +9,7 @@ from tonmen.jobs import JobStatus
 from tonmen.missions import MissionPlan
 from tonmen.missions.run import MissionRun, MissionRunState, StepExecutionState
 from tonmen.observations import Observation
+from tonmen.reasoning import MissionReasoner, ReasoningAction, ReasoningDecision
 from tonmen.tools import ToolRequest
 
 
@@ -23,6 +24,7 @@ class MissionCoordinator:
         if runtime.jobs is None or runtime.executor is None or runtime.scope is None:
             raise ValueError("MissionCoordinator requires the Sentinel runtime")
         self.runtime = runtime
+        self.reasoner = MissionReasoner()
 
     def run(self, plan: MissionPlan, *, approval_tokens: Mapping[str, str] | None = None) -> MissionRun:
         mission_run = MissionRun.create(plan)
@@ -40,6 +42,28 @@ class MissionCoordinator:
         if mission_run.state is not MissionRunState.WAITING_APPROVAL:
             raise ValueError("only a mission waiting for approval can be resumed")
         return self._advance(plan, mission_run, approval_tokens or {})
+
+    @staticmethod
+    def _record_reasoning(run: MissionRun, decision: ReasoningDecision) -> None:
+        run.graph.add_node(
+            GraphNode(
+                id=decision.id,
+                kind=f"reasoning.{decision.action.value}",
+                label=decision.summary,
+                metadata={
+                    "action": decision.action.value,
+                    "basis_fact_ids": list(decision.basis_fact_ids),
+                    "next_step_id": decision.next_step_id,
+                    "requires_human": decision.requires_human,
+                },
+            )
+        )
+        run.graph.link(run.id, "decided", decision.id)
+        for fact_id in decision.basis_fact_ids:
+            if fact_id in run.graph.nodes:
+                run.graph.link(fact_id, "supports_decision", decision.id)
+        if decision.next_step_id and decision.next_step_id in run.graph.nodes:
+            run.graph.link(decision.id, "recommends", decision.next_step_id)
 
     def _advance(
         self,
@@ -68,7 +92,7 @@ class MissionCoordinator:
         mission_run.state = MissionRunState.RUNNING
 
         for step, execution in zip(plan.steps, mission_run.steps, strict=True):
-            if execution.state is StepExecutionState.SUCCEEDED:
+            if execution.state in {StepExecutionState.SUCCEEDED, StepExecutionState.SKIPPED}:
                 continue
 
             token = approval_tokens.get(step.id)
@@ -76,6 +100,14 @@ class MissionCoordinator:
                 execution.state = StepExecutionState.WAITING_APPROVAL
                 execution.error = "explicit approval grant required"
                 mission_run.state = MissionRunState.WAITING_APPROVAL
+                decision = self.reasoner.decide(plan, mission_run)
+                self._record_reasoning(mission_run, decision)
+                if decision.action is ReasoningAction.SKIP:
+                    execution.state = StepExecutionState.SKIPPED
+                    execution.error = None
+                    execution.metadata["reasoning_decision_id"] = decision.id
+                    mission_run.state = MissionRunState.RUNNING
+                    continue
                 return mission_run
 
             request = ToolRequest(tool=step.tool, target=step.target, parameters=step.parameters)
@@ -88,12 +120,16 @@ class MissionCoordinator:
                 execution.state = StepExecutionState.DENIED
                 execution.error = job.error or "execution denied"
                 mission_run.finish(MissionRunState.DENIED)
+                decision = self.reasoner.decide(plan, mission_run)
+                self._record_reasoning(mission_run, decision)
                 return mission_run
 
             if job.status is not JobStatus.SUCCEEDED or job.outcome is None:
                 execution.state = StepExecutionState.FAILED
                 execution.error = job.error or "execution failed"
                 mission_run.finish(MissionRunState.FAILED)
+                decision = self.reasoner.decide(plan, mission_run)
+                self._record_reasoning(mission_run, decision)
                 return mission_run
 
             outcome = job.outcome
@@ -159,5 +195,7 @@ class MissionCoordinator:
                 mission_run.graph.link(observation.id, "summarizes", fact.id)
                 mission_run.graph.link(mission_run.id, "knows", fact.id)
 
+        decision = self.reasoner.decide(plan, mission_run)
+        self._record_reasoning(mission_run, decision)
         mission_run.finish(MissionRunState.SUCCEEDED)
         return mission_run

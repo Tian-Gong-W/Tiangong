@@ -4,14 +4,15 @@ import argparse
 
 from .agents import MissionCoordinator, MissionPlanner, MissionPlanningDenied, MissionRunDenied
 from .chronicle import ChronicleStore
-from .console import render_plan, render_run
+from .console import render_decision, render_plan, render_run
 from .core.runtime import TonmenRuntime
 from .missions import MissionRunState, StepExecutionState
+from .reasoning import MissionReasoner
 
 BANNER = """\
 ╔══════════════════════════════════════════════╗
 ║              雲 頂 天 宮                    ║
-║              TONMEN Intelligence           ║
+║              TONMEN Tiance                 ║
 ║              by Top-Men AI                 ║
 ╚══════════════════════════════════════════════╝
 """
@@ -28,6 +29,8 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser("missions", help="list persisted mission runs")
     show = sub.add_parser("show", help="show a persisted mission run")
     show.add_argument("run_id")
+    reason = sub.add_parser("reason", help="explain the current evidence-backed mission decision")
+    reason.add_argument("run_id")
     resume = sub.add_parser("resume", help="resume a persisted mission at its approval boundary")
     resume.add_argument("run_id")
     resume.add_argument("--approve", action="store_true", help="explicitly approve the current waiting step")
@@ -76,13 +79,16 @@ def main(argv: list[str] | None = None) -> int:
         for entry in entries:
             print(f"{entry.run_id}  {entry.state.value:<18}  {entry.target}")
         return 0
-    if args.command == "show":
+    if args.command in {"show", "reason"}:
         try:
-            _, mission_run = chronicle.load(args.run_id)
+            plan, mission_run = chronicle.load(args.run_id)
         except (FileNotFoundError, ValueError) as exc:
             print(f"天冊無此錄: {exc}")
             return 2
-        print(render_run(mission_run))
+        if args.command == "show":
+            print(render_run(mission_run))
+        else:
+            print(render_decision(MissionReasoner().decide(plan, mission_run)))
         return 0
     if args.command == "resume":
         try:

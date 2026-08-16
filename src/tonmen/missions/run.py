@@ -25,6 +25,7 @@ class StepExecutionState(str, Enum):
     RUNNING = "running"
     WAITING_APPROVAL = "waiting_approval"
     SUCCEEDED = "succeeded"
+    SKIPPED = "skipped"
     FAILED = "failed"
     DENIED = "denied"
 
