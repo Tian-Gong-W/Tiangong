@@ -32,10 +32,13 @@ def test_config_cannot_remove_default_loopback_scope(tmp_path):
         raise AssertionError("built-in loopback scope must remain present")
 
 
-def test_scope_rule_accepts_host_cidr_and_leading_wildcard():
+def test_scope_rule_accepts_host_cidr_leading_wildcard_and_http_url():
     assert validate_scope_rule("App.Example.Test") == "app.example.test"
     assert validate_scope_rule("10.20.30.44/24") == "10.20.30.0/24"
     assert validate_scope_rule("*.Example.Test") == "*.example.test"
+    assert validate_scope_rule("http://165252.cc") == "165252.cc"
+    assert validate_scope_rule("https://App.Example.Test:8443/login?q=1") == "app.example.test"
+    assert validate_scope_rule("http://[::1]:8080/status") == "::1/128"
 
     scope = TargetScope(("10.20.30.0/24", "*.example.test"))
     assert scope.is_allowed("10.20.30.5")
@@ -43,13 +46,27 @@ def test_scope_rule_accepts_host_cidr_and_leading_wildcard():
     assert not scope.is_allowed("example.test")
 
 
-def test_scope_rule_rejects_shell_syntax():
+def test_scope_rule_rejects_shell_syntax_and_unsafe_url_forms():
     try:
         validate_scope_rule("example.test;whoami")
     except ValueError as exc:
         assert "forbidden" in str(exc)
     else:
         raise AssertionError("scope rule shell syntax must be rejected")
+
+    try:
+        validate_scope_rule("ftp://example.test/file")
+    except ValueError as exc:
+        assert "http or https" in str(exc)
+    else:
+        raise AssertionError("non-HTTP scope URLs must be rejected")
+
+    try:
+        validate_scope_rule("https://user:pass@example.test/private")
+    except ValueError as exc:
+        assert "credentials" in str(exc)
+    else:
+        raise AssertionError("scope URLs with credentials must be rejected")
 
 
 def test_doctor_reports_missing_external_tools(tmp_path):
