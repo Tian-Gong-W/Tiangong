@@ -1,0 +1,16 @@
+# Copy to tonmen.toml, or run: tonmen init
+
+[tonmen]
+workspace = ".tonmen"
+bind_host = "127.0.0.1"
+bind_port = 8888
+command_timeout_seconds = 120
+allow_arbitrary_shell = false
+
+[scope]
+# Loopback is always included even if omitted here.
+# Add only systems you are explicitly authorized to assess.
+allowed_targets = ["127.0.0.1", "::1", "localhost"]
+
+# Deny rules override allow rules.
+denied_targets = []

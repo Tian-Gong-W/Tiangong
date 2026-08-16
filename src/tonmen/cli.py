@@ -1,19 +1,23 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from .agents import MissionCoordinator, MissionPlanner, MissionPlanningDenied, MissionRunDenied
 from .chronicle import ChronicleStore
 from .console import render_decision, render_loop, render_plan, render_run
+from .core.config import TonmenConfig
 from .core.runtime import TonmenRuntime
+from .doctor import render_doctor, run_doctor
 from .loop import LoopStopReason, MissionLoop, MissionLoopPolicy
 from .missions import MissionRunState, StepExecutionState
+from .policy import validate_scope_rule
 from .reasoning import MissionReasoner
 
 BANNER = """\
 ╔══════════════════════════════════════════════╗
 ║              雲 頂 天 宮                    ║
-║              TONMEN Tianheng               ║
+║              TONMEN Alpha                  ║
 ║              by Top-Men AI                 ║
 ╚══════════════════════════════════════════════╝
 """
@@ -37,8 +41,27 @@ def _loop_policy(args) -> MissionLoopPolicy:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="tonmen")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        help="project config path (default: ./tonmen.toml)",
+    )
     sub = parser.add_subparsers(dest="command")
+
     sub.add_parser("status", help="show governed runtime status")
+    sub.add_parser("doctor", help="check runtime dependencies and project readiness")
+
+    init = sub.add_parser("init", help="create a local tonmen.toml with safe defaults")
+    init.add_argument("--force", action="store_true", help="replace an existing config file")
+
+    scope = sub.add_parser("scope", help="manage explicitly authorized target scope")
+    scope_sub = scope.add_subparsers(dest="scope_command", required=True)
+    scope_sub.add_parser("show", help="show allowed and denied target rules")
+    scope_add = scope_sub.add_parser("add", help="add an authorized host, IP/CIDR, or *.domain rule")
+    scope_add.add_argument("target")
+    scope_remove = scope_sub.add_parser("remove", help="remove a non-default allowed target rule")
+    scope_remove.add_argument("target")
+
     plan = sub.add_parser("plan", help="create a dry-run mission plan for an authorized target")
     plan.add_argument("target")
     run = sub.add_parser("run", help="execute the current governed mission to its next boundary")
@@ -73,11 +96,73 @@ def _print_loop_result(result) -> None:
     print(render_loop(result))
 
 
+def _load_config(path: Path | None) -> TonmenConfig:
+    return TonmenConfig.default(path)
+
+
+def _scope_show(config: TonmenConfig) -> None:
+    path = config.config_path or Path.cwd() / "tonmen.toml"
+    print(f"配置 Config   {path}")
+    print("允許 Allowed")
+    for rule in config.allowed_targets:
+        marker = " (default)" if rule in {"127.0.0.1", "::1", "localhost"} else ""
+        print(f"  + {rule}{marker}")
+    print("拒絕 Denied")
+    if config.denied_targets:
+        for rule in config.denied_targets:
+            print(f"  - {rule}")
+    else:
+        print("  (none)")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    runtime = TonmenRuntime.sentinel()
-    chronicle = ChronicleStore(runtime.config.workspace)
     print(BANNER)
+
+    try:
+        config = _load_config(args.config)
+    except (OSError, ValueError) as exc:
+        print(f"配置拒絕: {exc}")
+        return 2
+
+    if args.command == "init":
+        path = config.config_path or Path.cwd() / "tonmen.toml"
+        if path.exists() and not args.force:
+            print(f"配置已存在: {path}")
+            print("如需覆寫，使用 tonmen init --force")
+            return 2
+        saved = config.save(path)
+        print(f"天冊配置已立: {saved}")
+        print("默认仅授权 localhost；使用 `tonmen scope add <authorized-target>` 明示扩展范围。")
+        return 0
+
+    if args.command == "scope":
+        if args.scope_command == "show":
+            _scope_show(config)
+            return 0
+        try:
+            rule = validate_scope_rule(args.target)
+            updated = (
+                config.with_allowed_target(rule)
+                if args.scope_command == "add"
+                else config.without_allowed_target(rule)
+            )
+            saved = updated.save()
+        except (OSError, ValueError) as exc:
+            print(f"天域拒絕: {exc}")
+            return 2
+        verb = "已納入" if args.scope_command == "add" else "已移除"
+        print(f"天域 {verb}: {rule}")
+        print(f"配置已寫入: {saved}")
+        return 0
+
+    if args.command == "doctor":
+        report = run_doctor(config)
+        print(render_doctor(report))
+        return 0 if report.ready else 3
+
+    runtime = TonmenRuntime.sentinel(config)
+    chronicle = ChronicleStore(runtime.config.workspace)
 
     if args.command in (None, "status"):
         print(runtime.status_text())
@@ -89,6 +174,7 @@ def main(argv: list[str] | None = None) -> int:
             plan = MissionPlanner(runtime).plan(args.target)
         except MissionPlanningDenied as exc:
             print(f"天律拒絕: {exc}")
+            print("若这是你明确授权的目标，先执行: tonmen scope add <target>")
             return 2
 
         if args.command == "plan":

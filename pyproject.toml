@@ -4,13 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tonmen"
-version = "0.4.0.dev0"
+version = "0.4.0a1"
 description = "TONMEN — Autonomous Security Agent Runtime by Top-Men AI"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [{name = "Top-Men AI"}]
 keywords = ["security", "agent", "mcp", "automation"]
+dependencies = [
+  "tomli>=2.0; python_version < '3.11'",
+]
 
 [project.scripts]
 tonmen = "tonmen.cli:main"
