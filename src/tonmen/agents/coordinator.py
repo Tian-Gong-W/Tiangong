@@ -4,6 +4,7 @@ from typing import Mapping
 
 from tonmen.core.runtime import TonmenRuntime
 from tonmen.evidence import GraphNode
+from tonmen.intelligence import parse_evidence, summarize_facts
 from tonmen.jobs import JobStatus
 from tonmen.missions import MissionPlan
 from tonmen.missions.run import MissionRun, MissionRunState, StepExecutionState
@@ -98,18 +99,25 @@ class MissionCoordinator:
             outcome = job.outcome
             evidence = outcome.evidence
             mission_run.evidence.append(evidence)
+
+            facts = parse_evidence(evidence)
             observation = Observation.create(
                 source=step.tool,
                 target=step.target,
-                summary=outcome.result.summary,
+                summary=summarize_facts(step.tool, facts, outcome.result.summary),
                 evidence_id=evidence.id,
-                metadata={"exit_code": evidence.exit_code, "job_id": job.id},
+                metadata={
+                    "exit_code": evidence.exit_code,
+                    "job_id": job.id,
+                    "fact_ids": [fact.id for fact in facts],
+                },
             )
             mission_run.observations.append(observation)
             execution.state = StepExecutionState.SUCCEEDED
             execution.evidence_id = evidence.id
             execution.observation_id = observation.id
             execution.metadata["exit_code"] = evidence.exit_code
+            execution.metadata["fact_ids"] = [fact.id for fact in facts]
 
             mission_run.graph.add_node(
                 GraphNode(
@@ -130,6 +138,26 @@ class MissionCoordinator:
             mission_run.graph.link(execution.step_id, "produced", evidence.id)
             mission_run.graph.link(evidence.id, "supports", observation.id)
             mission_run.graph.link(mission_run.id, "observed", observation.id)
+
+            for fact in facts:
+                mission_run.graph.add_node(
+                    GraphNode(
+                        id=fact.id,
+                        kind=f"intelligence.{fact.kind.value}",
+                        label=fact.title,
+                        metadata={
+                            "source": fact.source,
+                            "target": fact.target,
+                            "severity": fact.severity.value,
+                            "confidence": fact.confidence,
+                            "evidence_id": fact.evidence_id,
+                            "data": dict(fact.data),
+                        },
+                    )
+                )
+                mission_run.graph.link(evidence.id, "reveals", fact.id)
+                mission_run.graph.link(observation.id, "summarizes", fact.id)
+                mission_run.graph.link(mission_run.id, "knows", fact.id)
 
         mission_run.finish(MissionRunState.SUCCEEDED)
         return mission_run
