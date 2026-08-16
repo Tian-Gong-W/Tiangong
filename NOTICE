@@ -1,0 +1,13 @@
+TONMEN / 雲頂天宮
+Copyright (c) 2026 Top-Men AI
+
+TONMEN is an independent security-agent platform developed by Top-Men AI.
+
+This repository starts with an independent Genesis runtime under src/tonmen.
+When capabilities are migrated from third-party open-source projects, their
+original copyright and license notices must be retained as required by those
+licenses.
+
+HexStrike AI is one historical migration source under consideration. Any code
+copied or substantially derived from HexStrike AI remains subject to its
+original MIT attribution and license terms.

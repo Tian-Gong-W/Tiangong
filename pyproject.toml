@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tonmen"
+version = "0.1.0.dev0"
+description = "TONMEN — Autonomous Security Agent Runtime by Top-Men AI"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Top-Men AI"}]
+keywords = ["security", "agent", "mcp", "automation"]
+
+[project.scripts]
+tonmen = "tonmen.cli:main"
+
+[project.optional-dependencies]
+mcp = ["fastmcp>=0.2.0,<1.0.0"]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
