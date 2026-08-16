@@ -5,9 +5,9 @@
 
 **TONMEN** is the governed autonomous security-agent runtime by **Top-Men AI**.
 
-TONMEN now separates intent, execution, evidence, knowledge, and decision. Tools do not decide what is true; deterministic intelligence parsers turn raw evidence into provenance-linked facts, and **天策 · Reasoner** decides only from those facts and the existing governed mission plan.
+TONMEN now has a bounded mission loop: evidence is observed, deterministic intelligence is extracted, 天策 decides from that evidence, and 天衡 determines whether one more already-planned governed action may run. The loop may stop itself automatically; it may never grant itself more authority.
 
-## Tiance / 天策
+## Tianheng / 天衡
 
 ```text
 Intent
@@ -16,52 +16,79 @@ Intent
   ↓
 天域 Scope + 天律 Policy
   ↓
-天命 Coordinator
-  ↓
-天工 Executor
-  ↓
-Evidence
-  ↓
-天鑑 Intelligence
-  ↓
-天策 Reasoner
-  ├─ CONTINUE          continue an already-planned low-risk step
-  ├─ REQUEST_APPROVAL  stop at a human approval boundary
-  ├─ SKIP              avoid unjustified higher-risk validation
-  ├─ REVIEW            surface high/critical findings to a human
-  ├─ COMPLETE          stop when current evidence justifies no more work
-  └─ STOP              halt after failure or denial
+┌────────────── 天衡 Mission Loop ──────────────┐
+│                                               │
+│  天命 Coordinator → 天工 Executor             │
+│          ↓                                    │
+│       Evidence                                │
+│          ↓                                    │
+│  天鑑 Intelligence                            │
+│          ↓                                    │
+│    天策 Reasoner                              │
+│          ↓                                    │
+│  CONTINUE / SKIP / COMPLETE ────────┐         │
+│  REQUEST_APPROVAL / REVIEW / STOP ──┴─► STOP  │
+│          │                                    │
+└──────────┴──────── one bounded step ──────────┘
 ```
 
-Every reasoning decision is written into the same Evidence Graph used by Chronicle. Facts link to decisions with `supports_decision`; decisions can point only to an existing mission step. There is no free-form command generation in the Reasoner.
+### Boundaries before autonomy
 
-### A deliberately asymmetric authority model
+A loop session has explicit, validated limits:
 
-天策 may **stop** or **skip** automatically, but it may not grant itself more authority.
+- `max_iterations` — default 8, hard maximum 64;
+- `max_executions` — default 3, hard maximum 16;
+- `max_repeat_decisions` — default 2, hard maximum 8;
+- `max_duration_seconds` — default 300, hard maximum 3600.
 
-For the current Nmap → HTTPx → Nuclei mission:
+Loop governance is written into the existing Evidence Graph as `loop.session`, `loop.iteration`, and `loop.stop` nodes, so Chronicle persists not only what happened, but why the autonomous cycle stopped.
 
-- confirmed web/service evidence may justify asking a human to approve Nuclei;
-- absence of evidence-backed web surface causes Nuclei to be skipped automatically;
-- approval remains a fresh, single-use grant bound to the exact tool and target;
-- high/critical findings produce a human-review decision, not an automatic escalation.
+> **衡者，度也。知其可行，亦知其當止。**
 
-> **可代人止，不可代人越。**
+### Authority remains asymmetric
+
+天衡 may:
+
+- execute another already-planned step that is still allowed by Scope and Policy;
+- stop on execution or time budget exhaustion;
+- stop repeated no-progress reasoning;
+- apply a 天策 `SKIP` decision to avoid unsupported higher-risk validation;
+- stop for human review or approval.
+
+天衡 may not:
+
+- add a tool that was not already in the governed mission plan;
+- expand target scope;
+- create arbitrary command strings;
+- issue an Approval Grant;
+- persist an approval token;
+- cross `REQUEST_APPROVAL` without a fresh human-issued grant.
+
+For the current Nmap → HTTPx → Nuclei mission, confirmed web evidence causes the loop to stop at the Nuclei approval boundary. If no evidence-backed web surface exists, 天策 may skip Nuclei and 天衡 can safely complete the loop without running it.
 
 ### CLI
 
 ```bash
 tonmen status
 tonmen plan localhost
+
+# legacy run-to-boundary behavior
 tonmen run localhost
+
+# bounded observe → reason → act loop
+tonmen loop localhost
+
+# optional tighter budgets
+tonmen loop localhost --max-iterations 6 --max-executions 2
+
+# a budget-stopped RUNNING mission requires an explicit fresh loop session
+tonmen loop-resume <run-id>
 
 tonmen missions
 tonmen show <run-id>
-
-# explain what 天策 currently decides and why
 tonmen reason <run-id>
 
-# crossing an approval boundary still requires an explicit human act
+# approval remains a separate human authority act
 tonmen resume <run-id> --approve
 ```
 
@@ -74,11 +101,13 @@ The default authorized scope remains localhost-only.
 - External targets deny-by-default.
 - Unknown tool parameters are rejected.
 - Validation/intrusive actions require a bound, single-use grant.
-- Planner, Coordinator, Intelligence and Reasoner cannot self-approve.
+- Planner, Coordinator, Intelligence, Reasoner and Mission Loop cannot self-approve.
 - Approval tokens are never persisted.
 - Intelligence facts must point to Evidence IDs.
 - Unparseable output remains evidence; it does not become a guessed fact.
 - Reasoner can recommend only existing mission steps.
-- Reasoning decisions and their fact basis persist through Chronicle.
+- Mission Loop can execute only existing mission steps.
+- Every loop session has bounded iterations, executions, duration and repeat tolerance.
+- Reasoning and loop-governance provenance persist through Chronicle.
 
-> **所知必有據，所斷必有源；能止其鋒，方可久行。**
+> **所知必有據，所斷必有源；萬器可行，必先有衡。**
