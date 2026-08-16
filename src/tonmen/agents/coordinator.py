@@ -97,6 +97,7 @@ class MissionCoordinator:
 
             outcome = job.outcome
             evidence = outcome.evidence
+            mission_run.evidence.append(evidence)
             observation = Observation.create(
                 source=step.tool,
                 target=step.target,

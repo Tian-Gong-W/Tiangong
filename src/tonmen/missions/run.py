@@ -6,7 +6,7 @@ from enum import Enum
 from typing import Any
 from uuid import uuid4
 
-from tonmen.evidence import EvidenceGraph
+from tonmen.evidence import EvidenceGraph, EvidenceRecord
 from tonmen.missions.model import MissionPlan
 from tonmen.observations import Observation
 
@@ -50,6 +50,7 @@ class MissionRun:
     state: MissionRunState
     steps: list[StepExecution]
     observations: list[Observation]
+    evidence: list[EvidenceRecord]
     graph: EvidenceGraph
     started_at: datetime
     finished_at: datetime | None = None
@@ -63,6 +64,7 @@ class MissionRun:
             state=MissionRunState.CREATED,
             steps=[StepExecution(step_id=step.id, tool=step.tool, target=step.target) for step in plan.steps],
             observations=[],
+            evidence=[],
             graph=EvidenceGraph(),
             started_at=datetime.now(timezone.utc),
         )
