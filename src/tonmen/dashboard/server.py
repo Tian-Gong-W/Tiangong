@@ -20,13 +20,29 @@ from tonmen.loop import MissionLoop, MissionLoopPolicy
 from tonmen.missions import MissionRunState, StepExecutionState
 from tonmen.policy import validate_scope_rule
 from tonmen.reasoning import MissionReasoner
+from tonmen.tools.base import RiskLevel
 
 _LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
+_APP_ROUTES = {
+    "/",
+    "/missions",
+    "/scope",
+    "/guard",
+    "/tools",
+    "/intelligence",
+    "/reasoner",
+    "/loop",
+    "/chronicle",
+    "/approval",
+    "/settings",
+}
 _STATIC_TYPES = {
     "app.css": "text/css; charset=utf-8",
     "viewport.css": "text/css; charset=utf-8",
+    "module-pages.css": "text/css; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",
     "deck.js": "text/javascript; charset=utf-8",
+    "module-pages.js": "text/javascript; charset=utf-8",
 }
 
 
@@ -197,6 +213,82 @@ class DashboardState:
             plan, run = self.chronicle.load(run_id)
             return mission_payload(plan, run)
 
+    def tools(self) -> dict[str, Any]:
+        with self._lock:
+            report = run_doctor(self.config)
+            checks = {check.name: asdict(check) for check in report.checks}
+            tools: list[dict[str, Any]] = []
+            for adapter in self.runtime.registry:
+                spec = adapter.spec
+                check = checks.get(spec.name)
+                tools.append(
+                    {
+                        "name": spec.name,
+                        "category": spec.category,
+                        "description": spec.description,
+                        "risk": int(spec.risk),
+                        "risk_name": spec.risk.name.lower(),
+                        "capabilities": list(spec.capabilities),
+                        "available": bool(check and check["ok"]),
+                        "doctor": check,
+                    }
+                )
+            return {"count": len(tools), "tools": tools}
+
+    def audit(self, limit: int = 200) -> dict[str, Any]:
+        with self._lock:
+            bounded = max(1, min(int(limit), 500))
+            path = self.config.workspace / "audit.jsonl"
+            if not path.exists():
+                return {"path": str(path), "events": []}
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()[-bounded:]
+            events: list[dict[str, Any]] = []
+            for line in lines:
+                try:
+                    item = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(item, dict):
+                    events.append(item)
+            return {"path": str(path), "events": events}
+
+    def guard(self) -> dict[str, Any]:
+        with self._lock:
+            entries = self.chronicle.list()
+            waiting = sum(1 for item in entries if item.state is MissionRunState.WAITING_APPROVAL)
+            risk_levels = [
+                {"level": int(level), "name": level.name.lower()}
+                for level in RiskLevel
+            ]
+            return {
+                "mode": "deny-by-default",
+                "scope": self.scope(),
+                "pending_approvals": waiting,
+                "risk_levels": risk_levels,
+                "rules": [
+                    {"name": "scope", "decision": "deny", "detail": "Targets outside authorized Scope are denied."},
+                    {"name": "low-risk", "decision": "allow", "detail": "Passive/discovery work may run autonomously inside Scope."},
+                    {"name": "validation", "decision": "approval", "detail": "Validation/intrusive actions require a bound single-use grant."},
+                    {"name": "destructive", "decision": "deny", "detail": "Destructive actions remain disabled."},
+                ],
+                "audit": self.audit(100),
+            }
+
+    def settings(self) -> dict[str, Any]:
+        with self._lock:
+            return {
+                "version": __version__,
+                "workspace": str(self.config.workspace),
+                "config_path": str(self.config.config_path) if self.config.config_path else None,
+                "bind_host": self.config.bind_host,
+                "bind_port": self.config.bind_port,
+                "command_timeout_seconds": self.config.command_timeout_seconds,
+                "allowed_targets": list(self.config.allowed_targets),
+                "denied_targets": list(self.config.denied_targets),
+                "allow_arbitrary_shell": self.config.allow_arbitrary_shell,
+                "console_loopback_only": True,
+            }
+
     def start_mission(self, target: str, policy: MissionLoopPolicy | None = None) -> dict[str, Any]:
         with self._lock:
             plan = MissionPlanner(self.runtime).plan(target)
@@ -323,16 +415,20 @@ class TonmenDashboardHandler(BaseHTTPRequestHandler):
     def _asset(self, name: str) -> bytes:
         return resources.files("tonmen.dashboard.static").joinpath(name).read_bytes()
 
+    def _index(self) -> bytes:
+        return (
+            self._asset("index.html")
+            .decode("utf-8")
+            .replace("__TONMEN_CSRF__", self.server.csrf_token)
+            .encode("utf-8")
+        )
+
     def do_GET(self) -> None:
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip("/") or "/"
         try:
-            if path == "/":
-                html = (
-                    self._asset("index.html")
-                    .decode("utf-8")
-                    .replace("__TONMEN_CSRF__", self.server.csrf_token)
-                )
-                self._send_bytes(200, "text/html; charset=utf-8", html.encode("utf-8"))
+            if path in _APP_ROUTES:
+                self._send_bytes(200, "text/html; charset=utf-8", self._index())
                 return
             if path.startswith("/assets/"):
                 name = unquote(path.removeprefix("/assets/"))
@@ -342,7 +438,9 @@ class TonmenDashboardHandler(BaseHTTPRequestHandler):
                     return
                 payload = self._asset(name)
                 if name == "app.js":
-                    payload += b"\n" + self._asset("deck.js")
+                    payload += b"\n" + self._asset("deck.js") + b"\n" + self._asset("module-pages.js")
+                if name == "viewport.css":
+                    payload += b"\n" + self._asset("module-pages.css")
                 self._send_bytes(200, content_type, payload, cache="public, max-age=300")
                 return
             if path == "/api/status":
@@ -350,6 +448,19 @@ class TonmenDashboardHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/scope":
                 self._json(200, self.server.state.scope())
+                return
+            if path == "/api/tools":
+                self._json(200, self.server.state.tools())
+                return
+            if path == "/api/guard":
+                self._json(200, self.server.state.guard())
+                return
+            if path == "/api/audit":
+                limit = int(urlparse(self.path).query.split("limit=", 1)[1].split("&", 1)[0]) if "limit=" in urlparse(self.path).query else 200
+                self._json(200, self.server.state.audit(limit))
+                return
+            if path == "/api/settings":
+                self._json(200, self.server.state.settings())
                 return
             if path == "/api/missions":
                 self._json(200, {"missions": self.server.state.missions()})
