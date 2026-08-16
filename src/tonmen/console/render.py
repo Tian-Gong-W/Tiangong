@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tonmen.loop import MissionLoopResult
 from tonmen.missions import MissionPlan, MissionRun, MissionRunState, StepExecutionState, StepState
 from tonmen.reasoning import ReasoningDecision
 
@@ -30,6 +31,19 @@ def render_decision(decision: ReasoningDecision) -> str:
     return "\n".join(lines)
 
 
+def render_loop(result: MissionLoopResult) -> str:
+    decision = result.last_decision
+    lines = [
+        f"天衡 Stop      {result.stop_reason.value}",
+        f"循環 Iterations {result.iterations}",
+        f"執行 Executions {result.executions}",
+        f"會期 Session    {result.session_id}",
+    ]
+    if decision is not None:
+        lines.append(f"末斷 Decision    {decision.action.value}")
+    return "\n".join(lines)
+
+
 def render_run(run: MissionRun) -> str:
     labels = {
         StepExecutionState.PENDING: "待行",
@@ -42,6 +56,8 @@ def render_run(run: MissionRun) -> str:
     }
     intelligence = [node for node in run.graph.nodes.values() if node.kind.startswith("intelligence.")]
     reasoning = [node for node in run.graph.nodes.values() if node.kind.startswith("reasoning.")]
+    loop_sessions = [node for node in run.graph.nodes.values() if node.kind == "loop.session"]
+    loop_stops = [node for node in run.graph.nodes.values() if node.kind == "loop.stop"]
     lines = [
         f"任務 Run      {run.id}",
         f"目標 Target   {run.target}",
@@ -56,6 +72,7 @@ def render_run(run: MissionRun) -> str:
     lines.append(f"觀測 Observations  {len(run.observations)}")
     lines.append(f"天鑑 Intelligence  {len(intelligence)}")
     lines.append(f"天策 Decisions     {len(reasoning)}")
+    lines.append(f"天衡 Sessions      {len(loop_sessions)}")
     lines.append(f"證據 Graph Nodes   {len(run.graph.nodes)}")
     if intelligence:
         lines.append("")
@@ -74,6 +91,11 @@ def render_run(run: MissionRun) -> str:
             action = node.metadata.get("action", node.kind.removeprefix("reasoning."))
             human = "需人決" if node.metadata.get("requires_human") else "可自治"
             lines.append(f"  · {action:<16} [{human}] {node.label}")
+    if loop_stops:
+        lines.append("")
+        lines.append("天衡所止")
+        for node in loop_stops[-3:]:
+            lines.append(f"  · {node.metadata.get('reason', 'unknown'):<20} {node.label}")
     if run.state is MissionRunState.WAITING_APPROVAL:
         lines.append("\n天律有門：高風險步驟已停於審批界前。")
     return "\n".join(lines)
