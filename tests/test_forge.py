@@ -62,14 +62,17 @@ def test_executor_uses_shell_false_and_records_evidence():
 
 
 def test_nuclei_runs_only_after_approval():
+    from tonmen.policy import ApprovalStore
     registry = ToolRegistry()
     registry.register(NucleiAdapter())
 
     def fake_runner(argv, **kwargs):
         return subprocess.CompletedProcess(argv, 0, stdout='{"matched-at":"https://example.com"}', stderr="")
 
-    executor = ToolExecutor(registry, PolicyEngine(), runner=fake_runner)
-    outcome = executor.execute(ToolRequest(tool="nuclei", target="https://example.com"), approved=True)
+    approvals = ApprovalStore()
+    executor = ToolExecutor(registry, PolicyEngine(), runner=fake_runner, approvals=approvals)
+    grant = approvals.issue(tool="nuclei", target="https://example.com")
+    outcome = executor.execute(ToolRequest(tool="nuclei", target="https://example.com"), approval_token=grant.token)
     assert outcome.policy.decision is Decision.REQUIRE_APPROVAL
     assert outcome.result.success is True
 

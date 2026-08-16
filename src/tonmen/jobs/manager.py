@@ -30,19 +30,17 @@ class Job:
 
 
 class JobManager:
-    """Synchronous Forge job lifecycle; async scheduling comes in a later milestone."""
-
     def __init__(self, executor: ToolExecutor) -> None:
         self.executor = executor
         self._jobs: dict[str, Job] = {}
 
-    def submit(self, request: ToolRequest, *, approved: bool = False) -> Job:
+    def submit(self, request: ToolRequest, *, approval_token: str | None = None) -> Job:
         job = Job(id=uuid4().hex, request=request)
         self._jobs[job.id] = job
         job.status = JobStatus.RUNNING
         job.started_at = datetime.now(timezone.utc)
         try:
-            job.outcome = self.executor.execute(request, approved=approved)
+            job.outcome = self.executor.execute(request, approval_token=approval_token)
             job.status = JobStatus.SUCCEEDED if job.outcome.result.success else JobStatus.FAILED
         except ExecutionDenied as exc:
             job.status = JobStatus.DENIED
