@@ -17,7 +17,7 @@ def _runtime(tmp_path, *, returncode: int = 0):
     def fake_runner(argv, **kwargs):
         calls.append(list(argv))
         if returncode:
-            return subprocess.CompletedProcess(argv, returncode, stdout="", stderr="boom\n")
+            return subprocess.CompletedProcess(argv, returncode, stdout="partial output\n", stderr="boom\n")
         output = {
             "nmap": """Nmap scan report for localhost
 Host is up.
@@ -80,7 +80,7 @@ def test_coordinator_can_resume_with_bound_approval(tmp_path):
     assert len(run.observations) == 3
 
 
-def test_coordinator_stops_after_execution_failure(tmp_path):
+def test_coordinator_stops_after_execution_failure_and_keeps_raw_evidence(tmp_path):
     runtime, calls = _runtime(tmp_path, returncode=1)
     plan = MissionPlanner(runtime).plan("localhost")
 
@@ -88,7 +88,13 @@ def test_coordinator_stops_after_execution_failure(tmp_path):
 
     assert run.state is MissionRunState.FAILED
     assert run.steps[0].state is StepExecutionState.FAILED
+    assert run.steps[0].error == "execution exited with code 1"
+    assert run.steps[0].evidence_id == run.evidence[0].id
+    assert run.evidence[0].stdout == "partial output\n"
+    assert run.evidence[0].stderr == "boom\n"
+    assert run.evidence[0].exit_code == 1
     assert run.steps[1].state is StepExecutionState.PENDING
     assert len(calls) == 1
     assert run.finished_at is not None
+    assert any(node.kind == "evidence" for node in run.graph.nodes.values())
     assert any(node.kind == "reasoning.stop" for node in run.graph.nodes.values())
