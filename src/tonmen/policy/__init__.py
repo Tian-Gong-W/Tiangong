@@ -1,6 +1,6 @@
 from .approval import ApprovalGrant, ApprovalStore
 from .engine import Decision, PolicyDecision, PolicyEngine
-from .scope import TargetScope
+from .scope import TargetScope, validate_scope_rule
 
 __all__ = [
     "ApprovalGrant",
@@ -9,4 +9,5 @@ __all__ = [
     "PolicyDecision",
     "PolicyEngine",
     "TargetScope",
+    "validate_scope_rule",
 ]

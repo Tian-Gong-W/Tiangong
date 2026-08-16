@@ -58,15 +58,19 @@ class TonmenRuntime:
         return runtime
 
     def status_text(self) -> str:
+        scope_count = len(self.scope.allowed) if self.scope else 0
         return "\n".join(
             [
                 "天樞 Core        ● Online",
                 "天律 Guard       ● Online",
                 f"天工 Registry    ● Ready ({len(self.registry)} tools)",
-                f"天域 Scope       {'● Enforced' if self.scope else '○ Not loaded'}",
+                f"天域 Scope       {'● Enforced' if self.scope else '○ Not loaded'} ({scope_count} allow rules)",
                 f"天契 Approval    {'● Ready' if self.approvals else '○ Not loaded'}",
                 f"天錄 Audit       {'● Persistent' if self.audit else '○ Not loaded'}",
                 f"天行 Executor    {'● Ready' if self.executor else '○ Not loaded'}",
-                "天機 Agent       ○ Not loaded",
+                "天機 Planner      ● Ready",
+                "天鑑 Intelligence ● Ready",
+                "天策 Reasoner     ● Ready",
+                "天衡 Mission Loop ● Ready",
             ]
         )
