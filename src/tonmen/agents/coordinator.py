@@ -87,6 +87,24 @@ class MissionCoordinator:
             return True
         return False
 
+    @staticmethod
+    def _record_execution_evidence(run: MissionRun, execution, evidence) -> None:
+        """Persist raw execution evidence even when the command exits non-zero."""
+        if all(item.id != evidence.id for item in run.evidence):
+            run.evidence.append(evidence)
+        execution.evidence_id = evidence.id
+        execution.metadata["exit_code"] = evidence.exit_code
+        if evidence.id not in run.graph.nodes:
+            run.graph.add_node(
+                GraphNode(
+                    id=evidence.id,
+                    kind="evidence",
+                    label=f"evidence:{execution.tool}",
+                    metadata={"exit_code": evidence.exit_code, "argv": evidence.argv},
+                )
+            )
+            run.graph.link(execution.step_id, "produced", evidence.id)
+
     def start(self, plan: MissionPlan) -> MissionRun:
         self._check_scope(plan)
         run = MissionRun.create(plan)
@@ -155,13 +173,17 @@ class MissionCoordinator:
 
             if job.status is not JobStatus.SUCCEEDED or job.outcome is None:
                 execution.state = StepExecutionState.FAILED
-                execution.error = job.error or "execution failed"
+                if job.outcome is not None:
+                    self._record_execution_evidence(mission_run, execution, job.outcome.evidence)
+                    execution.error = job.error or job.outcome.result.summary
+                else:
+                    execution.error = job.error or "execution failed"
                 mission_run.finish(MissionRunState.FAILED)
                 return mission_run
 
             outcome = job.outcome
             evidence = outcome.evidence
-            mission_run.evidence.append(evidence)
+            self._record_execution_evidence(mission_run, execution, evidence)
 
             facts = parse_evidence(evidence)
             observation = Observation.create(
@@ -177,19 +199,9 @@ class MissionCoordinator:
             )
             mission_run.observations.append(observation)
             execution.state = StepExecutionState.SUCCEEDED
-            execution.evidence_id = evidence.id
             execution.observation_id = observation.id
-            execution.metadata["exit_code"] = evidence.exit_code
             execution.metadata["fact_ids"] = [fact.id for fact in facts]
 
-            mission_run.graph.add_node(
-                GraphNode(
-                    id=evidence.id,
-                    kind="evidence",
-                    label=f"evidence:{step.tool}",
-                    metadata={"exit_code": evidence.exit_code, "argv": evidence.argv},
-                )
-            )
             mission_run.graph.add_node(
                 GraphNode(
                     id=observation.id,
@@ -198,7 +210,6 @@ class MissionCoordinator:
                     metadata={"source": observation.source, "target": observation.target},
                 )
             )
-            mission_run.graph.link(execution.step_id, "produced", evidence.id)
             mission_run.graph.link(evidence.id, "supports", observation.id)
             mission_run.graph.link(mission_run.id, "observed", observation.id)
 
