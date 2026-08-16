@@ -21,11 +21,21 @@ def _host_from_target(target: str) -> str:
 
 
 def validate_scope_rule(rule: str) -> str:
-    value = str(rule).strip().lower()
-    if not value or any(ch.isspace() for ch in value):
+    raw = str(rule).strip()
+    if not raw or any(ch.isspace() for ch in raw):
         raise ValueError("scope rule cannot be empty or contain whitespace")
-    if any(ch in value for ch in (";", "|", "&", "`", "$", "\n", "\r")):
-        raise ValueError("scope rule contains forbidden shell metacharacters")
+
+    if "://" in raw:
+        parsed = urlparse(raw)
+        if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("scope URL must use http or https and contain a hostname")
+        if parsed.username or parsed.password:
+            raise ValueError("scope URL must not contain credentials")
+        value = parsed.hostname.rstrip(".").lower()
+    else:
+        value = raw.lower()
+        if any(ch in value for ch in (";", "|", "&", "`", "$", "\n", "\r")):
+            raise ValueError("scope rule contains forbidden shell metacharacters")
 
     try:
         return str(ipaddress.ip_network(value, strict=False))
