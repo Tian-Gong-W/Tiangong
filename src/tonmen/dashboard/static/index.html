@@ -6,6 +6,7 @@
   <meta name="tonmen-csrf" content="__TONMEN_CSRF__">
   <title>雲頂天宮 | TONMEN Console</title>
   <link rel="stylesheet" href="/assets/app.css">
+  <link rel="stylesheet" href="/assets/viewport.css">
 </head>
 <body>
   <div class="console-frame">
@@ -55,6 +56,28 @@
       <main class="main-stage">
         <section id="overview" class="content">
           <div id="status-grid" class="status-grid"></div>
+
+          <section class="command-deck" id="command-deck" aria-label="Main command controls">
+            <div class="deck-title">
+              <div class="deck-emblem">樞</div>
+              <div><strong>主控操作台</strong><small>Command Deck · All actions here</small></div>
+            </div>
+            <div class="deck-actions">
+              <button class="primary" id="deck-new-mission" type="button">▶ 執行任務</button>
+              <button class="ghost" id="deck-refresh" type="button">↻ 刷新狀態</button>
+              <button class="ghost deck-resume" id="deck-resume" type="button" disabled>∞ 續行任務</button>
+              <button class="danger deck-approve" id="deck-approve" type="button" disabled>✓ 批准續行</button>
+              <button class="ghost deck-evidence" id="deck-evidence" type="button" disabled>◉ 查看證據</button>
+              <button class="ghost" id="deck-retry" type="button" disabled>↻ 重跑失敗任務</button>
+            </div>
+            <form class="deck-scope" id="deck-scope-form">
+              <input id="deck-scope-input" placeholder="授權目標：host / URL / CIDR / *.domain" autocomplete="off">
+              <button class="primary" type="submit">＋ 納入 Scope</button>
+            </form>
+            <div class="deck-current">
+              <span>當前控制對象</span><strong id="deck-current">尚無任務</strong><span class="deck-hint">Scope / Mission / Resume / Approval / Evidence 均可在此操作</span>
+            </div>
+          </section>
 
           <div class="grid top-grid">
             <section class="panel mission-panel" id="mission-panel">
