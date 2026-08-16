@@ -8,168 +8,170 @@
   <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
-  <div class="shell">
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-mark">宮</div>
-        <div>
-          <strong>雲頂天宮</strong>
-          <span>TONMEN</span>
-        </div>
+  <div class="console-frame">
+    <header class="global-header">
+      <div class="header-brand">
+        <div class="brand-emblem" aria-hidden="true"><span>宮</span></div>
+        <div class="brand-name"><strong>雲頂天宮</strong><i></i><b>TONMEN</b></div>
+        <div class="brand-tagline">S̶h̶e̶l̶l̶ is only the beginning.</div>
       </div>
-
-      <nav class="nav">
-        <button class="nav-item active" data-scroll="overview"><span>◉</span><b>儀表總覽</b></button>
-        <button class="nav-item" data-scroll="mission-panel"><span>◎</span><b>任務 Missions</b></button>
-        <button class="nav-item" data-scroll="scope-panel"><span>◌</span><b>天域 Scope</b></button>
-        <button class="nav-item" data-scroll="status-grid"><span>◇</span><b>天律 Guard</b></button>
-        <button class="nav-item" data-scroll="status-grid"><span>⌁</span><b>天工 Tools</b></button>
-        <button class="nav-item" data-scroll="intel-panel"><span>◉</span><b>天鑑 Intelligence</b></button>
-        <button class="nav-item" data-scroll="reason-panel"><span>✦</span><b>天策 Reasoner</b></button>
-        <button class="nav-item" data-scroll="mission-panel"><span>∞</span><b>天衡 Loop</b></button>
-        <button class="nav-item" data-scroll="chronicle-panel"><span>▤</span><b>天冊 Chronicle</b></button>
-        <button class="nav-item" data-scroll="approval-panel"><span>♙</span><b>審批 Approval</b></button>
-      </nav>
-
-      <div class="sidebar-poem">
-        <div class="mountain">⌁⌁  ◇  ⌁⌁</div>
-        <p>宮察其象，鑑明其實；<br>天策既定，萬器乃行。</p>
+      <div class="header-slogan">
+        <span>人予其意，宮成其事。</span>
+        <small>Autonomous, but Governed.</small>
       </div>
-    </aside>
-
-    <main>
-      <header class="topbar">
-        <div>
-          <div class="eyebrow">S̶h̶e̶l̶l̶ is only the beginning.</div>
-          <h1>人予其意，宮成其事。</h1>
+      <div class="header-actions">
+        <div class="health" id="health-pill">
+          <div class="health-shield">◇</div>
+          <div><small>系統健康</small><strong>檢查中</strong></div>
         </div>
-        <div class="top-actions">
-          <div class="health" id="health-pill"><span class="pulse"></span><div><small>系統健康</small><strong>檢查中</strong></div></div>
-          <button class="primary compact" id="new-mission-btn">＋ 新任務</button>
+        <button class="header-icon" type="button" title="通知"><span>♧</span><em>3</em></button>
+        <button class="header-icon" type="button" title="說明">?</button>
+        <div class="operator-card"><div class="operator-avatar">宮</div><div><strong>天官</strong><small>管理員</small></div><span>⌄</span></div>
+      </div>
+    </header>
+
+    <div class="console-workspace">
+      <aside class="sidebar">
+        <nav class="nav">
+          <button class="nav-item active" data-scroll="overview"><span>◉</span><b>儀表總覽</b></button>
+          <button class="nav-item" data-scroll="mission-panel"><span>◎</span><b>任務 <small>Missions</small></b></button>
+          <button class="nav-item" data-scroll="scope-panel"><span>◌</span><b>天域 <small>Scope</small></b></button>
+          <button class="nav-item" data-scroll="status-grid"><span>◇</span><b>天律 <small>Guard</small></b></button>
+          <button class="nav-item" data-scroll="status-grid"><span>⌁</span><b>天工 <small>Tools</small></b></button>
+          <button class="nav-item" data-scroll="intel-panel"><span>◉</span><b>天鑑 <small>Intelligence</small></b></button>
+          <button class="nav-item" data-scroll="reason-panel"><span>✺</span><b>天策 <small>Reasoner</small></b></button>
+          <button class="nav-item" data-scroll="mission-panel"><span>∞</span><b>天衡 <small>Loop</small></b></button>
+          <button class="nav-item" data-scroll="chronicle-panel"><span>▤</span><b>天冊 <small>Chronicle</small></b></button>
+          <button class="nav-item" data-scroll="approval-panel"><span>♙</span><b>審批 <small>Approval</small></b></button>
+          <button class="nav-item" data-scroll="overview"><span>⚙</span><b>設定 <small>Settings</small></b></button>
+        </nav>
+        <div class="sidebar-art" aria-hidden="true">
+          <div class="temple-roof">⌁  亠  ⌁</div>
+          <div class="temple-lines">╱╲  ╱╲<br>⌒⌒⌒⌒⌒</div>
         </div>
-      </header>
+        <div class="sidebar-poem">宮察其象，鑑明其實；<br>天策既定，萬器乃行。</div>
+      </aside>
 
-      <section id="overview" class="content">
-        <div id="status-grid" class="status-grid"></div>
+      <main class="main-stage">
+        <section id="overview" class="content">
+          <div id="status-grid" class="status-grid"></div>
 
-        <div class="grid top-grid">
-          <section class="panel mission-panel" id="mission-panel">
-            <div class="panel-head">
-              <div>
-                <span class="kicker">CURRENT MISSION</span>
-                <h2>當前任務</h2>
-              </div>
-              <div class="mission-selector">
-                <select id="mission-select" aria-label="Select mission"></select>
-                <button class="ghost small" id="refresh-btn">重新整理</button>
-              </div>
-            </div>
-            <div id="mission-empty" class="empty-state">
-              <div class="empty-symbol">∞</div>
-              <h3>尚無任務</h3>
-              <p>建立一個已授權目標的受控 Mission Loop。</p>
-              <button class="primary" id="empty-new-mission-btn">建立任務</button>
-            </div>
-            <div id="mission-body" class="mission-body hidden">
-              <div class="mission-meta">
-                <div><span>目標 Target</span><strong id="mission-target">—</strong></div>
-                <div><span>狀態 State</span><strong id="mission-state" class="state-pill">—</strong></div>
-              </div>
-              <div class="mission-layout">
-                <div>
-                  <h3 class="subhead">任務步驟 / Governed Steps</h3>
-                  <div id="mission-steps" class="steps"></div>
-                </div>
-                <div class="loop-visual">
-                  <h3 class="subhead">治理任務循環 / Mission Loop</h3>
-                  <div class="loop-flow">
-                    <div class="loop-node cyan"><b>觀</b><span>Observe</span></div><i>→</i>
-                    <div class="loop-node purple"><b>鑑</b><span>Intelligence</span></div><i>→</i>
-                    <div class="loop-node amber"><b>策</b><span>Reasoner</span></div><i>→</i>
-                    <div class="loop-node cyan"><b>衡</b><span>Loop</span></div>
-                  </div>
-                  <div class="loop-return">↖ ──────── Execute ──────── ↙</div>
-                  <div class="budget">
-                    <span>最大輪次 <b>8</b></span><span>執行預算 <b>3</b></span><span>最長 <b>300s</b></span>
-                  </div>
+          <div class="grid top-grid">
+            <section class="panel mission-panel" id="mission-panel">
+              <div class="panel-head compact-head">
+                <div class="panel-title"><h2>當前任務 <small>/ Current Mission</small></h2></div>
+                <div class="mission-selector">
+                  <select id="mission-select" aria-label="Select mission"></select>
+                  <button class="ghost icon-only" id="refresh-btn" title="重新整理">↻</button>
+                  <button class="primary small" id="new-mission-btn">＋ 新任務</button>
                 </div>
               </div>
-            </div>
-          </section>
+              <div id="mission-empty" class="empty-state">
+                <div class="empty-symbol">∞</div><h3>尚無任務</h3>
+                <p>建立一個已授權目標的受控 Mission Loop。</p>
+                <button class="primary" id="empty-new-mission-btn">建立任務</button>
+              </div>
+              <div id="mission-body" class="mission-body hidden">
+                <div class="mission-meta">
+                  <div><span>目標 Target</span><strong id="mission-target">—</strong></div>
+                  <div><span>狀態 State</span><strong id="mission-state" class="state-pill">—</strong></div>
+                </div>
+                <div class="mission-layout">
+                  <div class="steps-column">
+                    <div id="mission-steps" class="steps"></div>
+                  </div>
+                  <div class="loop-visual">
+                    <h3 class="subhead">治理任務循環 / Governed Mission Loop</h3>
+                    <div class="loop-flow">
+                      <div class="loop-node cyan"><b>⌖</b><span>觀測<small>Observe</small></span></div><i>→</i>
+                      <div class="loop-node purple"><b>◉</b><span>天鑑<small>Intelligence</small></span></div><i>→</i>
+                      <div class="loop-node amber"><b>✺</b><span>天策<small>Reasoner</small></span></div><i>→</i>
+                      <div class="loop-node cyan"><b>∞</b><span>天衡<small>Loop</small></span></div><i class="loop-drop">↘</i>
+                      <div class="loop-node blue execute-node"><b>⚙</b><span>執行<small>Execute</small></span></div>
+                    </div>
+                    <div class="loop-return"><span>↖</span><i></i><span>Evidence feedback</span><i></i><span>↙</span></div>
+                    <div class="budget"><span>最大輪次 <b>8</b></span><span>執行預算 <b>3</b></span><span>最長 <b>300s</b></span></div>
+                  </div>
+                </div>
+              </div>
+            </section>
 
-          <section class="panel scope-panel" id="scope-panel">
-            <div class="panel-head">
-              <div><span class="kicker">AUTHORIZED TARGETS</span><h2>天域 Scope</h2></div>
-              <span class="notice">外部資產需明確授權</span>
-            </div>
-            <form id="scope-form" class="inline-form">
-              <input id="scope-input" placeholder="app.example.com / 10.0.0.0/24 / *.example.com" autocomplete="off">
-              <button class="primary small" type="submit">納入</button>
-            </form>
-            <div id="scope-list" class="scope-list"></div>
-          </section>
-        </div>
+            <section class="panel scope-panel" id="scope-panel">
+              <div class="panel-head compact-head">
+                <div class="panel-title cyan-title"><span class="head-icon">◎</span><h2>天域 <small>Scope</small></h2></div>
+                <span class="notice">外部資產需明確授權 ⓘ</span>
+              </div>
+              <form id="scope-form" class="inline-form">
+                <input id="scope-input" placeholder="app.example.com / CIDR / *.example.com" autocomplete="off">
+                <button class="primary small" type="submit">納入</button>
+              </form>
+              <div id="scope-list" class="scope-list"></div>
+            </section>
+          </div>
 
-        <div class="grid middle-grid">
-          <section class="panel" id="intel-panel">
-            <div class="panel-head accent-purple"><div><span class="kicker">OBSERVED FACTS</span><h2>天鑑所見</h2></div><span id="intel-count" class="counter">0</span></div>
-            <div id="intel-list" class="intel-list"><div class="muted">尚無可證實情報。</div></div>
-          </section>
+          <div class="grid middle-grid">
+            <section class="panel" id="intel-panel">
+              <div class="panel-head compact-head accent-purple">
+                <div class="panel-title"><span class="head-icon">◉</span><h2>天鑑所見</h2></div><span id="intel-count" class="counter">0</span>
+              </div>
+              <div id="intel-list" class="intel-list"><div class="muted">尚無可證實情報。</div></div>
+              <div class="panel-foot"><span>所知必有據</span><span>Evidence-backed facts</span></div>
+            </section>
 
-          <section class="panel" id="reason-panel">
-            <div class="panel-head accent-amber"><div><span class="kicker">EVIDENCE-BACKED DECISION</span><h2>天策所斷</h2></div></div>
-            <div id="reason-card" class="reason-card empty">
-              <span class="decision-action">NO DECISION</span>
-              <p>等待天鑑提供證據。</p>
-            </div>
-            <div class="decision-legend">
-              <span>CONTINUE</span><span>SKIP</span><span>REVIEW</span><span>COMPLETE</span><span>STOP</span>
-            </div>
-          </section>
+            <section class="panel" id="reason-panel">
+              <div class="panel-head compact-head accent-amber"><div class="panel-title"><span class="head-icon">✺</span><h2>天策所斷</h2></div></div>
+              <div class="reason-label">建議行動 / Recommended Action</div>
+              <div id="reason-card" class="reason-card empty"><span class="decision-action">NO DECISION</span><p>等待天鑑提供證據。</p></div>
+              <div class="reason-label secondary">其他行動選項 / Other Actions</div>
+              <div class="decision-legend"><span class="continue">CONTINUE</span><span>SKIP</span><span class="review">REVIEW</span><span class="complete">COMPLETE</span><span class="stop">STOP</span></div>
+            </section>
 
-          <section class="panel approval-panel" id="approval-panel">
-            <div class="panel-head accent-red"><div><span class="kicker">HUMAN AUTHORITY</span><h2>審批 / Approval Gate</h2></div></div>
-            <div id="approval-body" class="approval-body idle">
-              <div class="approval-icon">鎖</div>
-              <h3>目前無候旨步驟</h3>
-              <p>高風險驗證若需越過天律，必須由人明示批准。</p>
-              <button class="danger" id="approve-btn" disabled>批准續行</button>
-              <button class="ghost" id="evidence-btn" disabled>查看證據</button>
-            </div>
-          </section>
-        </div>
+            <section class="panel approval-panel" id="approval-panel">
+              <div class="panel-head compact-head accent-red"><div class="panel-title"><span class="head-icon">♙</span><h2>審批 <small>/ Approval Gate</small></h2></div></div>
+              <div id="approval-body" class="approval-body idle">
+                <div class="approval-icon">鎖</div><h3>目前無候旨步驟</h3>
+                <p>高風險驗證若需越過天律，必須由人明示批准。</p>
+                <button class="danger" id="approve-btn" disabled>✓ 批准續行</button>
+                <button class="ghost" id="evidence-btn" disabled>◉ 查看證據</button>
+              </div>
+              <div class="approval-foot">▣ 此操作需要具備審批權限的人員確認</div>
+            </section>
+          </div>
 
-        <div class="grid bottom-grid">
-          <section class="panel" id="chronicle-panel">
-            <div class="panel-head"><div><span class="kicker">MISSION HISTORY</span><h2>天冊 Chronicle</h2></div></div>
-            <div id="chronicle-list" class="timeline"><div class="muted">尚無記錄。</div></div>
-          </section>
+          <div class="grid bottom-grid">
+            <section class="panel" id="chronicle-panel">
+              <div class="panel-head compact-head accent-gold"><div class="panel-title"><span class="head-icon">▤</span><h2>天冊 <small>Chronicle</small></h2></div></div>
+              <div id="chronicle-list" class="timeline"><div class="muted">尚無記錄。</div></div>
+            </section>
 
-          <section class="panel graph-panel">
-            <div class="panel-head"><div><span class="kicker">PROVENANCE</span><h2>Evidence Graph</h2></div><span id="graph-count" class="counter">0</span></div>
-            <div id="graph-canvas" class="graph-canvas">
-              <svg viewBox="0 0 760 260" role="img" aria-label="Evidence graph">
-                <defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z"></path></marker></defs>
-                <g class="edges">
-                  <path d="M100 130 C170 60, 235 60, 300 110"></path>
-                  <path d="M100 130 C175 185, 235 195, 300 150"></path>
-                  <path d="M350 130 C430 75, 485 75, 545 120"></path>
-                  <path d="M595 130 C650 130, 675 130, 705 130"></path>
-                  <path class="dash" d="M690 175 C520 245, 250 245, 110 175"></path>
-                </g>
-                <g class="nodes">
-                  <g transform="translate(75 130)"><circle r="36" class="blue"></circle><text y="5">命</text><text y="62">Mission</text></g>
-                  <g transform="translate(325 130)"><circle r="36" class="green"></circle><text y="5">證</text><text y="62">Evidence</text></g>
-                  <g transform="translate(570 130)"><circle r="36" class="purple"></circle><text y="5">鑑</text><text y="62">Intelligence</text></g>
-                  <g transform="translate(710 130)"><circle r="36" class="amber"></circle><text y="5">策</text><text y="62">Reasoning</text></g>
-                </g>
-              </svg>
-              <div id="graph-summary" class="graph-summary">等待任務資料。</div>
-            </div>
-          </section>
-        </div>
-      </section>
-    </main>
+            <section class="panel graph-panel">
+              <div class="panel-head compact-head"><div class="panel-title"><span class="head-icon">⌘</span><h2>Evidence Graph</h2></div><div class="graph-tools"><span id="graph-count" class="counter">0</span><button type="button">⌕</button><button type="button">⛶</button></div></div>
+              <div id="graph-canvas" class="graph-canvas">
+                <svg viewBox="0 0 900 260" role="img" aria-label="Evidence graph">
+                  <defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z"></path></marker></defs>
+                  <g class="edges">
+                    <path d="M115 130 C170 90, 195 80, 250 105"></path>
+                    <path d="M300 112 C350 72, 395 72, 440 108"></path>
+                    <path d="M500 130 C555 92, 595 92, 645 122"></path>
+                    <path d="M705 130 C750 130, 785 130, 820 130"></path>
+                    <path class="dash" d="M820 175 C650 235, 340 245, 120 178"></path>
+                    <path class="dash" d="M455 175 C390 215, 310 210, 270 165"></path>
+                  </g>
+                  <g class="nodes">
+                    <g transform="translate(90 130)"><circle r="37" class="blue"></circle><text y="6">⚑</text><text y="64">Mission</text></g>
+                    <g transform="translate(275 130)"><circle r="37" class="green"></circle><text y="6">⌖</text><text y="64">Observation</text></g>
+                    <g transform="translate(470 130)"><circle r="37" class="violet"></circle><text y="6">▣</text><text y="64">Evidence</text></g>
+                    <g transform="translate(675 130)"><circle r="37" class="purple"></circle><text y="6">◉</text><text y="64">Intelligence</text></g>
+                    <g transform="translate(840 130)"><circle r="37" class="amber"></circle><text y="6">✺</text><text y="64">Reasoning</text></g>
+                  </g>
+                </svg>
+                <div id="graph-summary" class="graph-summary">等待任務資料。</div>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
   </div>
 
   <dialog id="mission-dialog">
