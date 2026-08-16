@@ -2,30 +2,34 @@
 
 > **雲上有宮，宮中有門。門非為人而開，乃為意志而啟。**
 
-**TONMEN** is the autonomous security-agent runtime by **Top-Men AI**.
+**TONMEN** is the governed autonomous security-agent runtime by **Top-Men AI**.
 
-TONMEN now separates **planning** from **execution**: intent is turned into a visible mission plan only after target scope is accepted. The planner cannot bypass policy, cannot issue approvals, and does not execute tools while planning.
+TONMEN turns authorized intent into a visible mission plan, executes only autonomous discovery steps inside scope, records evidence and observations, and stops at approval boundaries before higher-risk validation.
 
-> **谋定而后动，知止而有得。**
+> **人予其意，宮成其事；事有所止，止於天律。**
 
-## Command milestone
+## Mission Coordinator
 
 ```text
 Intent
   ↓
-天機 Mission Planner   ← dry-run planning only
+天機 Mission Planner
   ↓
 天域 Scope
   ↓
 天律 Policy
   ↓
-Mission Steps
-  ├─ Nmap    [discovery]
-  ├─ HTTPx   [discovery]
-  └─ Nuclei  [waiting approval]
-  ↓
-Observation / Evidence Graph
+天命 Mission Coordinator
+  ├─ Nmap    → execute → evidence → observation
+  ├─ HTTPx   → execute → evidence → observation
+  └─ Nuclei  → WAITING APPROVAL
+                  ↓ human grant only
+               resume
+                  ↓
+              execute safely
 ```
+
+The plan remains immutable. Runtime state lives in a separate `MissionRun`, so execution can pause at an approval boundary and resume without repeating completed discovery steps.
 
 ### CLI
 
@@ -33,23 +37,24 @@ Observation / Evidence Graph
 # governed runtime status
 tonmen status
 
-# plan only; default scope is localhost
+# dry-run only
 tonmen plan localhost
+
+# execute autonomous in-scope discovery; stops before validation
+tonmen run localhost
 ```
 
-Planning an out-of-scope target is denied. `plan` does not invoke Nmap, HTTPx or Nuclei and does not write an execution audit event.
+The default target scope remains localhost-only. External targets are denied unless they are explicitly configured into the authorized scope.
 
 ### Current safety invariants
 
-- External targets remain denied by default.
 - No arbitrary shell API exists.
-- Execution uses adapter argv with `shell=False`.
+- Adapter execution always uses structured argv with `shell=False`.
+- External targets are deny-by-default.
+- Unknown tool parameters are rejected.
 - Validation/intrusive actions require a bound, single-use approval grant.
-- MCP cannot self-approve.
-- Planner only consumes capabilities already governed by Sentinel.
+- Mission Coordinator never issues its own approval.
+- Completed discovery steps are not replayed when a paused mission resumes.
+- Every successful step is connected to evidence and an observation in the provenance graph.
 
-> **器随心转，术因势生；然无律之器，不入天宮。**
-
-## Next
-
-Next comes the **Mission Coordinator**: it will execute only autonomous discovery steps inside scope, pause at approval boundaries, convert results into observations, and attach evidence to the provenance graph. No validation step will cross its approval gate automatically.
+> **谋而后行，行而有据；力有所界，智有所止。**
