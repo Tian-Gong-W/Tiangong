@@ -29,13 +29,17 @@ class MissionPlanner:
         if self.runtime.scope is None or not self.runtime.scope.is_allowed(target):
             raise MissionPlanningDenied("target is outside the authorized scope")
 
+        # Web missions start with a bounded TCP reachability check. Service-version
+        # probing is deliberately disabled here because -sV can dominate runtime on
+        # CDN/WAF front doors. HTTPx is the primary web metadata observer; operators
+        # can still request service detection through the Nmap adapter explicitly.
         defaults = {
-            "nmap": {"ports": "80,443", "service_detection": True},
+            "nmap": {"ports": "80,443", "service_detection": False},
             "httpx": {"follow_redirects": False, "timeout": 10},
             "nuclei": {"severity": ("medium", "high", "critical"), "rate_limit": 10, "timeout": 10},
         }
         rationales = {
-            "nmap": "Establish a minimal network/service view on common web ports.",
+            "nmap": "Establish a minimal TCP reachability view on common web ports without version probing.",
             "httpx": "Collect HTTP status, title and technology metadata.",
             "nuclei": "Validate higher-confidence web findings only after explicit approval.",
         }

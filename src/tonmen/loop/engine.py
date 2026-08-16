@@ -61,7 +61,11 @@ class MissionLoop:
         from tonmen.missions import StepExecutionState
 
         for planned, execution in zip(plan.steps, run.steps, strict=True):
-            if execution.state in {StepExecutionState.SUCCEEDED, StepExecutionState.SKIPPED}:
+            if execution.state in {
+                StepExecutionState.SUCCEEDED,
+                StepExecutionState.DEGRADED,
+                StepExecutionState.SKIPPED,
+            }:
                 continue
             if planned.requires_approval and not approval_tokens.get(planned.id):
                 return False
