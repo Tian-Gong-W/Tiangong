@@ -6,8 +6,9 @@ from datetime import datetime, timezone
 from typing import Callable
 from uuid import uuid4
 
+from tonmen.audit import AuditLog
 from tonmen.evidence import EvidenceRecord
-from tonmen.policy import Decision, PolicyDecision, PolicyEngine
+from tonmen.policy import ApprovalStore, Decision, PolicyDecision, PolicyEngine
 from tonmen.tools import ToolRegistry, ToolRequest, ToolResult
 
 
@@ -23,7 +24,7 @@ class ExecutionOutcome:
 
 
 class ToolExecutor:
-    """Executes only adapter-produced argv with shell=False."""
+    """Executes adapter argv with shell=False after scope, risk and approval checks."""
 
     def __init__(
         self,
@@ -31,20 +32,41 @@ class ToolExecutor:
         policy: PolicyEngine,
         timeout_seconds: int = 120,
         runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+        approvals: ApprovalStore | None = None,
+        audit: AuditLog | None = None,
     ) -> None:
         self.registry = registry
         self.policy = policy
         self.timeout_seconds = timeout_seconds
         self._runner = runner
+        self.approvals = approvals
+        self.audit = audit
 
-    def execute(self, request: ToolRequest, *, approved: bool = False) -> ExecutionOutcome:
+    def _audit(self, request: ToolRequest, decision: str, message: str, evidence_id: str | None = None) -> None:
+        if self.audit is not None:
+            self.audit.append(
+                action="tool.execute",
+                tool=request.tool,
+                target=request.target,
+                decision=decision,
+                message=message,
+                evidence_id=evidence_id,
+            )
+
+    def execute(self, request: ToolRequest, *, approval_token: str | None = None) -> ExecutionOutcome:
         adapter = self.registry.get(request.tool)
         adapter.validate(request)
         decision = self.policy.evaluate(adapter.spec, request)
         if decision.decision is Decision.DENY:
+            self._audit(request, "deny", decision.reason)
             raise ExecutionDenied(decision.reason)
-        if decision.decision is Decision.REQUIRE_APPROVAL and not approved:
-            raise ExecutionDenied(decision.reason)
+        if decision.decision is Decision.REQUIRE_APPROVAL:
+            grant = None
+            if approval_token and self.approvals is not None:
+                grant = self.approvals.consume(approval_token, request)
+            if grant is None:
+                self._audit(request, "deny", "higher-risk action requires approval grant")
+                raise ExecutionDenied("higher-risk action requires approval grant")
 
         argv = tuple(str(value) for value in adapter.build_argv(request))
         if not argv or any(not value for value in argv):
@@ -79,4 +101,5 @@ class ToolExecutor:
             summary="execution completed" if success else f"execution exited with code {completed.returncode}",
             evidence={"id": evidence.id, "exit_code": evidence.exit_code},
         )
+        self._audit(request, "allow" if success else "error", result.summary, evidence.id)
         return ExecutionOutcome(result=result, evidence=evidence, policy=decision)
