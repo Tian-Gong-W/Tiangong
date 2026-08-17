@@ -25,15 +25,18 @@ from tonmen.tools.base import RiskLevel
 
 _LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 _APP_ROUTES = {"/", "/missions", "/scope", "/guard", "/tools", "/intelligence", "/reasoner", "/loop", "/chronicle", "/approval", "/settings"}
+_TERMINAL_MISSION_STATES = {MissionRunState.SUCCEEDED, MissionRunState.FAILED, MissionRunState.DENIED}
 _STATIC_TYPES = {
     "app.css": "text/css; charset=utf-8",
     "viewport.css": "text/css; charset=utf-8",
     "module-pages.css": "text/css; charset=utf-8",
     "events.css": "text/css; charset=utf-8",
+    "history-delete.css": "text/css; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",
     "deck.js": "text/javascript; charset=utf-8",
     "module-pages.js": "text/javascript; charset=utf-8",
     "events.js": "text/javascript; charset=utf-8",
+    "history-delete.js": "text/javascript; charset=utf-8",
 }
 
 
@@ -205,6 +208,48 @@ class DashboardState:
             plan, run = self.chronicle.load(run_id)
             return mission_payload(plan, run)
 
+    def delete_mission(self, run_id: str) -> dict[str, Any]:
+        with self._lock:
+            _, run = self.chronicle.load(run_id)
+            if run.state not in _TERMINAL_MISSION_STATES:
+                raise ValueError("only completed, failed or denied missions may be deleted")
+            if not self.chronicle.delete(run.id):
+                raise FileNotFoundError(run.id)
+            if self.runtime.audit is not None:
+                self.runtime.audit.append(
+                    action="mission.delete",
+                    tool="chronicle",
+                    target=run.target,
+                    decision="delete",
+                    message=f"deleted terminal mission {run.id} ({run.state.value})",
+                )
+            self.events.publish(
+                "mission.deleted",
+                mission_id=run.id,
+                target=run.target,
+                state=run.state.value,
+            )
+            return {"deleted": run.id, "remaining": len(self.chronicle.list())}
+
+    def cleanup_terminal_missions(self) -> dict[str, Any]:
+        with self._lock:
+            deleted: list[str] = []
+            for entry in self.chronicle.list():
+                if entry.state not in _TERMINAL_MISSION_STATES:
+                    continue
+                if self.chronicle.delete(entry.run_id):
+                    deleted.append(entry.run_id)
+                    if self.runtime.audit is not None:
+                        self.runtime.audit.append(
+                            action="mission.delete",
+                            tool="chronicle",
+                            target=entry.target,
+                            decision="delete",
+                            message=f"deleted terminal mission {entry.run_id} ({entry.state.value}) during cleanup",
+                        )
+            self.events.publish("missions.cleaned", deleted=len(deleted))
+            return {"deleted": deleted, "count": len(deleted), "remaining": len(self.chronicle.list())}
+
     def tools(self) -> dict[str, Any]:
         with self._lock:
             checks = {check.name: asdict(check) for check in run_doctor(self.config).checks}
@@ -359,8 +404,8 @@ class TonmenDashboardHandler(BaseHTTPRequestHandler):
                 name = unquote(path.removeprefix("/assets/")); content_type = _STATIC_TYPES.get(name)
                 if content_type is None: self._error(404, "asset not found"); return
                 payload = self._asset(name)
-                if name == "app.js": payload += b"\n" + self._asset("deck.js") + b"\n" + self._asset("module-pages.js") + b"\n" + self._asset("events.js")
-                if name == "viewport.css": payload += b"\n" + self._asset("module-pages.css") + b"\n" + self._asset("events.css")
+                if name == "app.js": payload += b"\n" + self._asset("deck.js") + b"\n" + self._asset("module-pages.js") + b"\n" + self._asset("events.js") + b"\n" + self._asset("history-delete.js")
+                if name == "viewport.css": payload += b"\n" + self._asset("module-pages.css") + b"\n" + self._asset("events.css") + b"\n" + self._asset("history-delete.css")
                 self._send_bytes(200, content_type, payload, cache="no-store"); return
             if path == "/api/events":
                 query = parse_qs(parsed.query)
@@ -396,6 +441,10 @@ class TonmenDashboardHandler(BaseHTTPRequestHandler):
                 if not target: raise ValueError("target is required")
                 policy = MissionLoopPolicy(max_iterations=int(data.get("max_iterations", 8)), max_executions=int(data.get("max_executions", 3)), max_repeat_decisions=int(data.get("max_repeat_decisions", 2)), max_duration_seconds=int(data.get("max_duration_seconds", 300)))
                 self._json(200, self.server.state.start_mission(target, policy)); return
+            if path == "/api/missions/cleanup":
+                self._json(200, self.server.state.cleanup_terminal_missions()); return
+            if path.startswith("/api/missions/") and path.endswith("/delete"):
+                self._json(200, self.server.state.delete_mission(unquote(path.split("/")[3]))); return
             if path.startswith("/api/missions/") and path.endswith("/approve"):
                 self._json(200, self.server.state.approve_mission(unquote(path.split("/")[3]))); return
             if path.startswith("/api/missions/") and path.endswith("/resume"):
