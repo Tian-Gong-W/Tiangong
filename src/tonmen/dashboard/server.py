@@ -5,10 +5,10 @@ import secrets
 import threading
 import webbrowser
 from dataclasses import asdict
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from typing import Any
-from urllib.parse import unquote, urlparse
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, unquote, urlparse
 
 from tonmen import __version__
 from tonmen.agents import MissionPlanner, MissionPlanningDenied, MissionRunDenied
@@ -16,6 +16,7 @@ from tonmen.chronicle import ChronicleStore
 from tonmen.core.config import DEFAULT_ALLOWED_TARGETS, TonmenConfig
 from tonmen.core.runtime import TonmenRuntime
 from tonmen.doctor import run_doctor
+from tonmen.events import EventBus
 from tonmen.loop import MissionLoop, MissionLoopPolicy
 from tonmen.missions import MissionRunState, StepExecutionState
 from tonmen.policy import validate_scope_rule
@@ -23,26 +24,16 @@ from tonmen.reasoning import MissionReasoner
 from tonmen.tools.base import RiskLevel
 
 _LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
-_APP_ROUTES = {
-    "/",
-    "/missions",
-    "/scope",
-    "/guard",
-    "/tools",
-    "/intelligence",
-    "/reasoner",
-    "/loop",
-    "/chronicle",
-    "/approval",
-    "/settings",
-}
+_APP_ROUTES = {"/", "/missions", "/scope", "/guard", "/tools", "/intelligence", "/reasoner", "/loop", "/chronicle", "/approval", "/settings"}
 _STATIC_TYPES = {
     "app.css": "text/css; charset=utf-8",
     "viewport.css": "text/css; charset=utf-8",
     "module-pages.css": "text/css; charset=utf-8",
+    "events.css": "text/css; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",
     "deck.js": "text/javascript; charset=utf-8",
     "module-pages.js": "text/javascript; charset=utf-8",
+    "events.js": "text/javascript; charset=utf-8",
 }
 
 
@@ -70,9 +61,6 @@ def _node_payload(node) -> dict[str, Any]:
 
 def mission_payload(plan, run) -> dict[str, Any]:
     planned = {step.id: step for step in plan.steps}
-    reasoning_nodes = [_node_payload(node) for node in run.graph.nodes.values() if node.kind.startswith("reasoning.")]
-    intelligence_nodes = [_node_payload(node) for node in run.graph.nodes.values() if node.kind.startswith("intelligence.")]
-    loop_nodes = [_node_payload(node) for node in run.graph.nodes.values() if node.kind.startswith("loop.")]
     return {
         "id": run.id,
         "plan_id": plan.id,
@@ -98,57 +86,49 @@ def mission_payload(plan, run) -> dict[str, Any]:
             for execution in run.steps
         ],
         "observations": [
-            {
-                "id": item.id,
-                "source": item.source,
-                "target": item.target,
-                "summary": item.summary,
-                "evidence_id": item.evidence_id,
-                "captured_at": _iso(item.captured_at),
-                "metadata": dict(item.metadata),
-            }
+            {"id": item.id, "source": item.source, "target": item.target, "summary": item.summary,
+             "evidence_id": item.evidence_id, "captured_at": _iso(item.captured_at), "metadata": dict(item.metadata)}
             for item in run.observations
         ],
         "evidence": [
-            {
-                "id": item.id,
-                "tool": item.tool,
-                "target": item.target,
-                "argv": list(item.argv),
-                "exit_code": item.exit_code,
-                "stdout": item.stdout,
-                "stderr": item.stderr,
-                "started_at": _iso(item.started_at),
-                "finished_at": _iso(item.finished_at),
-            }
+            {"id": item.id, "tool": item.tool, "target": item.target, "argv": list(item.argv),
+             "exit_code": item.exit_code, "stdout": item.stdout, "stderr": item.stderr,
+             "started_at": _iso(item.started_at), "finished_at": _iso(item.finished_at)}
             for item in run.evidence
         ],
-        "intelligence": intelligence_nodes,
-        "reasoning": reasoning_nodes,
-        "loop": loop_nodes,
+        "intelligence": [_node_payload(node) for node in run.graph.nodes.values() if node.kind.startswith("intelligence.")],
+        "reasoning": [_node_payload(node) for node in run.graph.nodes.values() if node.kind.startswith("reasoning.")],
+        "loop": [_node_payload(node) for node in run.graph.nodes.values() if node.kind.startswith("loop.")],
         "graph": {
             "nodes": [_node_payload(node) for node in run.graph.nodes.values()],
-            "edges": [
-                {"source": edge.source, "relation": edge.relation, "target": edge.target}
-                for edge in run.graph.edges
-            ],
+            "edges": [{"source": edge.source, "relation": edge.relation, "target": edge.target} for edge in run.graph.edges],
         },
     }
 
 
 class DashboardState:
-    """Thread-safe facade over the existing governed TONMEN runtime."""
+    """Thread-safe facade over the governed runtime plus a cursor event stream."""
 
     def __init__(self, config: TonmenConfig) -> None:
         self._lock = threading.RLock()
         self.config = config
-        self.runtime = TonmenRuntime.sentinel(config)
+        self.events = EventBus()
+        self.runtime = TonmenRuntime.sentinel(config, events=self.events)
         self.chronicle = ChronicleStore(config.workspace)
 
     def _reload_runtime(self, config: TonmenConfig) -> None:
         self.config = config
-        self.runtime = TonmenRuntime.sentinel(config)
+        self.runtime = TonmenRuntime.sentinel(config, events=self.events)
         self.chronicle = ChronicleStore(config.workspace)
+
+    def _checkpoint(self, plan, run) -> None:
+        with self._lock:
+            self.chronicle.save(plan, run)
+
+    def event_stream(self, cursor: int = 0, timeout: float = 20.0, limit: int = 200) -> dict[str, Any]:
+        events = self.events.wait_after(cursor, timeout=timeout, limit=limit)
+        latest = events[-1].cursor if events else max(int(cursor), self.events.cursor)
+        return {"cursor": latest, "events": [event.as_dict() for event in events]}
 
     def status(self) -> dict[str, Any]:
         with self._lock:
@@ -161,52 +141,40 @@ class DashboardState:
                     {"id": "registry", "zh": "天工", "en": "Registry", "state": f"{len(self.runtime.registry)} Tools Ready", "tone": "blue"},
                     {"id": "intel", "zh": "天鑑", "en": "Intelligence", "state": "Active", "tone": "purple"},
                     {"id": "reasoner", "zh": "天策", "en": "Reasoner", "state": "Ready", "tone": "amber"},
-                    {"id": "loop", "zh": "天衡", "en": "Mission Loop", "state": "Bounded", "tone": "cyan"},
+                    {"id": "loop", "zh": "天衡", "en": "Mission Loop", "state": "Event-driven", "tone": "cyan"},
                 ],
                 "doctor": {"ready": report.ready, "checks": [asdict(check) for check in report.checks]},
                 "workspace": str(self.config.workspace),
                 "config_path": str(self.config.config_path) if self.config.config_path else None,
+                "event_cursor": self.events.cursor,
             }
 
     def scope(self) -> dict[str, Any]:
         with self._lock:
-            return {
-                "allowed": [
-                    {"rule": rule, "default": rule in DEFAULT_ALLOWED_TARGETS}
-                    for rule in self.config.allowed_targets
-                ],
-                "denied": list(self.config.denied_targets),
-            }
+            return {"allowed": [{"rule": rule, "default": rule in DEFAULT_ALLOWED_TARGETS} for rule in self.config.allowed_targets],
+                    "denied": list(self.config.denied_targets)}
 
     def add_scope(self, raw_rule: str) -> dict[str, Any]:
         with self._lock:
             rule = validate_scope_rule(raw_rule)
             updated = self.config.with_allowed_target(rule)
-            updated.save()
-            self._reload_runtime(updated)
+            updated.save(); self._reload_runtime(updated)
+            self.events.publish("scope.updated", action="add", rule=rule)
             return self.scope()
 
     def remove_scope(self, raw_rule: str) -> dict[str, Any]:
         with self._lock:
             rule = validate_scope_rule(raw_rule)
             updated = self.config.without_allowed_target(rule)
-            updated.save()
-            self._reload_runtime(updated)
+            updated.save(); self._reload_runtime(updated)
+            self.events.publish("scope.updated", action="remove", rule=rule)
             return self.scope()
 
     def missions(self) -> list[dict[str, Any]]:
         with self._lock:
-            return [
-                {
-                    "id": entry.run_id,
-                    "plan_id": entry.plan_id,
-                    "target": entry.target,
-                    "state": entry.state.value,
-                    "started_at": _iso(entry.started_at),
-                    "finished_at": _iso(entry.finished_at),
-                }
-                for entry in self.chronicle.list()
-            ]
+            return [{"id": entry.run_id, "plan_id": entry.plan_id, "target": entry.target,
+                     "state": entry.state.value, "started_at": _iso(entry.started_at), "finished_at": _iso(entry.finished_at)}
+                    for entry in self.chronicle.list()]
 
     def mission(self, run_id: str) -> dict[str, Any]:
         with self._lock:
@@ -215,337 +183,200 @@ class DashboardState:
 
     def tools(self) -> dict[str, Any]:
         with self._lock:
-            report = run_doctor(self.config)
-            checks = {check.name: asdict(check) for check in report.checks}
-            tools: list[dict[str, Any]] = []
+            checks = {check.name: asdict(check) for check in run_doctor(self.config).checks}
+            tools = []
             for adapter in self.runtime.registry:
-                spec = adapter.spec
-                check = checks.get(spec.name)
-                tools.append(
-                    {
-                        "name": spec.name,
-                        "category": spec.category,
-                        "description": spec.description,
-                        "risk": int(spec.risk),
-                        "risk_name": spec.risk.name.lower(),
-                        "capabilities": list(spec.capabilities),
-                        "available": bool(check and check["ok"]),
-                        "doctor": check,
-                    }
-                )
+                spec = adapter.spec; check = checks.get(spec.name)
+                tools.append({"name": spec.name, "category": spec.category, "description": spec.description,
+                              "risk": int(spec.risk), "risk_name": spec.risk.name.lower(),
+                              "capabilities": list(spec.capabilities), "available": bool(check and check["ok"]),
+                              "doctor": check})
             return {"count": len(tools), "tools": tools}
 
     def audit(self, limit: int = 200) -> dict[str, Any]:
         with self._lock:
-            bounded = max(1, min(int(limit), 500))
-            path = self.config.workspace / "audit.jsonl"
-            if not path.exists():
-                return {"path": str(path), "events": []}
-            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()[-bounded:]
-            events: list[dict[str, Any]] = []
-            for line in lines:
-                try:
-                    item = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if isinstance(item, dict):
-                    events.append(item)
+            bounded = max(1, min(int(limit), 500)); path = self.config.workspace / "audit.jsonl"
+            if not path.exists(): return {"path": str(path), "events": []}
+            events = []
+            for line in path.read_text(encoding="utf-8", errors="replace").splitlines()[-bounded:]:
+                try: item = json.loads(line)
+                except json.JSONDecodeError: continue
+                if isinstance(item, dict): events.append(item)
             return {"path": str(path), "events": events}
 
     def guard(self) -> dict[str, Any]:
         with self._lock:
-            entries = self.chronicle.list()
-            waiting = sum(1 for item in entries if item.state is MissionRunState.WAITING_APPROVAL)
-            risk_levels = [
-                {"level": int(level), "name": level.name.lower()}
-                for level in RiskLevel
-            ]
+            waiting = sum(1 for item in self.chronicle.list() if item.state is MissionRunState.WAITING_APPROVAL)
             return {
-                "mode": "deny-by-default",
-                "scope": self.scope(),
-                "pending_approvals": waiting,
-                "risk_levels": risk_levels,
+                "mode": "deny-by-default", "scope": self.scope(), "pending_approvals": waiting,
+                "risk_levels": [{"level": int(level), "name": level.name.lower()} for level in RiskLevel],
                 "rules": [
                     {"name": "scope", "decision": "deny", "detail": "Targets outside authorized Scope are denied."},
                     {"name": "low-risk", "decision": "allow", "detail": "Passive/discovery work may run autonomously inside Scope."},
                     {"name": "validation", "decision": "approval", "detail": "Validation/intrusive actions require a bound single-use grant."},
                     {"name": "destructive", "decision": "deny", "detail": "Destructive actions remain disabled."},
-                ],
-                "audit": self.audit(100),
+                ], "audit": self.audit(100),
             }
 
     def settings(self) -> dict[str, Any]:
         with self._lock:
-            return {
-                "version": __version__,
-                "workspace": str(self.config.workspace),
-                "config_path": str(self.config.config_path) if self.config.config_path else None,
-                "bind_host": self.config.bind_host,
-                "bind_port": self.config.bind_port,
-                "command_timeout_seconds": self.config.command_timeout_seconds,
-                "allowed_targets": list(self.config.allowed_targets),
-                "denied_targets": list(self.config.denied_targets),
-                "allow_arbitrary_shell": self.config.allow_arbitrary_shell,
-                "console_loopback_only": True,
-            }
+            return {"version": __version__, "workspace": str(self.config.workspace),
+                    "config_path": str(self.config.config_path) if self.config.config_path else None,
+                    "bind_host": self.config.bind_host, "bind_port": self.config.bind_port,
+                    "command_timeout_seconds": self.config.command_timeout_seconds,
+                    "allowed_targets": list(self.config.allowed_targets), "denied_targets": list(self.config.denied_targets),
+                    "allow_arbitrary_shell": self.config.allow_arbitrary_shell, "console_loopback_only": True,
+                    "event_cursor": self.events.cursor}
 
     def start_mission(self, target: str, policy: MissionLoopPolicy | None = None) -> dict[str, Any]:
-        with self._lock:
-            plan = MissionPlanner(self.runtime).plan(target)
-            result = MissionLoop(self.runtime, policy or MissionLoopPolicy()).run(plan)
-            self.chronicle.save(plan, result.run)
-            payload = mission_payload(plan, result.run)
-            payload["stop_reason"] = result.stop_reason.value
-            return payload
+        plan = MissionPlanner(self.runtime).plan(target)
+        result = MissionLoop(self.runtime, policy or MissionLoopPolicy(), checkpoint=self._checkpoint).run(plan)
+        self._checkpoint(plan, result.run)
+        payload = mission_payload(plan, result.run); payload["stop_reason"] = result.stop_reason.value
+        return payload
 
     def resume_mission(self, run_id: str, policy: MissionLoopPolicy | None = None) -> dict[str, Any]:
         with self._lock:
             plan, run = self.chronicle.load(run_id)
-            if run.state is not MissionRunState.RUNNING:
-                raise ValueError("mission is not budget-stopped in a resumable running state")
-            result = MissionLoop(self.runtime, policy or MissionLoopPolicy()).resume(plan, run)
-            self.chronicle.save(plan, result.run)
-            payload = mission_payload(plan, result.run)
-            payload["stop_reason"] = result.stop_reason.value
-            return payload
+        if run.state is not MissionRunState.RUNNING:
+            raise ValueError("mission is not budget-stopped in a resumable running state")
+        result = MissionLoop(self.runtime, policy or MissionLoopPolicy(), checkpoint=self._checkpoint).resume(plan, run)
+        self._checkpoint(plan, result.run)
+        payload = mission_payload(plan, result.run); payload["stop_reason"] = result.stop_reason.value
+        return payload
 
     def approve_mission(self, run_id: str) -> dict[str, Any]:
         with self._lock:
             plan, run = self.chronicle.load(run_id)
-            if run.state is not MissionRunState.WAITING_APPROVAL:
-                raise ValueError("mission is not waiting for approval")
-            waiting = _waiting_step(plan, run)
-            if waiting is None:
-                raise ValueError("approval-gated step is missing")
-            if self.runtime.approvals is None:
-                raise ValueError("approval store is unavailable")
-            grant = self.runtime.approvals.issue(tool=waiting.tool, target=waiting.target)
-            result = MissionLoop(self.runtime).resume(
-                plan,
-                run,
-                approval_tokens={waiting.id: grant.token},
-            )
-            self.chronicle.save(plan, result.run)
-            payload = mission_payload(plan, result.run)
-            payload["stop_reason"] = result.stop_reason.value
-            return payload
+        if run.state is not MissionRunState.WAITING_APPROVAL: raise ValueError("mission is not waiting for approval")
+        waiting = _waiting_step(plan, run)
+        if waiting is None: raise ValueError("approval-gated step is missing")
+        if self.runtime.approvals is None: raise ValueError("approval store is unavailable")
+        grant = self.runtime.approvals.issue(tool=waiting.tool, target=waiting.target)
+        self.events.publish("approval.granted", mission_id=run.id, plan_id=plan.id, target=run.target,
+                            step_id=waiting.id, tool=waiting.tool, step_target=waiting.target)
+        result = MissionLoop(self.runtime, checkpoint=self._checkpoint).resume(
+            plan, run, approval_tokens={waiting.id: grant.token})
+        self._checkpoint(plan, result.run)
+        payload = mission_payload(plan, result.run); payload["stop_reason"] = result.stop_reason.value
+        return payload
 
     def reason(self, run_id: str) -> dict[str, Any]:
         with self._lock:
             plan, run = self.chronicle.load(run_id)
-            decision = MissionReasoner().decide(plan, run)
-            return {
-                "id": decision.id,
-                "action": decision.action.value,
-                "summary": decision.summary,
-                "basis_fact_ids": list(decision.basis_fact_ids),
-                "next_step_id": decision.next_step_id,
-                "requires_human": decision.requires_human,
-            }
+        decision = MissionReasoner().decide(plan, run)
+        return {"id": decision.id, "action": decision.action.value, "summary": decision.summary,
+                "basis_fact_ids": list(decision.basis_fact_ids), "next_step_id": decision.next_step_id,
+                "requires_human": decision.requires_human}
 
 
 class TonmenDashboardServer(ThreadingHTTPServer):
     daemon_threads = True
-
     def __init__(self, address, state: DashboardState):
-        self.state = state
-        self.csrf_token = secrets.token_urlsafe(32)
+        self.state = state; self.csrf_token = secrets.token_urlsafe(32)
         super().__init__(address, TonmenDashboardHandler)
 
 
 class TonmenDashboardHandler(BaseHTTPRequestHandler):
     server: TonmenDashboardServer
-
     def log_message(self, fmt: str, *args) -> None:
-        if args and str(args[1]).startswith(("4", "5")):
-            super().log_message(fmt, *args)
+        if args and str(args[1]).startswith(("4", "5")): super().log_message(fmt, *args)
 
     def _security_headers(self) -> None:
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("X-Content-Type-Options", "nosniff"); self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header(
-            "Content-Security-Policy",
-            "default-src 'self'; script-src 'self'; style-src 'self'; "
-            "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; "
-            "base-uri 'none'; form-action 'self'",
-        )
+        self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 
     def _send_bytes(self, status: int, content_type: str, payload: bytes, *, cache: str = "no-store") -> None:
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(payload)))
-        self.send_header("Cache-Control", cache)
-        self._security_headers()
-        self.end_headers()
-        self.wfile.write(payload)
+        self.send_response(status); self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(payload))); self.send_header("Cache-Control", cache)
+        self._security_headers(); self.end_headers(); self.wfile.write(payload)
 
     def _json(self, status: int, payload: Any) -> None:
-        self._send_bytes(
-            status,
-            "application/json; charset=utf-8",
-            json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        )
-
-    def _error(self, status: int, message: str) -> None:
-        self._json(status, {"error": message})
+        self._send_bytes(status, "application/json; charset=utf-8", json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+    def _error(self, status: int, message: str) -> None: self._json(status, {"error": message})
 
     def _read_json(self) -> dict[str, Any]:
-        try:
-            length = int(self.headers.get("Content-Length", "0"))
-        except ValueError as exc:
-            raise ValueError("invalid content length") from exc
-        if length > 65536:
-            raise ValueError("request body is too large")
+        try: length = int(self.headers.get("Content-Length", "0"))
+        except ValueError as exc: raise ValueError("invalid content length") from exc
+        if length > 65536: raise ValueError("request body is too large")
         raw = self.rfile.read(length)
-        if not raw:
-            return {}
+        if not raw: return {}
         data = json.loads(raw.decode("utf-8"))
-        if not isinstance(data, dict):
-            raise ValueError("JSON body must be an object")
+        if not isinstance(data, dict): raise ValueError("JSON body must be an object")
         return data
 
     def _csrf_ok(self) -> bool:
-        if self.headers.get("X-TONMEN-CSRF") != self.server.csrf_token:
-            return False
-        origin = self.headers.get("Origin")
-        host = self.headers.get("Host", "")
+        if self.headers.get("X-TONMEN-CSRF") != self.server.csrf_token: return False
+        origin, host = self.headers.get("Origin"), self.headers.get("Host", "")
         return not origin or urlparse(origin).netloc == host
 
-    def _asset(self, name: str) -> bytes:
-        return resources.files("tonmen.dashboard.static").joinpath(name).read_bytes()
-
-    def _index(self) -> bytes:
-        return (
-            self._asset("index.html")
-            .decode("utf-8")
-            .replace("__TONMEN_CSRF__", self.server.csrf_token)
-            .encode("utf-8")
-        )
+    def _asset(self, name: str) -> bytes: return resources.files("tonmen.dashboard.static").joinpath(name).read_bytes()
+    def _index(self) -> bytes: return self._asset("index.html").decode("utf-8").replace("__TONMEN_CSRF__", self.server.csrf_token).encode("utf-8")
 
     def do_GET(self) -> None:
-        parsed = urlparse(self.path)
-        path = parsed.path.rstrip("/") or "/"
+        parsed = urlparse(self.path); path = parsed.path.rstrip("/") or "/"
         try:
-            if path in _APP_ROUTES:
-                self._send_bytes(200, "text/html; charset=utf-8", self._index())
-                return
+            if path in _APP_ROUTES: self._send_bytes(200, "text/html; charset=utf-8", self._index()); return
             if path.startswith("/assets/"):
-                name = unquote(path.removeprefix("/assets/"))
-                content_type = _STATIC_TYPES.get(name)
-                if content_type is None:
-                    self._error(404, "asset not found")
-                    return
+                name = unquote(path.removeprefix("/assets/")); content_type = _STATIC_TYPES.get(name)
+                if content_type is None: self._error(404, "asset not found"); return
                 payload = self._asset(name)
-                if name == "app.js":
-                    payload += b"\n" + self._asset("deck.js") + b"\n" + self._asset("module-pages.js")
-                if name == "viewport.css":
-                    payload += b"\n" + self._asset("module-pages.css")
-                self._send_bytes(200, content_type, payload, cache="public, max-age=300")
-                return
-            if path == "/api/status":
-                self._json(200, self.server.state.status())
-                return
-            if path == "/api/scope":
-                self._json(200, self.server.state.scope())
-                return
-            if path == "/api/tools":
-                self._json(200, self.server.state.tools())
-                return
-            if path == "/api/guard":
-                self._json(200, self.server.state.guard())
-                return
+                if name == "app.js": payload += b"\n" + self._asset("deck.js") + b"\n" + self._asset("module-pages.js") + b"\n" + self._asset("events.js")
+                if name == "viewport.css": payload += b"\n" + self._asset("module-pages.css") + b"\n" + self._asset("events.css")
+                self._send_bytes(200, content_type, payload, cache="no-store"); return
+            if path == "/api/events":
+                query = parse_qs(parsed.query)
+                cursor = int(query.get("cursor", ["0"])[0]); timeout = float(query.get("timeout", ["20"])[0]); limit = int(query.get("limit", ["200"])[0])
+                self._json(200, self.server.state.event_stream(cursor, timeout, limit)); return
+            if path == "/api/status": self._json(200, self.server.state.status()); return
+            if path == "/api/scope": self._json(200, self.server.state.scope()); return
+            if path == "/api/tools": self._json(200, self.server.state.tools()); return
+            if path == "/api/guard": self._json(200, self.server.state.guard()); return
             if path == "/api/audit":
-                limit = int(urlparse(self.path).query.split("limit=", 1)[1].split("&", 1)[0]) if "limit=" in urlparse(self.path).query else 200
-                self._json(200, self.server.state.audit(limit))
-                return
-            if path == "/api/settings":
-                self._json(200, self.server.state.settings())
-                return
-            if path == "/api/missions":
-                self._json(200, {"missions": self.server.state.missions()})
-                return
+                query = parse_qs(parsed.query); limit = int(query.get("limit", ["200"])[0])
+                self._json(200, self.server.state.audit(limit)); return
+            if path == "/api/settings": self._json(200, self.server.state.settings()); return
+            if path == "/api/missions": self._json(200, {"missions": self.server.state.missions()}); return
             if path.startswith("/api/missions/") and path.endswith("/reason"):
-                self._json(200, self.server.state.reason(unquote(path.split("/")[3])))
-                return
+                self._json(200, self.server.state.reason(unquote(path.split("/")[3]))); return
             if path.startswith("/api/missions/"):
-                self._json(200, self.server.state.mission(unquote(path.split("/")[3])))
-                return
+                self._json(200, self.server.state.mission(unquote(path.split("/")[3]))); return
             self._error(404, "not found")
-        except FileNotFoundError:
-            self._error(404, "mission not found")
-        except (ValueError, OSError, json.JSONDecodeError) as exc:
-            self._error(400, str(exc))
-        except Exception as exc:
-            self._error(500, f"dashboard error: {exc}")
+        except FileNotFoundError: self._error(404, "mission not found")
+        except (ValueError, OSError, json.JSONDecodeError) as exc: self._error(400, str(exc))
+        except Exception as exc: self._error(500, f"dashboard error: {exc}")
 
     def do_POST(self) -> None:
-        if not self._csrf_ok():
-            self._error(403, "invalid local CSRF token or origin")
-            return
+        if not self._csrf_ok(): self._error(403, "invalid local CSRF token or origin"); return
         path = urlparse(self.path).path
         try:
             data = self._read_json()
-            if path == "/api/scope/add":
-                self._json(200, self.server.state.add_scope(str(data.get("target", ""))))
-                return
-            if path == "/api/scope/remove":
-                self._json(200, self.server.state.remove_scope(str(data.get("target", ""))))
-                return
+            if path == "/api/scope/add": self._json(200, self.server.state.add_scope(str(data.get("target", "")))); return
+            if path == "/api/scope/remove": self._json(200, self.server.state.remove_scope(str(data.get("target", "")))); return
             if path == "/api/missions/start":
                 target = str(data.get("target", "")).strip()
-                if not target:
-                    raise ValueError("target is required")
-                policy = MissionLoopPolicy(
-                    max_iterations=int(data.get("max_iterations", 8)),
-                    max_executions=int(data.get("max_executions", 3)),
-                    max_repeat_decisions=int(data.get("max_repeat_decisions", 2)),
-                    max_duration_seconds=int(data.get("max_duration_seconds", 300)),
-                )
-                self._json(200, self.server.state.start_mission(target, policy))
-                return
+                if not target: raise ValueError("target is required")
+                policy = MissionLoopPolicy(max_iterations=int(data.get("max_iterations", 8)), max_executions=int(data.get("max_executions", 3)), max_repeat_decisions=int(data.get("max_repeat_decisions", 2)), max_duration_seconds=int(data.get("max_duration_seconds", 300)))
+                self._json(200, self.server.state.start_mission(target, policy)); return
             if path.startswith("/api/missions/") and path.endswith("/approve"):
-                self._json(200, self.server.state.approve_mission(unquote(path.split("/")[3])))
-                return
+                self._json(200, self.server.state.approve_mission(unquote(path.split("/")[3]))); return
             if path.startswith("/api/missions/") and path.endswith("/resume"):
-                self._json(200, self.server.state.resume_mission(unquote(path.split("/")[3])))
-                return
+                self._json(200, self.server.state.resume_mission(unquote(path.split("/")[3]))); return
             self._error(404, "not found")
-        except (
-            MissionPlanningDenied,
-            MissionRunDenied,
-            ValueError,
-            OSError,
-            FileNotFoundError,
-            json.JSONDecodeError,
-        ) as exc:
-            self._error(400, str(exc))
-        except Exception as exc:
-            self._error(500, f"dashboard error: {exc}")
+        except (MissionPlanningDenied, MissionRunDenied, ValueError, OSError, FileNotFoundError, json.JSONDecodeError) as exc: self._error(400, str(exc))
+        except Exception as exc: self._error(500, f"dashboard error: {exc}")
 
 
-def serve_dashboard(
-    config: TonmenConfig,
-    *,
-    host: str = "127.0.0.1",
-    port: int | None = None,
-    open_browser: bool = True,
-) -> int:
-    host = validate_console_host(host)
-    bind_port = int(port if port is not None else config.bind_port)
-    if not 1 <= bind_port <= 65535:
-        raise ValueError("console port must be within 1-65535")
+def serve_dashboard(config: TonmenConfig, *, host: str = "127.0.0.1", port: int | None = None, open_browser: bool = True) -> int:
+    host = validate_console_host(host); bind_port = int(port if port is not None else config.bind_port)
+    if not 1 <= bind_port <= 65535: raise ValueError("console port must be within 1-65535")
     server = TonmenDashboardServer((host, bind_port), DashboardState(config))
     display_host = "127.0.0.1" if host in {"127.0.0.1", "localhost"} else "[::1]"
     url = f"http://{display_host}:{server.server_address[1]}/"
-    print(f"雲頂天宮 Console: {url}")
-    print("本地控制面板僅綁定 loopback；Ctrl+C 停止。")
-    if open_browser:
-        threading.Timer(0.2, lambda: webbrowser.open(url)).start()
-    try:
-        server.serve_forever(poll_interval=0.25)
-    except KeyboardInterrupt:
-        print("\n天宮已閉。")
-    finally:
-        server.server_close()
+    print(f"雲頂天宮 Console: {url}"); print("本地控制面板僅綁定 loopback；Ctrl+C 停止。")
+    if open_browser: threading.Timer(0.2, lambda: webbrowser.open(url)).start()
+    try: server.serve_forever(poll_interval=0.25)
+    except KeyboardInterrupt: print("\n天宮已閉。")
+    finally: server.server_close()
     return 0
