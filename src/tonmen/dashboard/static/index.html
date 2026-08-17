@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="tonmen-csrf" content="__TONMEN_CSRF__">
   <title>雲頂天宮 | TONMEN Console</title>
-  <link rel="stylesheet" href="/assets/app.css">
-  <link rel="stylesheet" href="/assets/viewport.css">
+  <link rel="stylesheet" href="/assets/app.css?v=native-nav-1">
+  <link rel="stylesheet" href="/assets/viewport.css?v=native-nav-1">
 </head>
 <body>
   <div class="console-frame">
@@ -33,18 +33,18 @@
 
     <div class="console-workspace">
       <aside class="sidebar">
-        <nav class="nav">
-          <button class="nav-item active" data-scroll="overview"><span>◉</span><b>儀表總覽</b></button>
-          <button class="nav-item" data-scroll="mission-panel"><span>◎</span><b>任務 <small>Missions</small></b></button>
-          <button class="nav-item" data-scroll="scope-panel"><span>◌</span><b>天域 <small>Scope</small></b></button>
-          <button class="nav-item" data-scroll="status-grid"><span>◇</span><b>天律 <small>Guard</small></b></button>
-          <button class="nav-item" data-scroll="status-grid"><span>⌁</span><b>天工 <small>Tools</small></b></button>
-          <button class="nav-item" data-scroll="intel-panel"><span>◉</span><b>天鑑 <small>Intelligence</small></b></button>
-          <button class="nav-item" data-scroll="reason-panel"><span>✺</span><b>天策 <small>Reasoner</small></b></button>
-          <button class="nav-item" data-scroll="mission-panel"><span>∞</span><b>天衡 <small>Loop</small></b></button>
-          <button class="nav-item" data-scroll="chronicle-panel"><span>▤</span><b>天冊 <small>Chronicle</small></b></button>
-          <button class="nav-item" data-scroll="approval-panel"><span>♙</span><b>審批 <small>Approval</small></b></button>
-          <button class="nav-item" data-scroll="overview"><span>⚙</span><b>設定 <small>Settings</small></b></button>
+        <nav class="nav" aria-label="TONMEN module navigation">
+          <a class="nav-item" href="/"><span>◉</span><b>儀表總覽</b></a>
+          <a class="nav-item" href="/missions"><span>◎</span><b>任務 <small>Missions</small></b></a>
+          <a class="nav-item" href="/scope"><span>◌</span><b>天域 <small>Scope</small></b></a>
+          <a class="nav-item" href="/guard"><span>◇</span><b>天律 <small>Guard</small></b></a>
+          <a class="nav-item" href="/tools"><span>⌁</span><b>天工 <small>Tools</small></b></a>
+          <a class="nav-item" href="/intelligence"><span>◉</span><b>天鑑 <small>Intelligence</small></b></a>
+          <a class="nav-item" href="/reasoner"><span>✺</span><b>天策 <small>Reasoner</small></b></a>
+          <a class="nav-item" href="/loop"><span>∞</span><b>天衡 <small>Loop</small></b></a>
+          <a class="nav-item" href="/chronicle"><span>▤</span><b>天冊 <small>Chronicle</small></b></a>
+          <a class="nav-item" href="/approval"><span>♙</span><b>審批 <small>Approval</small></b></a>
+          <a class="nav-item" href="/settings"><span>⚙</span><b>設定 <small>Settings</small></b></a>
         </nav>
         <div class="sidebar-art" aria-hidden="true">
           <div class="temple-roof">⌁  亠  ⌁</div>
@@ -221,6 +221,6 @@
   </dialog>
 
   <div id="toast" class="toast" aria-live="polite"></div>
-  <script src="/assets/app.js"></script>
+  <script src="/assets/app.js?v=native-nav-1"></script>
 </body>
 </html>
