@@ -1,9 +1,26 @@
 from __future__ import annotations
 
-from tonmen.tools.base import RiskLevel, ToolAdapter, ToolRequest, ToolSpec
+import os
+from pathlib import Path
+
+from tonmen.tools.base import RiskLevel, ToolAdapter, ToolReadiness, ToolRequest, ToolSpec
 from tonmen.tools.validation import reject_unknown_parameters, validate_web_target
 
 _ALLOWED_SEVERITIES = {"info", "low", "medium", "high", "critical"}
+
+
+def _template_root() -> Path:
+    configured = os.environ.get("TONMEN_NUCLEI_TEMPLATES", "").strip()
+    return (Path(configured).expanduser() if configured else Path.home() / "nuclei-templates").resolve()
+
+
+def _contains_templates(root: Path) -> bool:
+    if not root.is_dir():
+        return False
+    try:
+        return next(root.rglob("*.yaml"), None) is not None or next(root.rglob("*.yml"), None) is not None
+    except OSError:
+        return False
 
 
 class NucleiAdapter(ToolAdapter):
@@ -14,6 +31,29 @@ class NucleiAdapter(ToolAdapter):
         risk=RiskLevel.VALIDATION,
         capabilities=("vulnerability.validate", "finding.generate"),
     )
+
+    def readiness(self) -> ToolReadiness:
+        binary = super().readiness()
+        if not binary.ready:
+            return binary
+        root = _template_root()
+        if not _contains_templates(root):
+            return ToolReadiness(
+                False,
+                "missing_templates",
+                f"Nuclei binary is ready, but no YAML templates were found under {root}",
+                remediation=(
+                    "Run `nuclei -ut` to install/update community templates. "
+                    "If templates live elsewhere, set TONMEN_NUCLEI_TEMPLATES to that directory."
+                ),
+                metadata={"binary": binary.metadata.get("path"), "templates_path": str(root)},
+            )
+        return ToolReadiness(
+            True,
+            "ready",
+            f"binary ready: {binary.metadata.get('path')}; templates ready: {root}",
+            metadata={"binary": binary.metadata.get("path"), "templates_path": str(root)},
+        )
 
     def validate(self, request: ToolRequest) -> None:
         reject_unknown_parameters(request.parameters, {"severity", "rate_limit", "timeout"})
