@@ -8,12 +8,13 @@ def test_console_loads_viewport_resilience_styles():
     html = static.joinpath("index.html").read_text(encoding="utf-8")
     css = static.joinpath("viewport.css").read_text(encoding="utf-8")
 
-    assert 'href="/assets/viewport.css"' in html
+    assert '/assets/viewport.css?v=' in html
     assert "overflow-y:auto" in css
     assert "max-height:calc(100dvh" in css
     assert "@media (max-height:850px)" in css
     assert ".dialog-actions{position:sticky" in css
     assert "command-deck" in css
+    assert ".nav a.nav-item{text-decoration:none" in css
 
 
 def test_main_panel_centralizes_common_governed_actions():
