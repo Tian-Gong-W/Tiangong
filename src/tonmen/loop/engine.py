@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from tonmen.agents import MissionCoordinator
 from tonmen.core.runtime import TonmenRuntime
+from tonmen.council import AssessmentCouncil
 from tonmen.evidence import GraphNode
 from tonmen.missions import MissionPlan, MissionRun, MissionRunState
 from tonmen.reasoning import MissionReasoner, ReasoningAction, ReasoningDecision
@@ -27,6 +28,10 @@ class MissionLoop:
         self.policy = policy or MissionLoopPolicy()
         self.coordinator = MissionCoordinator(runtime)
         self.reasoner = MissionReasoner()
+        self.council = AssessmentCouncil(
+            target_rounds=self.policy.assessment_rounds,
+            agents_per_round=self.policy.subagents_per_round,
+        )
         self.checkpoint = checkpoint
 
     def _emit(self, event_type: str, run: MissionRun, **data: object) -> None:
@@ -105,6 +110,8 @@ class MissionLoop:
                     "max_executions": self.policy.max_executions,
                     "max_repeat_decisions": self.policy.max_repeat_decisions,
                     "max_duration_seconds": self.policy.max_duration_seconds,
+                    "assessment_rounds": self.policy.assessment_rounds,
+                    "subagents_per_round": self.policy.subagents_per_round,
                 },
             )
         )
@@ -117,6 +124,8 @@ class MissionLoop:
             max_executions=self.policy.max_executions,
             max_repeat_decisions=self.policy.max_repeat_decisions,
             max_duration_seconds=self.policy.max_duration_seconds,
+            assessment_rounds=self.policy.assessment_rounds,
+            subagents_per_round=self.policy.subagents_per_round,
         )
 
     def _record_iteration(
@@ -156,6 +165,36 @@ class MissionLoop:
             decision_id=decision.id,
             decision_action=decision.action.value,
             evidence_added=evidence_added,
+        )
+
+    def _record_council_round(
+        self,
+        plan: MissionPlan,
+        run: MissionRun,
+        *,
+        session_id: str,
+        decision: ReasoningDecision | None,
+        phase: str,
+    ) -> None:
+        before = sum(1 for node in run.graph.nodes.values() if node.kind == "council.round")
+        round_id = self.council.record_round(
+            plan,
+            run,
+            session_id=session_id,
+            phase=phase,
+            decision_id=decision.id if decision else None,
+        )
+        if round_id is None:
+            return
+        after = sum(1 for node in run.graph.nodes.values() if node.kind == "council.round")
+        self._emit(
+            "council.round",
+            run,
+            session_id=session_id,
+            round=after,
+            phase=phase,
+            subagents=self.policy.subagents_per_round,
+            added=after - before,
         )
 
     def _record_stop(
@@ -206,6 +245,18 @@ class MissionLoop:
         executions: int,
         decision: ReasoningDecision | None,
     ) -> MissionLoopResult:
+        if run.state in {MissionRunState.SUCCEEDED, MissionRunState.FAILED, MissionRunState.DENIED}:
+            before = sum(1 for node in run.graph.nodes.values() if node.kind == "council.round")
+            added = self.council.complete_terminal_review(plan, run, session_id=session_id)
+            if added:
+                self._emit(
+                    "council.completed",
+                    run,
+                    session_id=session_id,
+                    rounds_before=before,
+                    rounds_after=before + added,
+                    subagents_per_round=self.policy.subagents_per_round,
+                )
         self._record_stop(
             run,
             session_id=session_id,
@@ -301,6 +352,13 @@ class MissionLoop:
                 executions=executions,
                 decision=decision,
                 evidence_added=evidence_added,
+            )
+            self._record_council_round(
+                plan,
+                run,
+                session_id=session_id,
+                decision=decision,
+                phase="live",
             )
             self._checkpoint(plan, run)
 
