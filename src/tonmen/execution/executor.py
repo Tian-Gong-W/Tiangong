@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
@@ -8,6 +9,7 @@ from uuid import uuid4
 
 from tonmen.audit import AuditLog
 from tonmen.evidence import EvidenceRecord
+from tonmen.events import EventBus
 from tonmen.policy import ApprovalStore, Decision, PolicyDecision, PolicyEngine
 from tonmen.tools import ToolRegistry, ToolRequest, ToolResult
 
@@ -43,6 +45,7 @@ class ToolExecutor:
         runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
         approvals: ApprovalStore | None = None,
         audit: AuditLog | None = None,
+        events: EventBus | None = None,
     ) -> None:
         self.registry = registry
         self.policy = policy
@@ -50,6 +53,16 @@ class ToolExecutor:
         self._runner = runner
         self.approvals = approvals
         self.audit = audit
+        self.events = events
+
+    def _emit(self, event_type: str, request: ToolRequest, **data: object) -> None:
+        if self.events is not None:
+            self.events.publish(
+                event_type,
+                tool=request.tool,
+                target=request.target,
+                **data,
+            )
 
     def _audit(self, request: ToolRequest, decision: str, message: str, evidence_id: str | None = None) -> None:
         if self.audit is not None:
@@ -62,35 +75,110 @@ class ToolExecutor:
                 evidence_id=evidence_id,
             )
 
+    def _run_streaming(self, argv: tuple[str, ...], request: ToolRequest) -> subprocess.CompletedProcess[str]:
+        process = subprocess.Popen(
+            list(argv),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            shell=False,
+        )
+        stdout_parts: list[str] = []
+        stderr_parts: list[str] = []
+
+        def drain(pipe, stream: str, sink: list[str]) -> None:
+            if pipe is None:
+                return
+            try:
+                for chunk in iter(pipe.readline, ""):
+                    if not chunk:
+                        break
+                    sink.append(chunk)
+                    self._emit("tool.output", request, stream=stream, chunk=chunk)
+            finally:
+                try:
+                    pipe.close()
+                except OSError:
+                    pass
+
+        stdout_thread = threading.Thread(
+            target=drain,
+            args=(process.stdout, "stdout", stdout_parts),
+            daemon=True,
+        )
+        stderr_thread = threading.Thread(
+            target=drain,
+            args=(process.stderr, "stderr", stderr_parts),
+            daemon=True,
+        )
+        stdout_thread.start()
+        stderr_thread.start()
+
+        try:
+            returncode = process.wait(timeout=self.timeout_seconds)
+        except subprocess.TimeoutExpired as exc:
+            process.kill()
+            process.wait()
+            stdout_thread.join(timeout=1.0)
+            stderr_thread.join(timeout=1.0)
+            raise subprocess.TimeoutExpired(
+                cmd=list(argv),
+                timeout=exc.timeout,
+                output="".join(stdout_parts),
+                stderr="".join(stderr_parts),
+            ) from exc
+
+        stdout_thread.join(timeout=1.0)
+        stderr_thread.join(timeout=1.0)
+        return subprocess.CompletedProcess(
+            list(argv),
+            int(returncode),
+            stdout="".join(stdout_parts),
+            stderr="".join(stderr_parts),
+        )
+
     def execute(self, request: ToolRequest, *, approval_token: str | None = None) -> ExecutionOutcome:
         adapter = self.registry.get(request.tool)
         adapter.validate(request)
         decision = self.policy.evaluate(adapter.spec, request)
         if decision.decision is Decision.DENY:
             self._audit(request, "deny", decision.reason)
+            self._emit("tool.denied", request, reason=decision.reason)
             raise ExecutionDenied(decision.reason)
         if decision.decision is Decision.REQUIRE_APPROVAL:
             grant = None
             if approval_token and self.approvals is not None:
                 grant = self.approvals.consume(approval_token, request)
             if grant is None:
-                self._audit(request, "deny", "higher-risk action requires approval grant")
-                raise ExecutionDenied("higher-risk action requires approval grant")
+                message = "higher-risk action requires approval grant"
+                self._audit(request, "deny", message)
+                self._emit("tool.approval_required", request, reason=message)
+                raise ExecutionDenied(message)
 
         argv = tuple(str(value) for value in adapter.build_argv(request))
         if not argv or any(not value for value in argv):
             raise ValueError("adapter produced invalid argv")
 
         started = datetime.now(timezone.utc)
+        self._emit(
+            "tool.started",
+            request,
+            argv=list(argv),
+            timeout_seconds=self.timeout_seconds,
+        )
         try:
-            completed = self._runner(
-                list(argv),
-                capture_output=True,
-                text=True,
-                timeout=self.timeout_seconds,
-                check=False,
-                shell=False,
-            )
+            if self._runner is subprocess.run:
+                completed = self._run_streaming(argv, request)
+            else:
+                completed = self._runner(
+                    list(argv),
+                    capture_output=True,
+                    text=True,
+                    timeout=self.timeout_seconds,
+                    check=False,
+                    shell=False,
+                )
         except subprocess.TimeoutExpired as exc:
             finished = datetime.now(timezone.utc)
             timeout_seconds = int(exc.timeout) if exc.timeout is not None else self.timeout_seconds
@@ -124,6 +212,13 @@ class ToolExecutor:
                 },
             )
             self._audit(request, "timeout", timeout_message, evidence.id)
+            self._emit(
+                "tool.timeout",
+                request,
+                evidence_id=evidence.id,
+                exit_code=evidence.exit_code,
+                timeout_seconds=timeout_seconds,
+            )
             return ExecutionOutcome(result=result, evidence=evidence, policy=decision)
 
         finished = datetime.now(timezone.utc)
@@ -146,4 +241,11 @@ class ToolExecutor:
             evidence={"id": evidence.id, "exit_code": evidence.exit_code, "timed_out": False},
         )
         self._audit(request, "allow" if success else "error", result.summary, evidence.id)
+        self._emit(
+            "tool.completed" if success else "tool.failed",
+            request,
+            evidence_id=evidence.id,
+            exit_code=evidence.exit_code,
+            success=success,
+        )
         return ExecutionOutcome(result=result, evidence=evidence, policy=decision)
