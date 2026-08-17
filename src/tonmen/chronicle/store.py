@@ -88,6 +88,15 @@ class ChronicleStore:
             raise ValueError("unsupported chronicle schema")
         return self._plan_from_dict(payload["plan"]), self._run_from_dict(payload["run"])
 
+    def delete(self, run_id: str) -> bool:
+        """Delete one persisted mission record after validating its run id."""
+        path = self._path(run_id)
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return False
+        return True
+
     def list(self) -> list[ChronicleEntry]:
         if not self.root.exists():
             return []
