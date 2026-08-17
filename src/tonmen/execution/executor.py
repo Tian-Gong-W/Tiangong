@@ -48,6 +48,11 @@ class ToolExecutor:
         self.audit = audit
         self.events = events
 
+    @property
+    def uses_local_subprocess(self) -> bool:
+        """True when this executor will invoke local binaries through the production backend."""
+        return self._runner is subprocess.run
+
     def _emit(self, event_type: str, request: ToolRequest, **data: object) -> None:
         if self.events is not None:
             payload = dict(request.context)

@@ -62,6 +62,9 @@ class MissionCoordinator:
                 continue
             if execution.state not in {StepExecutionState.PENDING, StepExecutionState.WAITING_APPROVAL}:
                 return False
+            preflight = execution.metadata.get("preflight")
+            if isinstance(preflight, dict) and preflight.get("ready") is False:
+                return False
             execution.state = StepExecutionState.SKIPPED
             execution.error = None
             execution.metadata["reasoning_decision_id"] = decision.id
@@ -99,6 +102,50 @@ class MissionCoordinator:
         self._emit("mission.resumed", mission_run)
         return self._drive(plan, mission_run, approval_tokens or {})
 
+    def _preflight_step(self, step, execution, mission_run: MissionRun, token: str | None) -> bool:
+        if self.runtime.executor is not None and not self.runtime.executor.uses_local_subprocess:
+            execution.metadata.pop("preflight", None)
+            return True
+
+        adapter = self.runtime.registry.get(step.tool)
+        readiness = adapter.readiness()
+        if readiness.ready:
+            execution.metadata.pop("preflight", None)
+            return True
+
+        if token and self.runtime.approvals is not None:
+            self.runtime.approvals.revoke(token)
+
+        execution.error = f"tool preflight blocked: {readiness.detail}"
+        execution.metadata["preflight"] = {
+            "ready": False,
+            "code": readiness.code,
+            "detail": readiness.detail,
+            "remediation": readiness.remediation,
+            "metadata": dict(readiness.metadata),
+        }
+        self._emit(
+            "tool.preflight_blocked",
+            mission_run,
+            step_id=step.id,
+            tool=step.tool,
+            step_target=step.target,
+            code=readiness.code,
+            detail=readiness.detail,
+            remediation=readiness.remediation,
+        )
+
+        if step.requires_approval:
+            execution.state = StepExecutionState.WAITING_APPROVAL
+            mission_run.state = MissionRunState.WAITING_APPROVAL
+            return False
+
+        execution.state = StepExecutionState.FAILED
+        mission_run.finish(MissionRunState.FAILED)
+        self._emit("step.failed", mission_run, step_id=step.id, tool=step.tool, error=execution.error)
+        self._emit("mission.failed", mission_run)
+        return False
+
     def advance_once(self, plan: MissionPlan, mission_run: MissionRun, *, approval_tokens: Mapping[str, str] | None = None) -> MissionRun:
         if mission_run.plan_id != plan.id:
             raise ValueError("mission run does not belong to this plan")
@@ -119,6 +166,9 @@ class MissionCoordinator:
                 execution.error = "explicit approval grant required"
                 mission_run.state = MissionRunState.WAITING_APPROVAL
                 self._emit("approval.required", mission_run, step_id=step.id, tool=step.tool, step_target=step.target, risk=step.risk)
+                return mission_run
+
+            if not self._preflight_step(step, execution, mission_run, token):
                 return mission_run
 
             request = ToolRequest(

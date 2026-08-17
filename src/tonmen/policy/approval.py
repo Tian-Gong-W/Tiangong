@@ -36,6 +36,10 @@ class ApprovalStore:
         self._grants[grant.token] = grant
         return grant
 
+    def revoke(self, token: str) -> bool:
+        """Remove an unconsumed grant without exposing its contents."""
+        return self._grants.pop(token, None) is not None
+
     def consume(self, token: str, request: ToolRequest) -> ApprovalGrant | None:
         grant = self._grants.pop(token, None)
         if grant is None:

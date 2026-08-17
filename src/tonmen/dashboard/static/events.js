@@ -329,3 +329,112 @@
   observeMissions();
   poll();
 })();
+
+(() => {
+  "use strict";
+
+  let cache = {at: 0, tools: new Map()};
+  let enhancing = false;
+
+  const esc = value => String(value ?? "").replace(/[&<>"']/g, ch => ({
+    "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
+  }[ch]));
+
+  async function readiness(force = false) {
+    if (!force && Date.now() - cache.at < 1500 && cache.tools.size) return cache.tools;
+    const response = await fetch("/api/tools", {cache:"no-store", headers:{"Accept":"application/json"}});
+    if (!response.ok) return cache.tools;
+    const payload = await response.json();
+    cache = {at: Date.now(), tools: new Map((payload.tools || []).map(tool => [tool.name, tool]))};
+    return cache.tools;
+  }
+
+  function repairCommand(tool) {
+    return tool?.name === "nuclei" && tool?.doctor?.code === "missing_templates" ? "nuclei -ut" : "";
+  }
+
+  async function copyText(text, button) {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      const before = button.textContent;
+      button.textContent = "✓ 已复制";
+      setTimeout(() => { button.textContent = before; }, 1200);
+    } catch (_) {
+      window.prompt("复制修复命令", text);
+    }
+  }
+
+  function updateLiveLabel() {
+    const label = document.querySelector("#module-page-root .module-live span");
+    if (label && !label.dataset.eventLabel) {
+      const clock = label.querySelector("b")?.outerHTML || "";
+      label.innerHTML = `EVENT STREAM · 2.5s fallback · ${clock}`;
+      label.dataset.eventLabel = "1";
+    }
+  }
+
+  function decorateToolCards(tools) {
+    if (location.pathname !== "/tools") return;
+    document.querySelectorAll("#module-page-root .tool-card").forEach(card => {
+      const name = card.querySelector("h3")?.textContent?.trim();
+      const tool = tools.get(name);
+      if (!tool || tool.available || card.querySelector(".tool-readiness-fix")) return;
+      const block = document.createElement("div");
+      block.className = "tool-readiness-fix";
+      const command = repairCommand(tool);
+      block.innerHTML = `<strong>${esc((tool.doctor?.code || "blocked").replaceAll("_", " ").toUpperCase())}</strong><span>${esc(tool.doctor?.detail || "Tool environment is not ready.")}</span>${tool.doctor?.remediation ? `<small>${esc(tool.doctor.remediation)}</small>` : ""}${command ? `<button type="button" class="ghost small" data-readiness-copy="${esc(command)}">⧉ 复制修复命令</button>` : ""}`;
+      card.appendChild(block);
+      block.querySelector("[data-readiness-copy]")?.addEventListener("click", event => copyText(event.currentTarget.dataset.readinessCopy, event.currentTarget));
+    });
+  }
+
+  function decorateApproval(tools) {
+    if (location.pathname !== "/approval") return;
+    document.querySelectorAll("#module-page-root .approval-workitem").forEach(item => {
+      const title = item.querySelector("h3")?.textContent || "";
+      const name = title.split("·", 1)[0].trim();
+      const tool = tools.get(name);
+      if (!tool || tool.available || item.querySelector(".approval-preflight-block")) return;
+      const button = item.querySelector("[data-approve-run]");
+      if (button) {
+        button.disabled = true;
+        button.setAttribute("aria-disabled", "true");
+        button.textContent = "环境未就绪 · 无法批准执行";
+      }
+      const command = repairCommand(tool);
+      const block = document.createElement("div");
+      block.className = "approval-preflight-block";
+      block.innerHTML = `<strong>PRE-FLIGHT BLOCKED · ${esc((tool.doctor?.code || "tool_not_ready").replaceAll("_", " "))}</strong><span>${esc(tool.doctor?.detail || "Tool environment is not ready.")}</span>${tool.doctor?.remediation ? `<small>${esc(tool.doctor.remediation)}</small>` : ""}${command ? `<button type="button" class="ghost small" data-readiness-copy="${esc(command)}">⧉ 复制 ${esc(command)}</button>` : ""}`;
+      item.querySelector(".approval-actions")?.before(block);
+      block.querySelector("[data-readiness-copy]")?.addEventListener("click", event => copyText(event.currentTarget.dataset.readinessCopy, event.currentTarget));
+    });
+  }
+
+  async function enhance() {
+    if (enhancing || !["/tools", "/approval", "/settings", "/missions", "/guard", "/loop", "/chronicle", "/intelligence", "/reasoner", "/scope"].includes(location.pathname)) return;
+    enhancing = true;
+    try {
+      updateLiveLabel();
+      if (location.pathname === "/tools" || location.pathname === "/approval") {
+        const tools = await readiness();
+        decorateToolCards(tools);
+        decorateApproval(tools);
+      }
+    } catch (_) {
+      // Readiness decoration is supplemental; core pages remain usable if it cannot load.
+    } finally {
+      enhancing = false;
+    }
+  }
+
+  const root = document.getElementById("module-page-root");
+  if (root) {
+    new MutationObserver(() => queueMicrotask(enhance)).observe(root, {childList:true, subtree:true});
+  }
+  window.addEventListener("popstate", () => setTimeout(() => enhance(), 0));
+  window.addEventListener("tonmen:runtime-event", event => {
+    if (event.detail?.type === "tool.preflight_blocked") cache.at = 0;
+  });
+  enhance();
+})();
