@@ -49,7 +49,11 @@ def test_approved_validation_stays_waiting_when_preflight_is_blocked(monkeypatch
     runtime = TonmenRuntime.sentinel(TonmenConfig(workspace=tmp_path, allowed_targets=("localhost",)))
     coordinator = MissionCoordinator(runtime)
     plan = _nuclei_plan()
-    run = coordinator.run(plan)
+    run = coordinator.start(plan)
+    run.state = MissionRunState.WAITING_APPROVAL
+    run.steps[0].state = StepExecutionState.WAITING_APPROVAL
+    run.steps[0].error = "explicit approval grant required"
+
     step = plan.steps[0]
     grant = runtime.approvals.issue(tool=step.tool, target=step.target)
 
@@ -67,6 +71,7 @@ def test_approved_validation_stays_waiting_when_preflight_is_blocked(monkeypatch
 
     resumed = coordinator.resume(plan, run, approval_tokens={step.id: grant.token})
 
+    assert resumed is run
     assert resumed.state is MissionRunState.WAITING_APPROVAL
     assert resumed.steps[0].state is StepExecutionState.WAITING_APPROVAL
     assert resumed.steps[0].job_id is None
