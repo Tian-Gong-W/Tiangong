@@ -100,6 +100,10 @@ class MissionCoordinator:
         return self._drive(plan, mission_run, approval_tokens or {})
 
     def _preflight_step(self, step, execution, mission_run: MissionRun, token: str | None) -> bool:
+        if self.runtime.executor is not None and not self.runtime.executor.uses_local_subprocess:
+            execution.metadata.pop("preflight", None)
+            return True
+
         adapter = self.runtime.registry.get(step.tool)
         readiness = adapter.readiness()
         if readiness.ready:
