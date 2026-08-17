@@ -72,14 +72,35 @@ def test_scope_rule_rejects_shell_syntax_and_unsafe_url_forms():
 def test_doctor_reports_missing_external_tools(tmp_path):
     config = TonmenConfig(workspace=tmp_path, config_path=tmp_path / "tonmen.toml")
     paths = {"nmap": "/usr/bin/nmap", "httpx": None, "nuclei": "/usr/bin/nuclei"}
+    templates = tmp_path / "nuclei-templates" / "http"
+    templates.mkdir(parents=True)
+    (templates / "demo.yaml").write_text("id: demo\n", encoding="utf-8")
 
-    report = run_doctor(config, which=lambda name: paths[name])
+    report = run_doctor(config, which=lambda name: paths[name], home=tmp_path)
 
     assert report.ready is False
     by_name = {check.name: check for check in report.checks}
     assert by_name["nmap"].ok is True
     assert by_name["httpx"].ok is False
+    assert by_name["nuclei-binary"].ok is True
+    assert by_name["nuclei-templates"].ok is True
     assert by_name["nuclei"].ok is True
+
+
+def test_doctor_blocks_nuclei_when_templates_are_missing(tmp_path):
+    config = TonmenConfig(workspace=tmp_path, config_path=tmp_path / "tonmen.toml")
+    paths = {"nmap": "/usr/bin/nmap", "httpx": "/usr/bin/httpx", "nuclei": "/usr/bin/nuclei"}
+
+    report = run_doctor(config, which=lambda name: paths[name], home=tmp_path)
+    by_name = {check.name: check for check in report.checks}
+
+    assert report.ready is False
+    assert by_name["nuclei-binary"].ok is True
+    assert by_name["nuclei-templates"].ok is False
+    assert by_name["nuclei-templates"].code == "missing_templates"
+    assert "nuclei -ut" in (by_name["nuclei-templates"].remediation or "")
+    assert by_name["nuclei"].ok is False
+    assert by_name["nuclei"].code == "missing_templates"
 
 
 def test_status_reports_current_runtime_layers(tmp_path):
