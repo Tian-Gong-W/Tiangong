@@ -1,7 +1,6 @@
 (() => {
   "use strict";
 
-  const terminalStates = new Set(["succeeded", "failed", "denied"]);
   const esc = value => String(value ?? "").replace(/[&<>"']/g, ch => ({
     "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
   }[ch]));
@@ -165,19 +164,11 @@
     const key = `tonmen.report.shown.${runId}`;
     if (sessionStorage.getItem(key)) return;
     sessionStorage.setItem(key, "1");
-    if (location.pathname === "/missions") openReport(runId, {auto:true});
-    else sessionStorage.setItem("tonmen.report.pending", runId);
+    openReport(runId, {auto:true});
   });
 
   const root = document.getElementById("module-page-root");
   if (root) new MutationObserver(() => queueMicrotask(installReportButton)).observe(root, {childList:true, subtree:true});
   window.addEventListener("popstate", () => setTimeout(installReportButton, 0));
-  setTimeout(() => {
-    installReportButton();
-    const pending = sessionStorage.getItem("tonmen.report.pending");
-    if (pending && location.pathname === "/missions") {
-      sessionStorage.removeItem("tonmen.report.pending");
-      openReport(pending, {auto:true});
-    }
-  }, 0);
+  setTimeout(installReportButton, 0);
 })();
