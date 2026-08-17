@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from tonmen.audit import AuditLog
+from tonmen.events import EventBus
 from tonmen.execution import ToolExecutor
 from tonmen.jobs import JobManager
 from tonmen.policy import ApprovalStore, PolicyEngine, TargetScope
@@ -22,26 +23,32 @@ class TonmenRuntime:
     approvals: ApprovalStore | None = None
     audit: AuditLog | None = None
     scope: TargetScope | None = None
+    events: EventBus | None = None
 
     @classmethod
-    def genesis(cls, config: TonmenConfig | None = None) -> "TonmenRuntime":
+    def genesis(cls, config: TonmenConfig | None = None, *, events: EventBus | None = None) -> "TonmenRuntime":
         config = config or TonmenConfig.default()
         if config.allow_arbitrary_shell:
             raise ValueError("TONMEN forbids arbitrary shell execution")
-        return cls(config=config, registry=ToolRegistry(), policy=PolicyEngine())
+        return cls(config=config, registry=ToolRegistry(), policy=PolicyEngine(), events=events)
 
     @classmethod
-    def forge(cls, config: TonmenConfig | None = None) -> "TonmenRuntime":
-        runtime = cls.genesis(config)
+    def forge(cls, config: TonmenConfig | None = None, *, events: EventBus | None = None) -> "TonmenRuntime":
+        runtime = cls.genesis(config, events=events)
         register_builtin_adapters(runtime.registry)
-        runtime.executor = ToolExecutor(runtime.registry, runtime.policy, timeout_seconds=runtime.config.command_timeout_seconds)
+        runtime.executor = ToolExecutor(
+            runtime.registry,
+            runtime.policy,
+            timeout_seconds=runtime.config.command_timeout_seconds,
+            events=events,
+        )
         runtime.jobs = JobManager(runtime.executor)
         return runtime
 
     @classmethod
-    def sentinel(cls, config: TonmenConfig | None = None) -> "TonmenRuntime":
+    def sentinel(cls, config: TonmenConfig | None = None, *, events: EventBus | None = None) -> "TonmenRuntime":
         config = config or TonmenConfig.default()
-        runtime = cls.genesis(config)
+        runtime = cls.genesis(config, events=events)
         register_builtin_adapters(runtime.registry)
         runtime.scope = TargetScope(config.allowed_targets, config.denied_targets)
         runtime.policy = PolicyEngine(runtime.scope)
@@ -53,6 +60,7 @@ class TonmenRuntime:
             timeout_seconds=config.command_timeout_seconds,
             approvals=runtime.approvals,
             audit=runtime.audit,
+            events=events,
         )
         runtime.jobs = JobManager(runtime.executor)
         return runtime
