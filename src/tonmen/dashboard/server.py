@@ -125,6 +125,27 @@ class DashboardState:
         with self._lock:
             self.chronicle.save(plan, run)
 
+    def _tool_readiness(self, tool: str):
+        return self.runtime.registry.get(tool).readiness()
+
+    def _require_tool_ready(self, tool: str, *, mission_id: str | None = None, step_id: str | None = None) -> None:
+        readiness = self._tool_readiness(tool)
+        if readiness.ready:
+            return
+        self.events.publish(
+            "tool.preflight_blocked",
+            tool=tool,
+            mission_id=mission_id,
+            step_id=step_id,
+            code=readiness.code,
+            detail=readiness.detail,
+            remediation=readiness.remediation,
+        )
+        message = f"{tool} preflight blocked: {readiness.detail}"
+        if readiness.remediation:
+            message += f" Fix: {readiness.remediation}"
+        raise ValueError(message)
+
     def event_stream(self, cursor: int = 0, timeout: float = 20.0, limit: int = 200) -> dict[str, Any]:
         events = self.events.wait_after(cursor, timeout=timeout, limit=limit)
         latest = events[-1].cursor if events else max(int(cursor), self.events.cursor)
@@ -133,12 +154,15 @@ class DashboardState:
     def status(self) -> dict[str, Any]:
         with self._lock:
             report = run_doctor(self.config)
+            readiness = [adapter.readiness() for adapter in self.runtime.registry]
+            ready_tools = sum(1 for item in readiness if item.ready)
+            total_tools = len(readiness)
             return {
                 "version": __version__,
                 "components": [
                     {"id": "core", "zh": "天樞", "en": "Core", "state": "Online", "tone": "green"},
                     {"id": "guard", "zh": "天律", "en": "Guard", "state": "Enforced", "tone": "green"},
-                    {"id": "registry", "zh": "天工", "en": "Registry", "state": f"{len(self.runtime.registry)} Tools Ready", "tone": "blue"},
+                    {"id": "registry", "zh": "天工", "en": "Registry", "state": f"{ready_tools}/{total_tools} Tools Ready", "tone": "blue" if ready_tools == total_tools else "amber"},
                     {"id": "intel", "zh": "天鑑", "en": "Intelligence", "state": "Active", "tone": "purple"},
                     {"id": "reasoner", "zh": "天策", "en": "Reasoner", "state": "Ready", "tone": "amber"},
                     {"id": "loop", "zh": "天衡", "en": "Mission Loop", "state": "Event-driven", "tone": "cyan"},
@@ -186,12 +210,21 @@ class DashboardState:
             checks = {check.name: asdict(check) for check in run_doctor(self.config).checks}
             tools = []
             for adapter in self.runtime.registry:
-                spec = adapter.spec; check = checks.get(spec.name)
-                tools.append({"name": spec.name, "category": spec.category, "description": spec.description,
-                              "risk": int(spec.risk), "risk_name": spec.risk.name.lower(),
-                              "capabilities": list(spec.capabilities), "available": bool(check and check["ok"]),
-                              "doctor": check})
-            return {"count": len(tools), "tools": tools}
+                spec = adapter.spec
+                check = checks.get(spec.name)
+                readiness = adapter.readiness()
+                tools.append({
+                    "name": spec.name,
+                    "category": spec.category,
+                    "description": spec.description,
+                    "risk": int(spec.risk),
+                    "risk_name": spec.risk.name.lower(),
+                    "capabilities": list(spec.capabilities),
+                    "available": readiness.ready,
+                    "readiness": asdict(readiness),
+                    "doctor": check,
+                })
+            return {"count": len(tools), "ready": sum(1 for tool in tools if tool["available"]), "tools": tools}
 
     def audit(self, limit: int = 200) -> dict[str, Any]:
         with self._lock:
@@ -230,6 +263,9 @@ class DashboardState:
 
     def start_mission(self, target: str, policy: MissionLoopPolicy | None = None) -> dict[str, Any]:
         plan = MissionPlanner(self.runtime).plan(target)
+        for step in plan.steps:
+            if not step.requires_approval:
+                self._require_tool_ready(step.tool, step_id=step.id)
         result = MissionLoop(self.runtime, policy or MissionLoopPolicy(), checkpoint=self._checkpoint).run(plan)
         self._checkpoint(plan, result.run)
         payload = mission_payload(plan, result.run); payload["stop_reason"] = result.stop_reason.value
@@ -251,6 +287,7 @@ class DashboardState:
         if run.state is not MissionRunState.WAITING_APPROVAL: raise ValueError("mission is not waiting for approval")
         waiting = _waiting_step(plan, run)
         if waiting is None: raise ValueError("approval-gated step is missing")
+        self._require_tool_ready(waiting.tool, mission_id=run.id, step_id=waiting.id)
         if self.runtime.approvals is None: raise ValueError("approval store is unavailable")
         grant = self.runtime.approvals.issue(tool=waiting.tool, target=waiting.target)
         self.events.publish("approval.granted", mission_id=run.id, plan_id=plan.id, target=run.target,
