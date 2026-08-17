@@ -123,3 +123,97 @@ dialog{max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);max-height:cal
   .deck-scope input{flex-basis:100%}
   .deck-scope button{width:100%}
 }
+
+/* --------------------------------------------------------------------------
+   Lean Overview / utility-first control room
+
+   The Overview answers only five questions:
+   1) Is the runtime healthy? 2) What is running? 3) What needs attention?
+   4) What can I do next? 5) What happened recently?
+   Detailed Intelligence, Reasoning, Loop, Scope and Evidence views belong to
+   their routed module workspaces and are intentionally not duplicated here.
+   -------------------------------------------------------------------------- */
+
+/* Remove non-functional chrome and decorative furniture. */
+.brand-tagline,.header-icon,.operator-card,.sidebar-art,.sidebar-poem{display:none!important}
+.global-header{background:#06111b;border-bottom-color:#1b3343;box-shadow:none}
+.header-slogan span{font-size:19px;letter-spacing:.16em;color:#d6c391}
+.header-slogan small{opacity:.55}
+.header-actions{gap:0}
+.health{box-shadow:none;background:#081722}
+
+/* Flatten the visual language: borders carry structure, not glow and gradients. */
+#overview .panel,#overview .command-deck,#overview .status-card{
+  box-shadow:none!important;
+  background:#091925!important;
+  border-color:#20394b!important;
+}
+#overview .status-card:after{display:none}
+#overview .status-dot{box-shadow:none}
+#overview .status-icon{box-shadow:none!important;background:#081620!important}
+
+/* System state becomes a compact strip instead of six presentation cards. */
+#overview .status-grid{gap:6px;margin-bottom:8px}
+#overview .status-card{min-height:58px;padding:9px 11px;border-radius:7px}
+#overview .status-icon{width:30px;height:30px;margin-right:8px;font-size:12px}
+#overview .status-card small{font-size:10px}
+#overview .status-card strong{font-size:12px;margin-top:2px}
+#overview .status-dot{width:6px;height:6px;right:9px;bottom:9px}
+
+/* Command Deck is a compact action bar, not a hero panel. */
+#overview .command-deck{
+  grid-template-columns:auto minmax(0,1fr) minmax(260px,.8fr);
+  gap:8px;
+  padding:8px 10px;
+  border-radius:7px;
+  margin-bottom:8px;
+}
+#overview .deck-title .deck-emblem{width:30px;height:30px;border-radius:6px;box-shadow:none}
+#overview .deck-title small{display:none}
+#overview .deck-actions{gap:5px}
+#overview .deck-actions button{min-height:30px;padding:5px 8px;font-size:11px}
+#overview .deck-current{display:none}
+#overview .deck-scope input{padding:6px 8px}
+#overview .deck-scope button{min-height:30px;padding:5px 8px;font-size:11px}
+
+/* Overview contains only the current mission. Full Scope lives at /scope. */
+#overview .top-grid{grid-template-columns:1fr;margin-bottom:8px}
+#overview .scope-panel{display:none!important}
+#overview .mission-panel{border-radius:7px}
+#overview .mission-layout{grid-template-columns:1fr;padding:10px 12px}
+#overview .loop-visual{display:none!important}
+#overview .mission-meta{padding:8px 12px}
+#overview .steps{gap:5px}
+#overview .step{padding:7px 9px;border-radius:6px;background:#081722}
+#overview .step-index{width:28px;height:28px;font-size:11px}
+#overview .step small{font-size:9px}
+
+/* Detailed intelligence/reasoning and the decorative graph are module concerns. */
+#overview #intel-panel,#overview #reason-panel,#overview .graph-panel{display:none!important}
+#overview .middle-grid{grid-template-columns:1fr;margin-bottom:8px}
+#overview .bottom-grid{grid-template-columns:1fr;margin-bottom:0}
+
+/* An idle approval card is noise. Show it only when there is something to decide. */
+#overview #approval-panel:has(.approval-body.idle){display:none!important}
+#overview .middle-grid:not(:has(#approval-panel .approval-body:not(.idle))){display:none!important}
+#overview #approval-panel{border-color:#553039!important}
+#overview #approval-panel .panel-head{min-height:40px}
+#overview #approval-panel .approval-body{min-height:0;padding:10px 14px;display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;text-align:left}
+#overview #approval-panel .approval-icon{margin:0;width:32px;height:32px}
+#overview #approval-panel .approval-body h3{margin:0;font-size:13px}
+#overview #approval-panel .approval-body p{margin:0;max-width:none;font-size:10px}
+#overview #approval-panel .approval-body button{width:auto;margin:0;min-height:32px;padding:6px 10px}
+#overview #approval-panel .approval-foot{display:none}
+
+/* Chronicle is the only persistent summary below the mission: recent activity. */
+#overview #chronicle-panel{border-radius:7px}
+#overview #chronicle-panel .panel-head{min-height:40px}
+#overview .timeline{max-height:180px;padding:8px 12px}
+#overview .timeline-row{padding:4px 0}
+
+@media (max-width:1180px){
+  #overview .command-deck{grid-template-columns:1fr}
+  #overview .deck-scope{grid-column:auto}
+  #overview #approval-panel .approval-body{grid-template-columns:auto 1fr}
+  #overview #approval-panel .approval-body button{width:100%}
+}
