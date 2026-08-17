@@ -7,6 +7,11 @@ html,body{min-height:100%}
 .main-stage{min-width:0}
 .content{min-width:0}
 
+/* Native sidebar navigation: module entries are real links, not scroll buttons. */
+.nav a.nav-item{text-decoration:none;color:inherit}
+.nav a.nav-item:visited{color:inherit}
+.nav a.nav-item:focus-visible{outline:1px solid var(--cyan);outline-offset:2px}
+
 /* Central command deck: all common actions are available from the overview. */
 .command-deck{
   display:grid;
