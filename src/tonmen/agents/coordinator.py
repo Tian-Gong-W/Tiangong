@@ -26,6 +26,16 @@ class MissionCoordinator:
         self.runtime = runtime
         self.reasoner = MissionReasoner()
 
+    def _emit(self, event_type: str, run: MissionRun, **data: object) -> None:
+        if self.runtime.events is not None:
+            self.runtime.events.publish(
+                event_type,
+                mission_id=run.id,
+                plan_id=run.plan_id,
+                target=run.target,
+                **data,
+            )
+
     def _check_scope(self, plan: MissionPlan) -> None:
         if self.runtime.scope is None or not self.runtime.scope.is_allowed(plan.target):
             raise MissionRunDenied("target is outside the authorized scope")
@@ -110,6 +120,11 @@ class MissionCoordinator:
         run = MissionRun.create(plan)
         self._ensure_graph(plan, run)
         run.state = MissionRunState.RUNNING
+        self._emit(
+            "mission.started",
+            run,
+            steps=len(plan.steps),
+        )
         return run
 
     def run(self, plan: MissionPlan, *, approval_tokens: Mapping[str, str] | None = None) -> MissionRun:
@@ -127,6 +142,7 @@ class MissionCoordinator:
             raise ValueError("mission run does not belong to this plan")
         if mission_run.state is not MissionRunState.WAITING_APPROVAL:
             raise ValueError("only a mission waiting for approval can be resumed")
+        self._emit("mission.resumed", mission_run)
         return self._drive(plan, mission_run, approval_tokens or {})
 
     def advance_once(
@@ -161,11 +177,27 @@ class MissionCoordinator:
                 execution.state = StepExecutionState.WAITING_APPROVAL
                 execution.error = "explicit approval grant required"
                 mission_run.state = MissionRunState.WAITING_APPROVAL
+                self._emit(
+                    "approval.required",
+                    mission_run,
+                    step_id=step.id,
+                    tool=step.tool,
+                    step_target=step.target,
+                    risk=step.risk,
+                )
                 return mission_run
 
             request = ToolRequest(tool=step.tool, target=step.target, parameters=step.parameters)
             execution.state = StepExecutionState.RUNNING
             execution.error = None
+            self._emit(
+                "step.started",
+                mission_run,
+                step_id=step.id,
+                tool=step.tool,
+                step_target=step.target,
+                risk=step.risk,
+            )
             job = self.runtime.jobs.submit(request, approval_token=token)
             execution.job_id = job.id
 
@@ -173,12 +205,28 @@ class MissionCoordinator:
                 execution.state = StepExecutionState.DENIED
                 execution.error = job.error or "execution denied"
                 mission_run.finish(MissionRunState.DENIED)
+                self._emit(
+                    "step.denied",
+                    mission_run,
+                    step_id=step.id,
+                    tool=step.tool,
+                    error=execution.error,
+                )
+                self._emit("mission.denied", mission_run)
                 return mission_run
 
             if job.status is not JobStatus.SUCCEEDED or job.outcome is None:
                 execution.state = StepExecutionState.FAILED
                 if job.outcome is not None:
                     self._record_execution_evidence(mission_run, execution, job.outcome.evidence)
+                    self._emit(
+                        "evidence.created",
+                        mission_run,
+                        step_id=step.id,
+                        tool=step.tool,
+                        evidence_id=job.outcome.evidence.id,
+                        exit_code=job.outcome.evidence.exit_code,
+                    )
                     execution.error = job.error or job.outcome.result.summary
                     timed_out = bool(job.outcome.result.evidence.get("timed_out"))
                     if timed_out and step.risk <= int(RiskLevel.DISCOVERY):
@@ -187,15 +235,40 @@ class MissionCoordinator:
                         execution.metadata["timeout_seconds"] = job.outcome.result.evidence.get("timeout_seconds")
                         execution.metadata["degraded_reason"] = "discovery_timeout"
                         mission_run.state = MissionRunState.RUNNING
+                        self._emit(
+                            "step.degraded",
+                            mission_run,
+                            step_id=step.id,
+                            tool=step.tool,
+                            error=execution.error,
+                            reason="discovery_timeout",
+                            evidence_id=job.outcome.evidence.id,
+                        )
                         return mission_run
                 else:
                     execution.error = job.error or "execution failed"
                 mission_run.finish(MissionRunState.FAILED)
+                self._emit(
+                    "step.failed",
+                    mission_run,
+                    step_id=step.id,
+                    tool=step.tool,
+                    error=execution.error,
+                )
+                self._emit("mission.failed", mission_run)
                 return mission_run
 
             outcome = job.outcome
             evidence = outcome.evidence
             self._record_execution_evidence(mission_run, execution, evidence)
+            self._emit(
+                "evidence.created",
+                mission_run,
+                step_id=step.id,
+                tool=step.tool,
+                evidence_id=evidence.id,
+                exit_code=evidence.exit_code,
+            )
 
             facts = parse_evidence(evidence)
             observation = Observation.create(
@@ -224,6 +297,14 @@ class MissionCoordinator:
             )
             mission_run.graph.link(evidence.id, "supports", observation.id)
             mission_run.graph.link(mission_run.id, "observed", observation.id)
+            self._emit(
+                "observation.created",
+                mission_run,
+                step_id=step.id,
+                observation_id=observation.id,
+                evidence_id=evidence.id,
+                summary=observation.summary,
+            )
 
             for fact in facts:
                 mission_run.graph.add_node(
@@ -244,6 +325,26 @@ class MissionCoordinator:
                 mission_run.graph.link(evidence.id, "reveals", fact.id)
                 mission_run.graph.link(observation.id, "summarizes", fact.id)
                 mission_run.graph.link(mission_run.id, "knows", fact.id)
+                self._emit(
+                    "intelligence.created",
+                    mission_run,
+                    step_id=step.id,
+                    fact_id=fact.id,
+                    kind=fact.kind.value,
+                    title=fact.title,
+                    severity=fact.severity.value,
+                    evidence_id=fact.evidence_id,
+                )
+
+            self._emit(
+                "step.completed",
+                mission_run,
+                step_id=step.id,
+                tool=step.tool,
+                evidence_id=evidence.id,
+                observation_id=observation.id,
+                facts=len(facts),
+            )
 
             if all(
                 item.state in {
@@ -254,11 +355,13 @@ class MissionCoordinator:
                 for item in mission_run.steps
             ):
                 mission_run.finish(MissionRunState.SUCCEEDED)
+                self._emit("mission.completed", mission_run)
             else:
                 mission_run.state = MissionRunState.RUNNING
             return mission_run
 
         mission_run.finish(MissionRunState.SUCCEEDED)
+        self._emit("mission.completed", mission_run)
         return mission_run
 
     def _drive(
@@ -274,8 +377,24 @@ class MissionCoordinator:
             self.advance_once(plan, run, approval_tokens=approval_tokens)
             decision = self.reasoner.decide(plan, run)
             self.record_reasoning(run, decision)
+            self._emit(
+                "reasoning.decided",
+                run,
+                decision_id=decision.id,
+                action=decision.action.value,
+                summary=decision.summary,
+                basis_fact_ids=list(decision.basis_fact_ids),
+                next_step_id=decision.next_step_id,
+                requires_human=decision.requires_human,
+            )
 
             if decision.action is ReasoningAction.SKIP and self.apply_reasoning_decision(plan, run, decision):
+                self._emit(
+                    "step.skipped",
+                    run,
+                    step_id=decision.next_step_id,
+                    reason=decision.summary,
+                )
                 continue
 
             if run.state in {
