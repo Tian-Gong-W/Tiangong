@@ -131,7 +131,6 @@ def run_doctor(
     for executable, note in (
         ("nmap", "Nmap network scanner"),
         ("httpx", "ProjectDiscovery HTTPx CLI (not the Python httpx package)"),
-        ("nuclei", "ProjectDiscovery Nuclei CLI"),
     ):
         path = which(executable)
         checks.append(
@@ -145,7 +144,17 @@ def run_doctor(
             )
         )
 
-    nuclei_binary = next(check for check in checks if check.name == "nuclei")
+    nuclei_path = which("nuclei")
+    nuclei_binary = DoctorCheck(
+        "nuclei-binary",
+        nuclei_path is not None,
+        f"ProjectDiscovery Nuclei CLI: {nuclei_path}" if nuclei_path else "ProjectDiscovery Nuclei CLI: not found in PATH",
+        code="ready" if nuclei_path else "missing_binary",
+        remediation=None if nuclei_path else "Install nuclei and make sure it is available in PATH.",
+        metadata={"path": nuclei_path} if nuclei_path else {},
+    )
+    checks.append(nuclei_binary)
+
     template_check = _nuclei_templates_check(environ=environ, home=home)
     if not nuclei_binary.ok:
         template_check = DoctorCheck(
@@ -157,6 +166,28 @@ def run_doctor(
             metadata=template_check.metadata,
         )
     checks.append(template_check)
+
+    nuclei_ready = nuclei_binary.ok and template_check.ok
+    nuclei_code = "ready" if nuclei_ready else (nuclei_binary.code if not nuclei_binary.ok else template_check.code)
+    nuclei_remediation = None if nuclei_ready else (nuclei_binary.remediation or template_check.remediation)
+    checks.append(
+        DoctorCheck(
+            "nuclei",
+            nuclei_ready,
+            (
+                f"Nuclei ready: {nuclei_path}; {template_check.detail}"
+                if nuclei_ready
+                else f"Nuclei blocked: {template_check.detail if nuclei_binary.ok else nuclei_binary.detail}"
+            ),
+            required=False,
+            code=nuclei_code,
+            remediation=nuclei_remediation,
+            metadata={
+                "binary": nuclei_path,
+                "templates_path": template_check.metadata.get("path"),
+            },
+        )
+    )
 
     return DoctorReport(tuple(checks))
 
