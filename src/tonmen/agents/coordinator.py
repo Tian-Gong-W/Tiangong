@@ -62,6 +62,9 @@ class MissionCoordinator:
                 continue
             if execution.state not in {StepExecutionState.PENDING, StepExecutionState.WAITING_APPROVAL}:
                 return False
+            preflight = execution.metadata.get("preflight")
+            if isinstance(preflight, dict) and preflight.get("ready") is False:
+                return False
             execution.state = StepExecutionState.SKIPPED
             execution.error = None
             execution.metadata["reasoning_decision_id"] = decision.id
