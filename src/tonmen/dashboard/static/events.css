@@ -1,4 +1,93 @@
 .live-event-card{margin:10px 0;border-color:#294454;background:#09151f;box-shadow:none!important}
 .live-event-card .module-card-head{min-height:44px}
 .live-event-output{margin:0;max-height:260px;overflow:auto;border:0;border-top:1px solid #1d3443;border-radius:0;background:#050b10;color:#c6d5dc;font-size:11px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
-@media (max-height:800px){.live-event-output{max-height:190px}}
+
+/* Missions workbench: history on top, detail below, with a real draggable split. */
+.mission-workbench{display:grid!important;grid-template-columns:1fr!important;grid-template-rows:minmax(190px,var(--mission-history-size,36%)) 8px minmax(360px,1fr)!important;gap:0!important;height:clamp(620px,calc(100dvh - 250px),980px);min-height:0}
+.mission-workbench>.module-card{min-width:0;min-height:0;border-radius:8px;overflow:hidden}
+.mission-master-card{grid-row:1;display:flex;flex-direction:column}
+.mission-detail-card{grid-row:3;display:flex;flex-direction:column}
+.mission-master-card .module-table-wrap{overflow:auto;min-height:0;flex:1}
+.mission-detail-card>.module-card-body{overflow:hidden!important;min-height:0;flex:1;padding:0!important;display:flex;flex-direction:column}
+.mission-splitter{grid-row:2;height:8px;cursor:row-resize;position:relative;background:#08131c;border-top:1px solid #1c3342;border-bottom:1px solid #1c3342}
+.mission-splitter::after{content:"";position:absolute;left:50%;top:3px;width:54px;height:2px;transform:translateX(-50%);background:#3a5667;border-radius:99px}
+.mission-splitter:hover::after{background:#6c91a5}
+
+.mission-history-tools{display:grid;grid-template-columns:minmax(220px,1fr) 150px auto;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid #1e3442;background:#08141d}
+.mission-search-wrap{position:relative;min-width:0}
+.mission-search-wrap>span{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:#6f8a9a;font-size:12px}
+.mission-search-wrap input,.mission-history-tools select{width:100%;height:32px;border:1px solid #294454;background:#061019;color:#c7d7df;border-radius:5px;outline:none;font-size:11px}
+.mission-search-wrap input{padding:0 9px 0 28px}
+.mission-history-tools select{padding:0 8px}
+.mission-search-wrap input:focus,.mission-history-tools select:focus{border-color:#3c768d}
+.mission-history-tools>small{color:#708797;font-size:10px;white-space:nowrap}
+
+.mission-detail-summary{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 12px;border-bottom:1px solid #203746;background:#091720}
+.mission-detail-summary strong{display:block;font-size:14px;color:#d5e3e9}
+.mission-detail-summary small{display:block;margin-top:3px;color:#6f8795;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9px}
+.mission-detail-tabs{display:flex;align-items:center;gap:0;overflow-x:auto;padding:0 8px;border-bottom:1px solid #203746;background:#07121a;flex:0 0 auto}
+.mission-detail-tabs button{appearance:none;border:0;border-bottom:2px solid transparent;background:transparent;color:#77909e;padding:9px 11px;min-height:34px;font-size:10px;cursor:pointer;white-space:nowrap}
+.mission-detail-tabs button:hover{color:#b7cbd4;background:#0b1b25}
+.mission-detail-tabs button.active{color:#d8e8ee;border-bottom-color:#48a7bb;background:#0a1a24}
+.mission-tab-content{flex:1;min-height:0;overflow:hidden;background:#071018}
+.mission-tab-panel{display:none;height:100%;overflow:auto;padding:11px}
+.mission-tab-panel.active{display:block}
+
+.mission-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1px solid #203846;border-radius:7px;overflow:hidden}
+.mission-summary-grid>div{padding:11px 12px;border-right:1px solid #203846;border-bottom:1px solid #203846;background:#091720}
+.mission-summary-grid>div:nth-child(3n){border-right:0}
+.mission-summary-grid>div:nth-last-child(-n+3){border-bottom:0}
+.mission-summary-grid span{display:block;color:#667f8d;font-size:9px;text-transform:uppercase;letter-spacing:.06em}
+.mission-summary-grid strong{display:block;margin-top:4px;color:#cedce3;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mission-context-links{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+.mission-context-links a{display:inline-flex;align-items:center;min-height:30px;padding:0 10px;border:1px solid #294454;border-radius:5px;color:#a9c5d1;text-decoration:none;font-size:10px;background:#091720}
+.mission-context-links a:hover{border-color:#48778d;color:#d2e6ed}
+.mission-context-links a.attention{border-color:#8a5b2c;color:#e2b875}
+
+.mission-step-list{display:grid;gap:6px}
+.mission-step-row{display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:10px;align-items:start;padding:9px 10px;border:1px solid #203846;border-radius:6px;background:#091720}
+.mission-step-row .num{display:grid;place-items:center;width:28px;height:28px;border:1px solid #2a4858;border-radius:4px;color:#7692a1;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px}
+.mission-step-row strong{display:inline-block;margin-right:8px;color:#d4e2e8;font-size:12px}
+.mission-step-row code{color:#91b4c3;font-size:10px}
+.mission-step-row small{display:block;margin-top:4px;color:#718894;font-size:10px;line-height:1.45}
+.mission-step-row small.err{color:#d98888}
+.mission-step-meta{text-align:right;min-width:82px}
+.mission-step-meta small{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+
+.mission-output-block{margin-bottom:10px;border:1px solid #203846;border-radius:6px;overflow:hidden;background:#050b10}
+.mission-output-block>div{display:flex;align-items:center;gap:8px;padding:7px 9px;border-bottom:1px solid #1c303c;background:#091720}
+.mission-output-block>div strong{font-size:10px;color:#cbdbe2}
+.mission-output-block>div span{font-size:9px;color:#748995;margin-right:auto}
+.mission-copy{min-height:25px!important;padding:3px 7px!important;font-size:9px!important}
+.mission-output{margin:0!important;max-height:360px;overflow:auto;border:0!important;border-radius:0!important;white-space:pre-wrap;word-break:break-word;font-size:10px!important;line-height:1.5!important;background:#050b10!important}
+.mission-output.stderr{color:#dba2a2!important}
+.mission-live-output{margin:0!important;height:100%;min-height:320px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#050b10!important;border:1px solid #1e3442!important;border-radius:6px!important;color:#c7d7dd!important;font-size:10px!important;line-height:1.55!important}
+
+.mission-evidence-row,.mission-reason-row{padding:10px;border:1px solid #203846;border-radius:6px;background:#091720;margin-bottom:7px}
+.mission-evidence-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.mission-evidence-head strong,.mission-reason-row strong{display:block;color:#d3e1e7;font-size:11px}
+.mission-evidence-head small,.mission-reason-row small{display:block;margin-top:3px;color:#687f8d;font-size:9px}
+.mission-evidence-row>code{display:block;margin-top:8px;padding:7px 8px;border:1px solid #1d313d;background:#050b10;color:#99b7c4;border-radius:4px;white-space:pre-wrap;word-break:break-word;font-size:9px}
+.mission-copy-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.mission-reason-row>div{display:flex;align-items:center;gap:10px}
+.mission-reason-row>div strong{min-width:110px;color:#e0b775;text-transform:uppercase}
+.mission-reason-row>div span{color:#afc2cb;font-size:10px}
+
+@media (max-width:900px){
+  .mission-workbench{display:block!important;height:auto;min-height:0}
+  .mission-workbench>.module-card{margin-bottom:10px}
+  .mission-splitter{display:none}
+  .mission-history-tools{grid-template-columns:1fr 130px}
+  .mission-history-tools>small{display:none}
+  .mission-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .mission-summary-grid>div{border-right:1px solid #203846!important;border-bottom:1px solid #203846!important}
+  .mission-summary-grid>div:nth-child(2n){border-right:0!important}
+}
+@media (max-width:620px){
+  .mission-history-tools{grid-template-columns:1fr}
+  .mission-summary-grid{grid-template-columns:1fr}
+  .mission-summary-grid>div{border-right:0!important}
+  .mission-step-row{grid-template-columns:30px minmax(0,1fr)}
+  .mission-step-meta{grid-column:2;text-align:left}
+}
+@media (max-height:800px){.live-event-output{max-height:190px}.mission-workbench{height:620px}}
