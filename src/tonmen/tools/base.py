@@ -29,6 +29,7 @@ class ToolRequest:
     tool: str
     parameters: Mapping[str, Any] = field(default_factory=dict)
     target: str | None = None
+    context: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

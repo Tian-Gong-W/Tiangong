@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from time import monotonic
-from typing import Mapping
+from typing import Callable, Mapping
 from uuid import uuid4
 
 from tonmen.agents import MissionCoordinator
@@ -16,14 +16,36 @@ from .model import LoopStopReason, MissionLoopPolicy, MissionLoopResult
 class MissionLoop:
     """Bounded observe → reason → act loop over existing governed mission steps only."""
 
-    def __init__(self, runtime: TonmenRuntime, policy: MissionLoopPolicy | None = None) -> None:
+    def __init__(
+        self,
+        runtime: TonmenRuntime,
+        policy: MissionLoopPolicy | None = None,
+        *,
+        checkpoint: Callable[[MissionPlan, MissionRun], None] | None = None,
+    ) -> None:
         self.runtime = runtime
         self.policy = policy or MissionLoopPolicy()
         self.coordinator = MissionCoordinator(runtime)
         self.reasoner = MissionReasoner()
+        self.checkpoint = checkpoint
+
+    def _emit(self, event_type: str, run: MissionRun, **data: object) -> None:
+        if self.runtime.events is not None:
+            self.runtime.events.publish(
+                event_type,
+                mission_id=run.id,
+                plan_id=run.plan_id,
+                target=run.target,
+                **data,
+            )
+
+    def _checkpoint(self, plan: MissionPlan, run: MissionRun) -> None:
+        if self.checkpoint is not None:
+            self.checkpoint(plan, run)
 
     def run(self, plan: MissionPlan) -> MissionLoopResult:
         run = self.coordinator.start(plan)
+        self._checkpoint(plan, run)
         return self._drive(plan, run, approval_tokens={})
 
     def resume(
@@ -87,9 +109,18 @@ class MissionLoop:
             )
         )
         run.graph.link(run.id, "governed_by", session_id)
+        self._emit(
+            "loop.session",
+            run,
+            session_id=session_id,
+            max_iterations=self.policy.max_iterations,
+            max_executions=self.policy.max_executions,
+            max_repeat_decisions=self.policy.max_repeat_decisions,
+            max_duration_seconds=self.policy.max_duration_seconds,
+        )
 
-    @staticmethod
     def _record_iteration(
+        self,
         run: MissionRun,
         *,
         session_id: str,
@@ -116,9 +147,19 @@ class MissionLoop:
         run.graph.link(session_id, "contains_iteration", node_id)
         if decision.id in run.graph.nodes:
             run.graph.link(node_id, "observed_decision", decision.id)
+        self._emit(
+            "loop.iteration",
+            run,
+            session_id=session_id,
+            iteration=iteration,
+            executions=executions,
+            decision_id=decision.id,
+            decision_action=decision.action.value,
+            evidence_added=evidence_added,
+        )
 
-    @staticmethod
     def _record_stop(
+        self,
         run: MissionRun,
         *,
         session_id: str,
@@ -144,9 +185,19 @@ class MissionLoop:
         run.graph.link(session_id, "stopped_by", node_id)
         if decision and decision.id in run.graph.nodes:
             run.graph.link(decision.id, "caused_stop", node_id)
+        self._emit(
+            "loop.stopped",
+            run,
+            session_id=session_id,
+            reason=reason.value,
+            iterations=iterations,
+            executions=executions,
+            decision_id=decision.id if decision else None,
+        )
 
     def _result(
         self,
+        plan: MissionPlan,
         run: MissionRun,
         *,
         session_id: str,
@@ -163,6 +214,7 @@ class MissionLoop:
             executions=executions,
             decision=decision,
         )
+        self._checkpoint(plan, run)
         return MissionLoopResult(
             run=run,
             stop_reason=reason,
@@ -182,6 +234,7 @@ class MissionLoop:
         session_id = uuid4().hex
         self.coordinator._ensure_graph(plan, run)
         self._record_session(run, session_id)
+        self._checkpoint(plan, run)
 
         started = monotonic()
         executions = 0
@@ -191,6 +244,7 @@ class MissionLoop:
         for iteration in range(1, self.policy.max_iterations + 1):
             if monotonic() - started >= self.policy.max_duration_seconds:
                 return self._result(
+                    plan,
                     run,
                     session_id=session_id,
                     reason=LoopStopReason.TIME_BUDGET,
@@ -205,6 +259,7 @@ class MissionLoop:
                 and self._next_step_would_execute(plan, run, approval_tokens)
             ):
                 return self._result(
+                    plan,
                     run,
                     session_id=session_id,
                     reason=LoopStopReason.EXECUTION_BUDGET,
@@ -229,6 +284,16 @@ class MissionLoop:
             decision = self.reasoner.decide(plan, run)
             last_decision = decision
             self.coordinator.record_reasoning(run, decision)
+            self._emit(
+                "reasoning.decided",
+                run,
+                decision_id=decision.id,
+                action=decision.action.value,
+                summary=decision.summary,
+                basis_fact_ids=list(decision.basis_fact_ids),
+                next_step_id=decision.next_step_id,
+                requires_human=decision.requires_human,
+            )
             self._record_iteration(
                 run,
                 session_id=session_id,
@@ -237,12 +302,14 @@ class MissionLoop:
                 decision=decision,
                 evidence_added=evidence_added,
             )
+            self._checkpoint(plan, run)
 
             key = self._decision_key(decision)
             repeated[key] = repeated.get(key, 0) + 1
             no_progress = evidence_added == 0 and states_before == tuple(step.state for step in run.steps)
             if repeated[key] > self.policy.max_repeat_decisions and no_progress:
                 return self._result(
+                    plan,
                     run,
                     session_id=session_id,
                     reason=LoopStopReason.REPEATED_DECISION,
@@ -253,10 +320,18 @@ class MissionLoop:
 
             if decision.action is ReasoningAction.SKIP:
                 if self.coordinator.apply_reasoning_decision(plan, run, decision):
+                    self._emit(
+                        "step.skipped",
+                        run,
+                        step_id=decision.next_step_id,
+                        reason=decision.summary,
+                    )
+                    self._checkpoint(plan, run)
                     continue
 
             if run.state is MissionRunState.WAITING_APPROVAL or decision.action is ReasoningAction.REQUEST_APPROVAL:
                 return self._result(
+                    plan,
                     run,
                     session_id=session_id,
                     reason=LoopStopReason.APPROVAL_REQUIRED,
@@ -267,6 +342,7 @@ class MissionLoop:
 
             if decision.action is ReasoningAction.REVIEW:
                 return self._result(
+                    plan,
                     run,
                     session_id=session_id,
                     reason=LoopStopReason.REVIEW_REQUIRED,
@@ -277,6 +353,7 @@ class MissionLoop:
 
             if run.state in {MissionRunState.FAILED, MissionRunState.DENIED} or decision.action is ReasoningAction.STOP:
                 return self._result(
+                    plan,
                     run,
                     session_id=session_id,
                     reason=LoopStopReason.TERMINAL,
@@ -287,6 +364,7 @@ class MissionLoop:
 
             if run.state is MissionRunState.SUCCEEDED or decision.action is ReasoningAction.COMPLETE:
                 return self._result(
+                    plan,
                     run,
                     session_id=session_id,
                     reason=LoopStopReason.COMPLETE,
@@ -296,6 +374,7 @@ class MissionLoop:
                 )
 
         return self._result(
+            plan,
             run,
             session_id=session_id,
             reason=LoopStopReason.MAX_ITERATIONS,

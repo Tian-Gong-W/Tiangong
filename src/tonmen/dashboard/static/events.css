@@ -1,0 +1,4 @@
+.live-event-card{margin:10px 0;border-color:#294454;background:#09151f;box-shadow:none!important}
+.live-event-card .module-card-head{min-height:44px}
+.live-event-output{margin:0;max-height:260px;overflow:auto;border:0;border-top:1px solid #1d3443;border-radius:0;background:#050b10;color:#c6d5dc;font-size:11px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
+@media (max-height:800px){.live-event-output{max-height:190px}}
