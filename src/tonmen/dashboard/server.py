@@ -21,6 +21,7 @@ from tonmen.loop import MissionLoop, MissionLoopPolicy
 from tonmen.missions import MissionRunState, StepExecutionState
 from tonmen.policy import validate_scope_rule
 from tonmen.reasoning import MissionReasoner
+from tonmen.reports import ReportStore
 from tonmen.tools.base import RiskLevel
 
 _LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
@@ -32,11 +33,13 @@ _STATIC_TYPES = {
     "module-pages.css": "text/css; charset=utf-8",
     "events.css": "text/css; charset=utf-8",
     "history-delete.css": "text/css; charset=utf-8",
+    "reports.css": "text/css; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",
     "deck.js": "text/javascript; charset=utf-8",
     "module-pages.js": "text/javascript; charset=utf-8",
     "events.js": "text/javascript; charset=utf-8",
     "history-delete.js": "text/javascript; charset=utf-8",
+    "reports.js": "text/javascript; charset=utf-8",
 }
 
 
@@ -102,6 +105,7 @@ def mission_payload(plan, run) -> dict[str, Any]:
         "intelligence": [_node_payload(node) for node in run.graph.nodes.values() if node.kind.startswith("intelligence.")],
         "reasoning": [_node_payload(node) for node in run.graph.nodes.values() if node.kind.startswith("reasoning.")],
         "loop": [_node_payload(node) for node in run.graph.nodes.values() if node.kind.startswith("loop.")],
+        "council": [_node_payload(node) for node in run.graph.nodes.values() if node.kind.startswith("council.")],
         "graph": {
             "nodes": [_node_payload(node) for node in run.graph.nodes.values()],
             "edges": [{"source": edge.source, "relation": edge.relation, "target": edge.target} for edge in run.graph.edges],
@@ -118,15 +122,30 @@ class DashboardState:
         self.events = EventBus()
         self.runtime = TonmenRuntime.sentinel(config, events=self.events)
         self.chronicle = ChronicleStore(config.workspace)
+        self.reports = ReportStore(config.workspace)
 
     def _reload_runtime(self, config: TonmenConfig) -> None:
         self.config = config
         self.runtime = TonmenRuntime.sentinel(config, events=self.events)
         self.chronicle = ChronicleStore(config.workspace)
+        self.reports = ReportStore(config.workspace)
 
     def _checkpoint(self, plan, run) -> None:
         with self._lock:
             self.chronicle.save(plan, run)
+            report = self.reports.save(plan, run)
+            if report["report_type"] == "final":
+                self.events.publish(
+                    "report.ready",
+                    mission_id=run.id,
+                    plan_id=plan.id,
+                    target=run.target,
+                    state=run.state.value,
+                    findings=report["summary"]["findings"],
+                    payloads=report["summary"]["executed_payloads"],
+                    assessment_rounds=report["summary"]["assessment_rounds"],
+                    subagent_reviews=report["summary"]["subagent_reviews"],
+                )
 
     def _tool_readiness(self, tool: str):
         return self.runtime.registry.get(tool).readiness()
@@ -148,6 +167,17 @@ class DashboardState:
         if readiness.remediation:
             message += f" Fix: {readiness.remediation}"
         raise ValueError(message)
+
+    @staticmethod
+    def _policy_from_run(run, policy: MissionLoopPolicy | None = None) -> MissionLoopPolicy:
+        if policy is not None:
+            return policy
+        sessions = [node for node in run.graph.nodes.values() if node.kind == "loop.session"]
+        metadata = sessions[-1].metadata if sessions else {}
+        return MissionLoopPolicy(
+            assessment_rounds=int(metadata.get("assessment_rounds", 8)),
+            subagents_per_round=int(metadata.get("subagents_per_round", 4)),
+        )
 
     def event_stream(self, cursor: int = 0, timeout: float = 20.0, limit: int = 200) -> dict[str, Any]:
         events = self.events.wait_after(cursor, timeout=timeout, limit=limit)
@@ -208,6 +238,15 @@ class DashboardState:
             plan, run = self.chronicle.load(run_id)
             return mission_payload(plan, run)
 
+    def report(self, run_id: str, *, markdown: bool = False):
+        with self._lock:
+            try:
+                return self.reports.load_markdown(run_id) if markdown else self.reports.load_json(run_id)
+            except FileNotFoundError:
+                plan, run = self.chronicle.load(run_id)
+                self.reports.save(plan, run)
+                return self.reports.load_markdown(run_id) if markdown else self.reports.load_json(run_id)
+
     def delete_mission(self, run_id: str) -> dict[str, Any]:
         with self._lock:
             _, run = self.chronicle.load(run_id)
@@ -215,6 +254,7 @@ class DashboardState:
                 raise ValueError("only completed, failed or denied missions may be deleted")
             if not self.chronicle.delete(run.id):
                 raise FileNotFoundError(run.id)
+            self.reports.delete(run.id)
             if self.runtime.audit is not None:
                 self.runtime.audit.append(
                     action="mission.delete",
@@ -238,6 +278,7 @@ class DashboardState:
                 if entry.state not in _TERMINAL_MISSION_STATES:
                     continue
                 if self.chronicle.delete(entry.run_id):
+                    self.reports.delete(entry.run_id)
                     deleted.append(entry.run_id)
                     if self.runtime.audit is not None:
                         self.runtime.audit.append(
@@ -304,6 +345,7 @@ class DashboardState:
                     "command_timeout_seconds": self.config.command_timeout_seconds,
                     "allowed_targets": list(self.config.allowed_targets), "denied_targets": list(self.config.denied_targets),
                     "allow_arbitrary_shell": self.config.allow_arbitrary_shell, "console_loopback_only": True,
+                    "default_assessment_rounds": 8, "default_subagents_per_round": 4,
                     "event_cursor": self.events.cursor}
 
     def start_mission(self, target: str, policy: MissionLoopPolicy | None = None) -> dict[str, Any]:
@@ -321,7 +363,8 @@ class DashboardState:
             plan, run = self.chronicle.load(run_id)
         if run.state is not MissionRunState.RUNNING:
             raise ValueError("mission is not budget-stopped in a resumable running state")
-        result = MissionLoop(self.runtime, policy or MissionLoopPolicy(), checkpoint=self._checkpoint).resume(plan, run)
+        resolved_policy = self._policy_from_run(run, policy)
+        result = MissionLoop(self.runtime, resolved_policy, checkpoint=self._checkpoint).resume(plan, run)
         self._checkpoint(plan, result.run)
         payload = mission_payload(plan, result.run); payload["stop_reason"] = result.stop_reason.value
         return payload
@@ -337,7 +380,7 @@ class DashboardState:
         grant = self.runtime.approvals.issue(tool=waiting.tool, target=waiting.target)
         self.events.publish("approval.granted", mission_id=run.id, plan_id=plan.id, target=run.target,
                             step_id=waiting.id, tool=waiting.tool, step_target=waiting.target)
-        result = MissionLoop(self.runtime, checkpoint=self._checkpoint).resume(
+        result = MissionLoop(self.runtime, self._policy_from_run(run), checkpoint=self._checkpoint).resume(
             plan, run, approval_tokens={waiting.id: grant.token})
         self._checkpoint(plan, result.run)
         payload = mission_payload(plan, result.run); payload["stop_reason"] = result.stop_reason.value
@@ -404,8 +447,8 @@ class TonmenDashboardHandler(BaseHTTPRequestHandler):
                 name = unquote(path.removeprefix("/assets/")); content_type = _STATIC_TYPES.get(name)
                 if content_type is None: self._error(404, "asset not found"); return
                 payload = self._asset(name)
-                if name == "app.js": payload += b"\n" + self._asset("deck.js") + b"\n" + self._asset("module-pages.js") + b"\n" + self._asset("events.js") + b"\n" + self._asset("history-delete.js")
-                if name == "viewport.css": payload += b"\n" + self._asset("module-pages.css") + b"\n" + self._asset("events.css") + b"\n" + self._asset("history-delete.css")
+                if name == "app.js": payload += b"\n" + self._asset("deck.js") + b"\n" + self._asset("module-pages.js") + b"\n" + self._asset("events.js") + b"\n" + self._asset("history-delete.js") + b"\n" + self._asset("reports.js")
+                if name == "viewport.css": payload += b"\n" + self._asset("module-pages.css") + b"\n" + self._asset("events.css") + b"\n" + self._asset("history-delete.css") + b"\n" + self._asset("reports.css")
                 self._send_bytes(200, content_type, payload, cache="no-store"); return
             if path == "/api/events":
                 query = parse_qs(parsed.query)
@@ -422,6 +465,14 @@ class TonmenDashboardHandler(BaseHTTPRequestHandler):
             if path == "/api/missions": self._json(200, {"missions": self.server.state.missions()}); return
             if path.startswith("/api/missions/") and path.endswith("/reason"):
                 self._json(200, self.server.state.reason(unquote(path.split("/")[3]))); return
+            if path.startswith("/api/missions/") and path.endswith("/report"):
+                run_id = unquote(path.split("/")[3])
+                query = parse_qs(parsed.query)
+                markdown = query.get("format", ["json"])[0].lower() in {"md", "markdown"}
+                if markdown:
+                    payload = self.server.state.report(run_id, markdown=True).encode("utf-8")
+                    self._send_bytes(200, "text/markdown; charset=utf-8", payload); return
+                self._json(200, self.server.state.report(run_id)); return
             if path.startswith("/api/missions/"):
                 self._json(200, self.server.state.mission(unquote(path.split("/")[3]))); return
             self._error(404, "not found")
@@ -439,7 +490,14 @@ class TonmenDashboardHandler(BaseHTTPRequestHandler):
             if path == "/api/missions/start":
                 target = str(data.get("target", "")).strip()
                 if not target: raise ValueError("target is required")
-                policy = MissionLoopPolicy(max_iterations=int(data.get("max_iterations", 8)), max_executions=int(data.get("max_executions", 3)), max_repeat_decisions=int(data.get("max_repeat_decisions", 2)), max_duration_seconds=int(data.get("max_duration_seconds", 300)))
+                policy = MissionLoopPolicy(
+                    max_iterations=int(data.get("max_iterations", 8)),
+                    max_executions=int(data.get("max_executions", 3)),
+                    max_repeat_decisions=int(data.get("max_repeat_decisions", 2)),
+                    max_duration_seconds=int(data.get("max_duration_seconds", 300)),
+                    assessment_rounds=int(data.get("assessment_rounds", 8)),
+                    subagents_per_round=int(data.get("subagents_per_round", 4)),
+                )
                 self._json(200, self.server.state.start_mission(target, policy)); return
             if path == "/api/missions/cleanup":
                 self._json(200, self.server.state.cleanup_terminal_missions()); return
