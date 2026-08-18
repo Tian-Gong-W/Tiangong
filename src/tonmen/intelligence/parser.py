@@ -76,6 +76,101 @@ def _parse_nmap(evidence: EvidenceRecord) -> list[IntelligenceFact]:
     return facts
 
 
+def _parse_dns_intel(evidence: EvidenceRecord) -> list[IntelligenceFact]:
+    facts: list[IntelligenceFact] = []
+    for line in _nonempty_lines(evidence.stdout):
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(item, dict) or item.get("type") != "dns":
+            continue
+        host = str(item.get("host") or evidence.target or "").strip()
+        record_type = str(item.get("record_type") or "STATUS").upper()
+        address = str(item.get("address") or "").strip()
+        resolved = bool(item.get("resolved", bool(address)))
+        if address:
+            title = f"{record_type} {host} → {address}"
+        else:
+            title = f"DNS unresolved: {host}"
+        facts.append(
+            IntelligenceFact.create(
+                kind=FactKind.DNS,
+                source="dns-intel",
+                target=host or evidence.target,
+                title=title,
+                evidence_id=evidence.id,
+                confidence=1.0 if resolved else 0.9,
+                data={
+                    "host": host,
+                    "record_type": record_type,
+                    "address": address or None,
+                    "canonical_name": item.get("canonical_name"),
+                    "reverse_name": item.get("reverse_name"),
+                    "resolved": resolved,
+                    "error": item.get("error"),
+                },
+            )
+        )
+    return facts
+
+
+def _parse_tls_intel(evidence: EvidenceRecord) -> list[IntelligenceFact]:
+    facts: list[IntelligenceFact] = []
+    for line in _nonempty_lines(evidence.stdout):
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(item, dict) or item.get("type") != "tls":
+            continue
+        host = str(item.get("host") or evidence.target or "").strip()
+        try:
+            port = int(item.get("port") or 443)
+        except (TypeError, ValueError):
+            port = 443
+        reachable = bool(item.get("reachable", False))
+        version = str(item.get("version") or "").strip()
+        cipher = str(item.get("cipher") or "").strip()
+        if reachable:
+            title = f"TLS {host}:{port}"
+            if version:
+                title += f" {version}"
+            if cipher:
+                title += f" {cipher}"
+        else:
+            title = f"TLS handshake unavailable: {host}:{port}"
+        sans = item.get("sans", ())
+        safe_sans = [str(value)[:255] for value in sans[:128]] if isinstance(sans, list) else []
+        facts.append(
+            IntelligenceFact.create(
+                kind=FactKind.TLS,
+                source="tls-intel",
+                target=host or evidence.target,
+                title=title,
+                evidence_id=evidence.id,
+                confidence=1.0 if reachable else 0.9,
+                data={
+                    "host": host,
+                    "port": port,
+                    "reachable": reachable,
+                    "version": version or None,
+                    "cipher": cipher or None,
+                    "cipher_bits": item.get("cipher_bits"),
+                    "fingerprint_sha256": item.get("fingerprint_sha256"),
+                    "subject": item.get("subject"),
+                    "issuer": item.get("issuer"),
+                    "serial_number": item.get("serial_number"),
+                    "not_before": item.get("not_before"),
+                    "not_after": item.get("not_after"),
+                    "sans": safe_sans,
+                    "error": item.get("error"),
+                },
+            )
+        )
+    return facts
+
+
 def _parse_httpx(evidence: EvidenceRecord) -> list[IntelligenceFact]:
     facts: list[IntelligenceFact] = []
     for line in _nonempty_lines(evidence.stdout):
@@ -118,7 +213,6 @@ def _parse_httpx(evidence: EvidenceRecord) -> list[IntelligenceFact]:
 
 
 def _crawler_security_findings(evidence: EvidenceRecord, item: dict, url: str) -> list[IntelligenceFact]:
-    """Create conservative entry-page posture findings without retaining secret values."""
     security = item.get("security")
     if not isinstance(security, dict) or item.get("depth") != 0:
         return []
@@ -141,18 +235,10 @@ def _crawler_security_findings(evidence: EvidenceRecord, item: dict, url: str) -
 
     is_https = bool(security.get("https"))
     if is_https and security.get("hsts") is False:
-        add(
-            "HSTS header not observed on HTTPS entry page",
-            Severity.LOW,
-            "hsts_missing",
-        )
+        add("HSTS header not observed on HTTPS entry page", Severity.LOW, "hsts_missing")
 
     if security.get("csp") is False:
-        add(
-            "Content-Security-Policy header not observed on entry page",
-            Severity.INFO,
-            "csp_missing",
-        )
+        add("Content-Security-Policy header not observed on entry page", Severity.INFO, "csp_missing")
 
     cookies = security.get("cookies")
     if isinstance(cookies, list):
@@ -273,6 +359,10 @@ def parse_evidence(evidence: EvidenceRecord) -> list[IntelligenceFact]:
     tool = evidence.tool.strip().lower()
     if tool == "nmap":
         return _parse_nmap(evidence)
+    if tool == "dns-intel":
+        return _parse_dns_intel(evidence)
+    if tool == "tls-intel":
+        return _parse_tls_intel(evidence)
     if tool == "httpx":
         return _parse_httpx(evidence)
     if tool == "crawler":
@@ -288,6 +378,6 @@ def summarize_facts(source: str, facts: list[IntelligenceFact], fallback: str) -
     counts: dict[FactKind, int] = {}
     for fact in facts:
         counts[fact.kind] = counts.get(fact.kind, 0) + 1
-    order = (FactKind.HOST, FactKind.SERVICE, FactKind.WEB, FactKind.FINDING)
+    order = (FactKind.HOST, FactKind.SERVICE, FactKind.DNS, FactKind.TLS, FactKind.WEB, FactKind.FINDING)
     parts = [f"{counts[kind]} {kind.value}" for kind in order if counts.get(kind)]
     return f"{source}: " + ", ".join(parts)
