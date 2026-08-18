@@ -58,6 +58,8 @@ def test_module_workspace_assets_are_packaged_and_routed():
     assert "实际执行清单" in deck
     assert "记录 / 删除" in deck
     assert "/api/plans/preview" in deck
+    assert "candidate_capabilities" in deck
+    assert "Evidence-driven replanning" in deck
     assert "const plannedSteps" not in deck
     assert ".operator-hub" in operator_css
 
@@ -86,7 +88,7 @@ def test_dashboard_detail_apis_expose_tools_guard_and_settings(tmp_path):
     assert settings["allow_arbitrary_shell"] is False
 
 
-def test_dashboard_plan_preview_comes_from_governed_planner(tmp_path):
+def test_dashboard_plan_preview_exposes_seed_and_uncommitted_capability_pool(tmp_path):
     config = TonmenConfig(
         workspace=tmp_path,
         config_path=tmp_path / "tonmen.toml",
@@ -96,30 +98,48 @@ def test_dashboard_plan_preview_comes_from_governed_planner(tmp_path):
 
     preview = state.preview_plan("https://localhost")
 
-    assert preview["planner"] == "MissionPlanner"
-    assert preview["mode"] == "deterministic-governed"
+    assert preview["planner"] == "AdaptiveMissionPlanner"
+    assert preview["mode"] == "evidence-driven-adaptive"
     assert preview["executes"] is False
-    assert [step["tool"] for step in preview["steps"]] == ["nmap", "httpx", "crawler", "nuclei"]
+    assert preview["future_steps_committed"] is False
+    assert [step["tool"] for step in preview["steps"]] == ["httpx"]
+    assert [step["tool"] for step in preview["candidate_capabilities"]] == ["nmap", "httpx", "crawler", "nuclei"]
     assert preview["autonomy"] == {
-        "automatic_steps": 3,
-        "approval_steps": 1,
+        "committed_seed_steps": 1,
+        "automatic_candidates": 3,
+        "approval_candidates": 1,
         "next_approval_tool": "nuclei",
     }
 
-    for step in preview["steps"]:
-        assert step["argv"]
-        assert step["policy"]["decision"] in {"allow", "require_approval"}
-        assert "ready" in step["readiness"]
-        assert step["rationale"]
+    seed = preview["steps"][0]
+    assert seed["argv"][0] == "httpx"
+    assert seed["policy"]["decision"] == "allow"
+    assert "ready" in seed["readiness"]
+    assert seed["rationale"]
 
-    crawler = preview["steps"][2]
-    assert crawler["argv"][1:3] == ["-m", "tonmen.tools.runners.crawler"]
+    crawler = preview["candidate_capabilities"][2]
+    assert "argv" not in crawler
     assert crawler["parameters"]["max_pages"] == 25
 
-    nuclei = preview["steps"][-1]
+    nuclei = preview["candidate_capabilities"][-1]
     assert nuclei["requires_approval"] is True
     assert nuclei["policy"]["decision"] == "require_approval"
     assert nuclei["risk"] == 3
+
+
+def test_dashboard_host_preview_uses_network_seed(tmp_path):
+    state = DashboardState(
+        TonmenConfig(
+            workspace=tmp_path,
+            config_path=tmp_path / "tonmen.toml",
+            allowed_targets=("localhost",),
+        )
+    )
+
+    preview = state.preview_plan("localhost")
+
+    assert [step["tool"] for step in preview["steps"]] == ["nmap"]
+    assert preview["steps"][0]["target"] == "localhost"
 
 
 def test_dashboard_plan_preview_rejects_out_of_scope_target(tmp_path):
