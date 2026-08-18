@@ -21,6 +21,10 @@ _BASE_ROLES = (
 )
 
 
+def _has_local_ai_advisory(run: MissionRun) -> bool:
+    return any(node.kind == "ai.advisory" for node in run.graph.nodes.values())
+
+
 def select_agent_roster(
     plan: MissionPlan,
     run: MissionRun,
@@ -38,6 +42,8 @@ def select_agent_roster(
 
     if confidence.conflicted:
         candidates.append(AgentAssignment("conflict_analyst", "evidence_conflict_and_corroboration"))
+    if _has_local_ai_advisory(run):
+        candidates.append(AgentAssignment("ai_advisory_reviewer", "local_ai_claims_and_fact_basis"))
     if profile.ports or "network_surface" in profile.unknowns:
         candidates.append(AgentAssignment("network_surface_mapper", "network_and_service_surface"))
     if profile.has_web_surface or profile.target_kind == "web":
@@ -62,6 +68,8 @@ def select_agent_roster(
         desired = min_agents
     elif profile.complexity >= 4 or confidence.conflicted:
         desired = max_agents
+    if _has_local_ai_advisory(run):
+        desired = max(desired, min(max_agents, preferred_agents))
     desired = max(min_agents, min(max_agents, desired))
     return tuple(candidates[:desired])
 
