@@ -32,8 +32,8 @@ def test_dashboard_tools_expose_structured_readiness(monkeypatch, tmp_path):
 
     payload = state.tools()
 
-    assert payload["count"] == 6
-    assert payload["ready"] == 6
+    assert payload["count"] == 7
+    assert payload["ready"] == 7
     assert all(tool["available"] is True for tool in payload["tools"])
     assert all(tool["readiness"]["code"] == "ready" for tool in payload["tools"])
 
@@ -42,16 +42,16 @@ def test_registry_status_reports_real_ready_count(monkeypatch, tmp_path):
     state = DashboardState(TonmenConfig(workspace=tmp_path, allowed_targets=("localhost",)))
     adapters = list(state.runtime.registry)
     assert [adapter.spec.name for adapter in adapters] == [
-        "nmap", "dns-intel", "httpx", "tls-intel", "crawler", "nuclei"
+        "nmap", "dns-intel", "httpx", "tls-intel", "api-intel", "crawler", "nuclei"
     ]
-    for adapter in adapters[:5]:
+    for adapter in adapters[:6]:
         monkeypatch.setattr(adapter, "readiness", lambda: ToolReadiness(True, "ready", "ready"))
-    monkeypatch.setattr(adapters[5], "readiness", lambda: ToolReadiness(False, "missing_templates", "templates missing"))
+    monkeypatch.setattr(adapters[6], "readiness", lambda: ToolReadiness(False, "missing_templates", "templates missing"))
 
     payload = state.status()
     registry = next(item for item in payload["components"] if item["id"] == "registry")
 
-    assert registry["state"] == "5/6 Tools Ready"
+    assert registry["state"] == "6/7 Tools Ready"
     assert registry["tone"] == "amber"
 
 
