@@ -75,17 +75,17 @@ def test_mission_loop_publishes_semantic_lifecycle_events(tmp_path):
     events = bus.read_after(0)
     types = [event.type for event in events]
     assert "mission.started" in types
-    assert types.count("step.started") == 2
-    assert types.count("evidence.created") == 2
+    assert types.count("step.started") == 3
+    assert types.count("evidence.created") == 3
     assert "intelligence.created" in types
     assert "reasoning.decided" in types
     assert "approval.required" in types
     assert "loop.iteration" in types
     assert "loop.stopped" in types
     tool_starts = [event for event in events if event.type == "tool.started"]
-    assert len(tool_starts) == 2
+    assert len(tool_starts) == 3
     assert all(event.data["mission_id"] == result.run.id for event in tool_starts)
-    assert {event.data["step_id"] for event in tool_starts} == {plan.steps[0].id, plan.steps[1].id}
+    assert {event.data["step_id"] for event in tool_starts} == {plan.steps[0].id, plan.steps[1].id, plan.steps[2].id}
     assert result.run.state.value == "waiting_approval"
 
 
