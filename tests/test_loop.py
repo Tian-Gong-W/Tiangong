@@ -74,7 +74,7 @@ def test_loop_stops_at_human_approval_after_discovery(tmp_path):
     assert not runtime.approvals._grants
 
 
-def test_loop_skips_unjustified_validation_and_completes(tmp_path):
+def test_loop_skips_unjustified_web_branches_and_completes(tmp_path):
     runtime, calls = _runtime(tmp_path, _outputs(web=False))
     plan = MissionPlanner(runtime).plan("localhost")
 
@@ -82,8 +82,9 @@ def test_loop_skips_unjustified_validation_and_completes(tmp_path):
 
     assert result.stop_reason is LoopStopReason.COMPLETE
     assert result.run.state is MissionRunState.SUCCEEDED
+    assert result.run.steps[2].state is StepExecutionState.SKIPPED
     assert result.run.steps[-1].state is StepExecutionState.SKIPPED
-    assert [_tool_name(call) for call in calls] == ["nmap", "httpx", "crawler"]
+    assert [_tool_name(call) for call in calls] == ["nmap", "httpx"]
     assert any(node.kind == "reasoning.skip" for node in result.run.graph.nodes.values())
 
 
@@ -158,3 +159,10 @@ def test_loop_policy_rejects_unbounded_values():
         assert "max_executions" in str(exc)
     else:
         raise AssertionError("unbounded execution budget must be rejected")
+
+    try:
+        MissionLoopPolicy(report_only=False)
+    except ValueError as exc:
+        assert "report_only" in str(exc)
+    else:
+        raise AssertionError("report-only boundary must not be disableable")
