@@ -53,3 +53,28 @@ def test_missions_workbench_has_keyboard_efficiency_without_replacing_native_nav
     assert 'event.key.toLowerCase() === "k"' in script
     assert 'document.getElementById("mission-history-filter")?.focus()' in script
     assert 'event.altKey && /^[1-7]$/.test(event.key)' in script
+
+
+def test_missions_workbench_exposes_evidence_backed_decision_trace():
+    static = resources.files("tonmen.dashboard.static")
+    script = static.joinpath("history-delete.js").read_text(encoding="utf-8")
+    css = static.joinpath("history-delete.css").read_text(encoding="utf-8")
+
+    assert "Decision Trace · 决策轨迹" in script
+    assert 'node.kind === "planning.revision"' in script
+    assert 'node.kind.startsWith("reasoning.")' in script
+    assert 'node.kind === "council.round"' in script
+    assert '"contains_subagent"' in script
+    assert 'node.kind === "loop.stop"' in script
+    assert 'node.kind === "governance.report_gate"' in script
+    assert "basis_fact_ids" in script
+    assert "expected_information_gain" in script
+    assert "execution_authority" in script
+    assert ".decision-trace-timeline" in css
+    assert ".trace-agent-grid" in css
+
+    # Trace is read-only: it fetches the selected mission but does not start/approve/resume execution.
+    assert 'fetch(`/api/missions/${encodeURIComponent(runId)}`' in script
+    assert "/api/missions/start" not in script
+    assert "/approve" not in script
+    assert "/resume" not in script
