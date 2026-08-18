@@ -212,6 +212,96 @@ def _parse_httpx(evidence: EvidenceRecord) -> list[IntelligenceFact]:
     return facts
 
 
+def _parse_api_intel(evidence: EvidenceRecord) -> list[IntelligenceFact]:
+    facts: list[IntelligenceFact] = []
+    for line in _nonempty_lines(evidence.stdout):
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(item, dict):
+            continue
+        item_type = item.get("type")
+        if item_type == "api":
+            kind = str(item.get("kind") or "").strip().lower()
+            if kind == "endpoint":
+                endpoint = str(item.get("endpoint") or "").strip()
+                absolute_url = str(item.get("absolute_url") or "").strip()
+                if not endpoint and not absolute_url:
+                    continue
+                label = endpoint or absolute_url
+                facts.append(
+                    IntelligenceFact.create(
+                        kind=FactKind.API,
+                        source="api-intel",
+                        target=absolute_url or evidence.target,
+                        title=f"API endpoint observed: {label[:512]}",
+                        evidence_id=evidence.id,
+                        confidence=0.9,
+                        data={
+                            "kind": "endpoint",
+                            "endpoint": endpoint or None,
+                            "absolute_url": absolute_url or None,
+                            "source": item.get("source"),
+                            "source_url": item.get("source_url"),
+                            "observed": True,
+                            "javascript_executed": False,
+                        },
+                    )
+                )
+            elif kind == "hint":
+                hint = str(item.get("hint") or "").strip().lower()
+                if not hint:
+                    continue
+                facts.append(
+                    IntelligenceFact.create(
+                        kind=FactKind.API,
+                        source="api-intel",
+                        target=str(item.get("url") or evidence.target or "") or evidence.target,
+                        title=f"API technology hint observed: {hint}",
+                        evidence_id=evidence.id,
+                        confidence=0.8,
+                        data={"kind": "hint", "hint": hint, "observed": True, "javascript_executed": False},
+                    )
+                )
+        elif item_type == "api_summary":
+            hints = item.get("hints", ())
+            safe_hints = [str(value).strip().lower()[:64] for value in hints[:32]] if isinstance(hints, list) else []
+            endpoint_count = item.get("endpoint_count")
+            try:
+                endpoint_count = max(0, int(endpoint_count))
+            except (TypeError, ValueError):
+                endpoint_count = 0
+            entry_reachable = bool(item.get("entry_reachable", False))
+            facts.append(
+                IntelligenceFact.create(
+                    kind=FactKind.API,
+                    source="api-intel",
+                    target=str(item.get("url") or evidence.target or "") or evidence.target,
+                    title=(
+                        f"API static intelligence completed: {endpoint_count} endpoint candidate(s)"
+                        if entry_reachable
+                        else "API static intelligence completed: entry unavailable"
+                    ),
+                    evidence_id=evidence.id,
+                    confidence=1.0 if entry_reachable else 0.9,
+                    data={
+                        "kind": "summary",
+                        "inspected": True,
+                        "entry_reachable": entry_reachable,
+                        "endpoint_count": endpoint_count,
+                        "scripts_discovered": item.get("scripts_discovered"),
+                        "scripts_fetched": item.get("scripts_fetched"),
+                        "hints": safe_hints,
+                        "javascript_executed": False,
+                        "forms_submitted": False,
+                        "cross_origin_fetches": False,
+                    },
+                )
+            )
+    return facts
+
+
 def _crawler_security_findings(evidence: EvidenceRecord, item: dict, url: str) -> list[IntelligenceFact]:
     security = item.get("security")
     if not isinstance(security, dict) or item.get("depth") != 0:
@@ -365,6 +455,8 @@ def parse_evidence(evidence: EvidenceRecord) -> list[IntelligenceFact]:
         return _parse_tls_intel(evidence)
     if tool == "httpx":
         return _parse_httpx(evidence)
+    if tool == "api-intel":
+        return _parse_api_intel(evidence)
     if tool == "crawler":
         return _parse_crawler(evidence)
     if tool == "nuclei":
@@ -378,6 +470,6 @@ def summarize_facts(source: str, facts: list[IntelligenceFact], fallback: str) -
     counts: dict[FactKind, int] = {}
     for fact in facts:
         counts[fact.kind] = counts.get(fact.kind, 0) + 1
-    order = (FactKind.HOST, FactKind.SERVICE, FactKind.DNS, FactKind.TLS, FactKind.WEB, FactKind.FINDING)
+    order = (FactKind.HOST, FactKind.SERVICE, FactKind.DNS, FactKind.TLS, FactKind.WEB, FactKind.API, FactKind.FINDING)
     parts = [f"{counts[kind]} {kind.value}" for kind in order if counts.get(kind)]
     return f"{source}: " + ", ".join(parts)
