@@ -86,6 +86,7 @@ The final product may still describe evidence, prerequisites, risk, impact, reme
 | Network discovery | Nmap TCP reachability / bounded port scan | Active | Scope + typed adapter + shell=False |
 | Web discovery | HTTPx status/title/technology metadata | Active | Scope + typed adapter + shell=False |
 | Web crawling | Built-in HTML link crawler | Active | Strict same-origin, bounded pages/depth/response size, no form submission |
+| Web/session posture | Cookie flag, HSTS/CSP and CORS response observation | Active passive | Same-origin crawler response only; cookie values are never recorded |
 | Web validation | Nuclei template validation | Approval gated | Scope + readiness + single-use Tool/Target Grant |
 | Evidence | argv/stdout/stderr/exit code provenance | Active | Chronicle + Evidence Graph |
 | Intelligence | deterministic parsing of scanner/crawler evidence | Active | Evidence-linked facts only |
@@ -112,19 +113,32 @@ Planned sequence:
 
 Binary analysis output may recommend further controlled validation, but must not automatically execute unrestricted payloads or persistence actions.
 
-## Session / interception risk analysis — next stage
+## Session / interception risk analysis — passive foundation active
 
-TONMEN may safely automate **risk detection** for interception and session-security conditions:
+The governed crawler now performs **observation-only** session/Web posture collection on responses it was already authorized to retrieve:
 
-- Cookie Secure / HttpOnly / SameSite policy.
-- CORS policy and credential exposure risk.
-- Redirect-chain and cross-origin transition analysis.
-- TLS certificate / protocol posture.
-- Cache and security header posture.
-- DNS / proxy / transport anomalies from authorized evidence.
-- Lab-only controlled validation where explicit approval is required.
+- Cookie names plus `Secure`, `HttpOnly`, `SameSite` and `Partitioned` flags.
+- Whether HSTS, CSP, X-Content-Type-Options, Referrer-Policy, frame policy, Permissions-Policy, Cache-Control are present.
+- Returned CORS allow-origin / allow-credentials posture.
+- Whether the accepted response arrived through a same-origin redirect.
 
-Credential capture, unauthorized session takeover, malicious MITM and persistence are outside the autonomous execution path.
+The crawler **never records Cookie values**. It does not inject credentials, submit forms, send active session-takeover payloads or leave its strict same-origin boundary.
+
+Entry-page observations can create conservative evidence-linked findings for:
+
+- missing HSTS on HTTPS;
+- missing CSP (informational);
+- Cookie policy gaps such as missing Secure/HttpOnly/SameSite flags;
+- wildcard CORS responses.
+
+This is posture evidence, not proof of account compromise. Active CORS exploitation, credential capture, session replay/takeover, malicious MITM and persistence remain outside the autonomous path.
+
+Still planned for this domain:
+
+- richer redirect-chain provenance;
+- TLS certificate / protocol posture;
+- DNS / proxy / transport anomaly evidence;
+- lab-only controlled validation where explicit approval is required.
 
 ## Evolving workflow
 
