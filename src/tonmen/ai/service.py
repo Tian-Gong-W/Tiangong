@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from tonmen.adaptive import assess_evidence_confidence, build_target_profile
@@ -143,4 +144,9 @@ class LocalAIService:
         if self.provider is None:
             return None
         context, fact_ids = self._context(plan, run, decision)
-        return self.provider.advise(context, allowed_fact_ids=fact_ids)
+        advisory = self.provider.advise(context, allowed_fact_ids=fact_ids)
+        if decision is None and (advisory.challenge_decision or advisory.challenge_reason):
+            # A pre-reasoning snapshot has no deterministic decision to challenge.
+            # Preserve the analysis while removing a misleading decision-review claim.
+            advisory = replace(advisory, challenge_decision=False, challenge_reason="")
+        return advisory
