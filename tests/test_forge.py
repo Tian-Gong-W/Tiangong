@@ -10,10 +10,12 @@ from tonmen.tools import ToolRegistry, ToolRequest
 from tonmen.tools.adapters import CrawlerAdapter, HttpxAdapter, NmapAdapter, NucleiAdapter, register_builtin_adapters
 
 
-def test_forge_registers_four_builtin_adapters():
+def test_forge_registers_six_builtin_adapters():
     runtime = TonmenRuntime.forge()
-    assert len(runtime.registry) == 4
-    assert {adapter.spec.name for adapter in runtime.registry} == {"nmap", "httpx", "crawler", "nuclei"}
+    assert len(runtime.registry) == 6
+    assert {adapter.spec.name for adapter in runtime.registry} == {
+        "nmap", "dns-intel", "httpx", "tls-intel", "crawler", "nuclei"
+    }
 
 
 def test_nmap_builds_bounded_argv():
