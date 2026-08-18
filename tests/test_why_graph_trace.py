@@ -45,3 +45,20 @@ def test_why_graph_is_read_only_and_does_not_create_execution_authority():
     assert "/approve" not in js
     assert "/resume" not in js
     assert "read only" in js
+
+
+def test_why_graph_external_styles_prevent_inline_csp_injection_path():
+    static = resources.files("tonmen.dashboard.static")
+    index = static.joinpath("index.html").read_text(encoding="utf-8")
+    css = static.joinpath("history-delete.css").read_text(encoding="utf-8")
+    js = _why_graph_source()
+
+    # The external viewport stylesheet is predeclared with the sentinel ID checked
+    # by ensureStyles(), so its inline <style> fallback is never executed under
+    # Console CSP style-src 'self'.
+    assert 'id="tonmen-why-graph-style"' in index
+    assert 'href="/assets/viewport.css' in index
+    assert '.why-graph-view' in css
+    assert '.why-chain' in css
+    assert "style-src 'self'" in css
+    assert 'document.getElementById("tonmen-why-graph-style")' in js
