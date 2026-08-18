@@ -7,19 +7,40 @@ from tonmen.execution import ExecutionDenied, ToolExecutor
 from tonmen.jobs import JobManager, JobStatus
 from tonmen.policy import Decision, PolicyEngine
 from tonmen.tools import ToolRegistry, ToolRequest
-from tonmen.tools.adapters import HttpxAdapter, NmapAdapter, NucleiAdapter, register_builtin_adapters
+from tonmen.tools.adapters import CrawlerAdapter, HttpxAdapter, NmapAdapter, NucleiAdapter, register_builtin_adapters
 
 
-def test_forge_registers_three_builtin_adapters():
+def test_forge_registers_four_builtin_adapters():
     runtime = TonmenRuntime.forge()
-    assert len(runtime.registry) == 3
-    assert {adapter.spec.name for adapter in runtime.registry} == {"nmap", "httpx", "nuclei"}
+    assert len(runtime.registry) == 4
+    assert {adapter.spec.name for adapter in runtime.registry} == {"nmap", "httpx", "crawler", "nuclei"}
 
 
 def test_nmap_builds_bounded_argv():
     adapter = NmapAdapter()
     argv = adapter.build_argv(ToolRequest(tool="nmap", target="127.0.0.1", parameters={"ports": "80,443"}))
     assert argv == ("nmap", "-sT", "-sV", "-p", "80,443", "127.0.0.1")
+
+
+def test_crawler_builds_bounded_internal_runner_argv():
+    adapter = CrawlerAdapter()
+    request = ToolRequest(
+        tool="crawler",
+        target="https://example.com",
+        parameters={"max_pages": 12, "max_depth": 1, "timeout": 7},
+    )
+    argv = adapter.build_argv(request)
+    assert argv[1:4] == ("-m", "tonmen.tools.runners.crawler", "--url")
+    assert "https://example.com" in argv
+    assert argv[-6:] == ("--max-pages", "12", "--max-depth", "1", "--timeout", "7")
+    assert adapter.readiness().ready is True
+
+
+def test_crawler_rejects_unbounded_parameters():
+    with pytest.raises(ValueError, match="max_pages"):
+        CrawlerAdapter().build_argv(
+            ToolRequest(tool="crawler", target="https://example.com", parameters={"max_pages": 1000})
+        )
 
 
 def test_adapter_rejects_unknown_extra_args():
