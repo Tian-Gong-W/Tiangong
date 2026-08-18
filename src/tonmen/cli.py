@@ -62,11 +62,11 @@ def _parser() -> argparse.ArgumentParser:
     scope_remove = scope_sub.add_parser("remove", help="remove a non-default allowed target rule")
     scope_remove.add_argument("target")
 
-    plan = sub.add_parser("plan", help="create a dry-run mission plan for an authorized target")
+    plan = sub.add_parser("plan", help="show the bounded candidate capability envelope for an authorized target")
     plan.add_argument("target")
-    run = sub.add_parser("run", help="execute the current governed mission to its next boundary")
+    run = sub.add_parser("run", help="execute the current governed candidate plan to its next boundary")
     run.add_argument("target")
-    loop = sub.add_parser("loop", help="run a bounded observe-reason-act mission loop")
+    loop = sub.add_parser("loop", help="run an evidence-driven adaptive mission loop from a minimal seed")
     loop.add_argument("target")
     _add_loop_budget_arguments(loop)
     loop_resume = sub.add_parser("loop-resume", help="continue a non-terminal persisted loop with a fresh bounded budget")
@@ -171,7 +171,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command in {"plan", "run", "loop"}:
         try:
-            plan = MissionPlanner(runtime).plan(args.target)
+            planner = MissionPlanner(runtime)
+            plan = planner.seed(args.target) if args.command == "loop" else planner.plan(args.target)
         except MissionPlanningDenied as exc:
             print(f"天律拒絕: {exc}")
             print("若这是你明确授权的目标，先执行: tonmen scope add <target>")
@@ -197,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
         except (MissionRunDenied, ValueError) as exc:
             print(f"天衡拒絕: {exc}")
             return 2
-        chronicle.save(plan, result.run)
+        chronicle.save(result.plan or plan, result.run)
         _print_loop_result(result)
         print(f"\n天冊已錄: {result.run.id}")
         return 3 if result.stop_reason is LoopStopReason.TERMINAL else 0
@@ -237,7 +238,7 @@ def main(argv: list[str] | None = None) -> int:
         except (MissionRunDenied, ValueError) as exc:
             print(f"天衡拒絕: {exc}")
             return 2
-        chronicle.save(plan, result.run)
+        chronicle.save(result.plan or plan, result.run)
         _print_loop_result(result)
         return 3 if result.stop_reason is LoopStopReason.TERMINAL else 0
 
@@ -271,7 +272,7 @@ def main(argv: list[str] | None = None) -> int:
         except (MissionRunDenied, ValueError) as exc:
             print(f"天律拒絕: {exc}")
             return 2
-        chronicle.save(plan, result.run)
+        chronicle.save(result.plan or plan, result.run)
         _print_loop_result(result)
         return 3 if result.stop_reason is LoopStopReason.TERMINAL else 0
 
