@@ -129,17 +129,18 @@ class CapabilityCatalog:
         return tuple(name for _, name in sorted(ranked, key=lambda item: (-item[0], item[1])))
 
     def envelope_tools(self, target: str) -> tuple[str, ...]:
-        kind = target_kind(target)
-        rows: list[tuple[int, float, int, str]] = []
-        for adapter in self.runtime.registry:
-            planning = adapter.spec.planning
-            if planning is None or kind not in planning.target_kinds:
-                continue
-            seed_rank = 0 if kind in planning.seed_for else 1
-            static_score = float(planning.information_gain_score) - float(planning.cost_score)
-            rows.append((seed_rank, -static_score, int(adapter.spec.risk), adapter.spec.name))
-        rows.sort()
-        return tuple(item[3] for item in rows)
+        """Return the dry-run capability pool in registry order.
+
+        This is deliberately not the adaptive execution order. A target-specific
+        capability can appear here even when its live preconditions are not yet met;
+        `rank()` is the authority for dynamic eligibility and selection.
+        """
+        _ = target_kind(target)  # validate/normalize the target classification path
+        return tuple(
+            adapter.spec.name
+            for adapter in self.runtime.registry
+            if adapter.spec.planning is not None
+        )
 
     def evaluate(self, plan: MissionPlan, run: MissionRun, tool: str, *, require_ready: bool = True) -> CapabilityCandidate:
         if run.plan_id != plan.id:
