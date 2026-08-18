@@ -40,8 +40,9 @@ class ApprovalStore:
         """Remove an unconsumed grant without exposing its contents."""
         return self._grants.pop(token, None) is not None
 
-    def consume(self, token: str, request: ToolRequest) -> ApprovalGrant | None:
-        grant = self._grants.pop(token, None)
+    def validate(self, token: str, request: ToolRequest) -> ApprovalGrant | None:
+        """Check a grant without consuming it so preflight failures do not burn approval."""
+        grant = self._grants.get(token)
         if grant is None:
             return None
         now = datetime.now(timezone.utc)
@@ -49,4 +50,11 @@ class ApprovalStore:
             return None
         if grant.tool != request.tool.strip().lower() or grant.target != request.target:
             return None
+        return grant
+
+    def consume(self, token: str, request: ToolRequest) -> ApprovalGrant | None:
+        grant = self.validate(token, request)
+        if grant is None:
+            return None
+        self._grants.pop(token, None)
         return grant
