@@ -103,13 +103,13 @@ def test_ollama_runtime_uses_structured_output_and_filters_capability_proposals(
     }
     captured = {}
 
-    def fake_urlopen(request, timeout):
+    def fake_open_local(request, *, timeout):
         captured["url"] = request.full_url
         captured["timeout"] = timeout
         captured["body"] = json.loads(request.data.decode("utf-8"))
         return _Response(response)
 
-    monkeypatch.setattr("tonmen.models.runtime.urlopen", fake_urlopen)
+    monkeypatch.setattr("tonmen.models.runtime._open_local", fake_open_local)
     runtime = ModelRuntime(ModelRuntimeConfig(provider="ollama", model="qwen3"))
     review = runtime.review(
         role="web_surface_analyst",
