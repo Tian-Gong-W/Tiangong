@@ -112,6 +112,9 @@ class MissionLoop:
                     "max_duration_seconds": self.policy.max_duration_seconds,
                     "assessment_rounds": self.policy.assessment_rounds,
                     "subagents_per_round": self.policy.subagents_per_round,
+                    "report_only": self.policy.report_only,
+                    "assessment_round_bounds": [7, 10],
+                    "subagent_bounds": [3, 5],
                 },
             )
         )
@@ -126,6 +129,7 @@ class MissionLoop:
             max_duration_seconds=self.policy.max_duration_seconds,
             assessment_rounds=self.policy.assessment_rounds,
             subagents_per_round=self.policy.subagents_per_round,
+            report_only=self.policy.report_only,
         )
 
     def _record_iteration(
@@ -187,15 +191,46 @@ class MissionLoop:
         if round_id is None:
             return
         after = sum(1 for node in run.graph.nodes.values() if node.kind == "council.round")
+        round_node = run.graph.nodes.get(round_id)
+        actual_agents = self.policy.subagents_per_round
+        desired_rounds = self.policy.assessment_rounds
+        if round_node is not None:
+            actual_agents = int(round_node.metadata.get("agents", actual_agents))
+            desired_rounds = int(round_node.metadata.get("desired_rounds", desired_rounds))
         self._emit(
             "council.round",
             run,
             session_id=session_id,
             round=after,
             phase=phase,
-            subagents=self.policy.subagents_per_round,
+            subagents=actual_agents,
+            desired_rounds=desired_rounds,
             added=after - before,
         )
+
+    def _record_report_gate(self, run: MissionRun, *, session_id: str) -> None:
+        if any(node.kind == "governance.report_gate" for node in run.graph.nodes.values()):
+            return
+        node_id = uuid4().hex
+        run.graph.add_node(
+            GraphNode(
+                id=node_id,
+                kind="governance.report_gate",
+                label="report-only boundary: final active actions disabled",
+                metadata={
+                    "report_only": True,
+                    "final_active_action": False,
+                    "payload_execution": False,
+                    "credential_capture": False,
+                    "session_takeover": False,
+                    "persistence": False,
+                },
+            )
+        )
+        run.graph.link(run.id, "stopped_before_final_action_by", node_id)
+        if session_id in run.graph.nodes:
+            run.graph.link(session_id, "enforces", node_id)
+        self._emit("governance.report_gate", run, session_id=session_id, report_only=True)
 
     def _record_stop(
         self,
@@ -218,6 +253,7 @@ class MissionLoop:
                     "iterations": iterations,
                     "executions": executions,
                     "decision_id": decision.id if decision else None,
+                    "report_only": self.policy.report_only,
                 },
             )
         )
@@ -232,6 +268,7 @@ class MissionLoop:
             iterations=iterations,
             executions=executions,
             decision_id=decision.id if decision else None,
+            report_only=self.policy.report_only,
         )
 
     def _result(
@@ -257,6 +294,7 @@ class MissionLoop:
                     rounds_after=before + added,
                     subagents_per_round=self.policy.subagents_per_round,
                 )
+        self._record_report_gate(run, session_id=session_id)
         self._record_stop(
             run,
             session_id=session_id,
