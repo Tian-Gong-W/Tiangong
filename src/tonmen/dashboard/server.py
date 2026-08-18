@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from tonmen import __version__
 from tonmen.agents import MissionPlanner, MissionPlanningDenied, MissionRunDenied
+from tonmen.artifacts import ArtifactStore
 from tonmen.chronicle import ChronicleStore
 from tonmen.core.config import DEFAULT_ALLOWED_TARGETS, TonmenConfig
 from tonmen.core.runtime import TonmenRuntime
@@ -25,8 +26,9 @@ from tonmen.reports import ReportStore
 from tonmen.tools.base import RiskLevel, ToolRequest
 
 _LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
-_APP_ROUTES = {"/", "/missions", "/scope", "/guard", "/tools", "/intelligence", "/reasoner", "/loop", "/chronicle", "/approval", "/settings"}
+_APP_ROUTES = {"/", "/missions", "/scope", "/guard", "/tools", "/intelligence", "/reasoner", "/loop", "/chronicle", "/approval", "/artifacts", "/settings"}
 _TERMINAL_MISSION_STATES = {MissionRunState.SUCCEEDED, MissionRunState.FAILED, MissionRunState.DENIED}
+_MAX_ARTIFACT_UPLOAD_BYTES = 32 * 1024 * 1024
 _STATIC_TYPES = {
     "app.css": "text/css; charset=utf-8",
     "viewport.css": "text/css; charset=utf-8",
@@ -34,12 +36,14 @@ _STATIC_TYPES = {
     "events.css": "text/css; charset=utf-8",
     "history-delete.css": "text/css; charset=utf-8",
     "reports.css": "text/css; charset=utf-8",
+    "artifacts.css": "text/css; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",
     "deck.js": "text/javascript; charset=utf-8",
     "module-pages.js": "text/javascript; charset=utf-8",
     "events.js": "text/javascript; charset=utf-8",
     "history-delete.js": "text/javascript; charset=utf-8",
     "reports.js": "text/javascript; charset=utf-8",
+    "artifacts.js": "text/javascript; charset=utf-8",
 }
 
 
@@ -124,12 +128,14 @@ class DashboardState:
         self.runtime = TonmenRuntime.sentinel(config, events=self.events)
         self.chronicle = ChronicleStore(config.workspace)
         self.reports = ReportStore(config.workspace)
+        self.artifact_store = ArtifactStore(config.workspace)
 
     def _reload_runtime(self, config: TonmenConfig) -> None:
         self.config = config
         self.runtime = TonmenRuntime.sentinel(config, events=self.events)
         self.chronicle = ChronicleStore(config.workspace)
         self.reports = ReportStore(config.workspace)
+        self.artifact_store = ArtifactStore(config.workspace)
 
     def _checkpoint(self, plan, run) -> None:
         with self._lock:
@@ -292,6 +298,70 @@ class DashboardState:
             self.events.publish("missions.cleaned", deleted=len(deleted))
             return {"deleted": deleted, "count": len(deleted), "remaining": len(self.chronicle.list())}
 
+    def artifacts(self) -> dict[str, Any]:
+        with self._lock:
+            entries = self.artifact_store.list()
+            return {
+                "count": len(entries),
+                "max_upload_bytes": _MAX_ARTIFACT_UPLOAD_BYTES,
+                "mode": "static-only",
+                "execution_performed": False,
+                "artifacts": entries,
+            }
+
+    def artifact(self, artifact_id: str) -> dict[str, Any]:
+        with self._lock:
+            payload = self.artifact_store.load(artifact_id)
+            payload["integrity_verified"] = True
+            payload["execution_performed"] = False
+            return payload
+
+    def inspect_artifact_bytes(self, data: bytes, source_name: str) -> dict[str, Any]:
+        if not data:
+            raise ValueError("artifact upload is empty")
+        if len(data) > _MAX_ARTIFACT_UPLOAD_BYTES:
+            raise ValueError("artifact upload exceeds the 32 MiB Console limit")
+        with self._lock:
+            payload = self.artifact_store.ingest_bytes(data, source_name=source_name or "artifact")
+            if self.runtime.audit is not None:
+                self.runtime.audit.append(
+                    action="artifact.inspect",
+                    tool="static-artifact-inspector",
+                    target=payload["source_name"],
+                    decision="observe",
+                    message=f"static artifact inspection {payload['sha256']} ({payload['format']})",
+                )
+            self.events.publish(
+                "artifact.inspected",
+                artifact_id=payload["artifact_id"],
+                source_name=payload["source_name"],
+                format=payload["format"],
+                architecture=payload.get("architecture"),
+                size=payload["size"],
+                execution_performed=False,
+            )
+            return payload
+
+    def delete_artifact(self, artifact_id: str) -> dict[str, Any]:
+        with self._lock:
+            payload = self.artifact_store.load(artifact_id)
+            if not self.artifact_store.delete(artifact_id):
+                raise FileNotFoundError(artifact_id)
+            if self.runtime.audit is not None:
+                self.runtime.audit.append(
+                    action="artifact.delete",
+                    tool="artifact-store",
+                    target=payload.get("source_name") or artifact_id,
+                    decision="delete",
+                    message=f"deleted artifact {artifact_id}",
+                )
+            self.events.publish(
+                "artifact.deleted",
+                artifact_id=artifact_id,
+                source_name=payload.get("source_name"),
+            )
+            return {"deleted": artifact_id, "remaining": len(self.artifact_store.list())}
+
     def tools(self) -> dict[str, Any]:
         with self._lock:
             checks = {check.name: asdict(check) for check in run_doctor(self.config).checks}
@@ -405,6 +475,8 @@ class DashboardState:
                     "allowed_targets": list(self.config.allowed_targets), "denied_targets": list(self.config.denied_targets),
                     "allow_arbitrary_shell": self.config.allow_arbitrary_shell, "console_loopback_only": True,
                     "default_assessment_rounds": 8, "default_subagents_per_round": 4,
+                    "artifact_upload_max_bytes": _MAX_ARTIFACT_UPLOAD_BYTES,
+                    "artifact_execution_enabled": False,
                     "event_cursor": self.events.cursor}
 
     def start_mission(self, target: str, policy: MissionLoopPolicy | None = None) -> dict[str, Any]:
@@ -483,15 +555,41 @@ class TonmenDashboardHandler(BaseHTTPRequestHandler):
         self._send_bytes(status, "application/json; charset=utf-8", json.dumps(payload, ensure_ascii=False).encode("utf-8"))
     def _error(self, status: int, message: str) -> None: self._json(status, {"error": message})
 
+    def _content_length(self) -> int:
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError as exc:
+            raise ValueError("invalid content length") from exc
+        if length < 0:
+            raise ValueError("invalid content length")
+        return length
+
     def _read_json(self) -> dict[str, Any]:
-        try: length = int(self.headers.get("Content-Length", "0"))
-        except ValueError as exc: raise ValueError("invalid content length") from exc
+        length = self._content_length()
         if length > 65536: raise ValueError("request body is too large")
         raw = self.rfile.read(length)
+        if len(raw) != length: raise ValueError("incomplete request body")
         if not raw: return {}
         data = json.loads(raw.decode("utf-8"))
         if not isinstance(data, dict): raise ValueError("JSON body must be an object")
         return data
+
+    def _read_artifact_upload(self) -> tuple[bytes, str]:
+        if self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/octet-stream":
+            raise ValueError("artifact upload requires application/octet-stream")
+        length = self._content_length()
+        if length <= 0:
+            raise ValueError("artifact upload is empty")
+        if length > _MAX_ARTIFACT_UPLOAD_BYTES:
+            raise ValueError("artifact upload exceeds the 32 MiB Console limit")
+        data = self.rfile.read(length)
+        if len(data) != length:
+            raise ValueError("incomplete artifact upload")
+        encoded_name = self.headers.get("X-TONMEN-FILENAME", "artifact")
+        if len(encoded_name) > 1024:
+            raise ValueError("artifact filename header is too large")
+        source_name = unquote(encoded_name).replace("\x00", "").strip() or "artifact"
+        return data, source_name
 
     def _csrf_ok(self) -> bool:
         if self.headers.get("X-TONMEN-CSRF") != self.server.csrf_token: return False
@@ -509,8 +607,8 @@ class TonmenDashboardHandler(BaseHTTPRequestHandler):
                 name = unquote(path.removeprefix("/assets/")); content_type = _STATIC_TYPES.get(name)
                 if content_type is None: self._error(404, "asset not found"); return
                 payload = self._asset(name)
-                if name == "app.js": payload += b"\n" + self._asset("deck.js") + b"\n" + self._asset("module-pages.js") + b"\n" + self._asset("events.js") + b"\n" + self._asset("history-delete.js") + b"\n" + self._asset("reports.js")
-                if name == "viewport.css": payload += b"\n" + self._asset("module-pages.css") + b"\n" + self._asset("events.css") + b"\n" + self._asset("history-delete.css") + b"\n" + self._asset("reports.css")
+                if name == "app.js": payload += b"\n" + self._asset("deck.js") + b"\n" + self._asset("module-pages.js") + b"\n" + self._asset("events.js") + b"\n" + self._asset("history-delete.js") + b"\n" + self._asset("reports.js") + b"\n" + self._asset("artifacts.js")
+                if name == "viewport.css": payload += b"\n" + self._asset("module-pages.css") + b"\n" + self._asset("events.css") + b"\n" + self._asset("history-delete.css") + b"\n" + self._asset("reports.css") + b"\n" + self._asset("artifacts.css")
                 self._send_bytes(200, content_type, payload, cache="no-store"); return
             if path == "/api/events":
                 query = parse_qs(parsed.query)
@@ -519,6 +617,10 @@ class TonmenDashboardHandler(BaseHTTPRequestHandler):
             if path == "/api/status": self._json(200, self.server.state.status()); return
             if path == "/api/scope": self._json(200, self.server.state.scope()); return
             if path == "/api/tools": self._json(200, self.server.state.tools()); return
+            if path == "/api/artifacts": self._json(200, self.server.state.artifacts()); return
+            if path.startswith("/api/artifacts/"):
+                artifact_id = unquote(path.split("/")[3])
+                self._json(200, self.server.state.artifact(artifact_id)); return
             if path == "/api/plans/preview":
                 query = parse_qs(parsed.query); target = unquote(query.get("target", [""])[0]).strip()
                 self._json(200, self.server.state.preview_plan(target)); return
@@ -541,14 +643,17 @@ class TonmenDashboardHandler(BaseHTTPRequestHandler):
             if path.startswith("/api/missions/"):
                 self._json(200, self.server.state.mission(unquote(path.split("/")[3]))); return
             self._error(404, "not found")
-        except FileNotFoundError: self._error(404, "mission not found")
+        except FileNotFoundError: self._error(404, "record not found")
         except (MissionPlanningDenied, MissionRunDenied, ValueError, OSError, json.JSONDecodeError) as exc: self._error(400, str(exc))
         except Exception as exc: self._error(500, f"dashboard error: {exc}")
 
     def do_POST(self) -> None:
         if not self._csrf_ok(): self._error(403, "invalid local CSRF token or origin"); return
-        path = urlparse(self.path).path
+        path = urlparse(self.path).path.rstrip("/") or "/"
         try:
+            if path == "/api/artifacts/inspect":
+                data, source_name = self._read_artifact_upload()
+                self._json(200, self.server.state.inspect_artifact_bytes(data, source_name)); return
             data = self._read_json()
             if path == "/api/scope/add": self._json(200, self.server.state.add_scope(str(data.get("target", "")))); return
             if path == "/api/scope/remove": self._json(200, self.server.state.remove_scope(str(data.get("target", "")))); return
@@ -572,6 +677,8 @@ class TonmenDashboardHandler(BaseHTTPRequestHandler):
                 self._json(200, self.server.state.approve_mission(unquote(path.split("/")[3]))); return
             if path.startswith("/api/missions/") and path.endswith("/resume"):
                 self._json(200, self.server.state.resume_mission(unquote(path.split("/")[3]))); return
+            if path.startswith("/api/artifacts/") and path.endswith("/delete"):
+                self._json(200, self.server.state.delete_artifact(unquote(path.split("/")[3]))); return
             self._error(404, "not found")
         except (MissionPlanningDenied, MissionRunDenied, ValueError, OSError, FileNotFoundError, json.JSONDecodeError) as exc: self._error(400, str(exc))
         except Exception as exc: self._error(500, f"dashboard error: {exc}")
