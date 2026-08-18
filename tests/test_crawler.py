@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse
 
 from tonmen.tools.runners.crawler import _normalize, _origin_key, crawl
-from urllib.parse import urlparse
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -37,6 +37,9 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        if self.path == "/":
+            self.send_header("Set-Cookie", "sid=supersecret; Path=/")
+            self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
 
@@ -94,6 +97,22 @@ def test_crawler_stays_same_origin_respects_depth_and_ignores_forms(capsys):
         assert all("/deep/two" not in url for url in urls)
         assert all("/submit" not in url for url in urls)
         assert _ForeignHandler.hits == 0
+
+        root = next(item for item in pages if item["url"] == start)
+        security = root["security"]
+        assert security["cors_allow_origin"] == "*"
+        assert security["cookie_values_recorded"] is False
+        assert security["cookies"] == [
+            {
+                "name": "sid",
+                "secure": False,
+                "httponly": False,
+                "samesite": None,
+                "partitioned": False,
+            }
+        ]
+        assert "supersecret" not in json.dumps(root)
+
         summary = records[-1]
         assert summary["type"] == "summary"
         assert summary["successful"] == 3
