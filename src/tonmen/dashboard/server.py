@@ -104,6 +104,7 @@ def mission_payload(plan, run) -> dict[str, Any]:
         ],
         "intelligence": [_node_payload(node) for node in run.graph.nodes.values() if node.kind.startswith("intelligence.")],
         "reasoning": [_node_payload(node) for node in run.graph.nodes.values() if node.kind.startswith("reasoning.")],
+        "planning": [_node_payload(node) for node in run.graph.nodes.values() if node.kind.startswith("planning.")],
         "loop": [_node_payload(node) for node in run.graph.nodes.values() if node.kind.startswith("loop.")],
         "council": [_node_payload(node) for node in run.graph.nodes.values() if node.kind.startswith("council.")],
         "graph": {
@@ -198,7 +199,7 @@ class DashboardState:
                     {"id": "registry", "zh": "天工", "en": "Registry", "state": f"{ready_tools}/{total_tools} Tools Ready", "tone": "blue" if ready_tools == total_tools else "amber"},
                     {"id": "intel", "zh": "天鑑", "en": "Intelligence", "state": "Active", "tone": "purple"},
                     {"id": "reasoner", "zh": "天策", "en": "Reasoner", "state": "Ready", "tone": "amber"},
-                    {"id": "loop", "zh": "天衡", "en": "Mission Loop", "state": "Event-driven", "tone": "cyan"},
+                    {"id": "loop", "zh": "天衡", "en": "Mission Loop", "state": "Adaptive", "tone": "cyan"},
                 ],
                 "doctor": {"ready": report.ready, "checks": [asdict(check) for check in report.checks]},
                 "workspace": str(self.config.workspace),
@@ -312,55 +313,62 @@ class DashboardState:
                 })
             return {"count": len(tools), "ready": sum(1 for tool in tools if tool["available"]), "tools": tools}
 
+    def _preview_step(self, step, *, include_argv: bool) -> dict[str, Any]:
+        adapter = self.runtime.registry.get(step.tool)
+        request = ToolRequest(tool=step.tool, target=step.target, parameters=step.parameters)
+        adapter.validate(request)
+        policy = self.runtime.policy.evaluate(adapter.spec, request)
+        readiness = adapter.readiness()
+        payload = {
+            "id": step.id,
+            "tool": step.tool,
+            "target": step.target,
+            "parameters": dict(step.parameters),
+            "category": adapter.spec.category,
+            "description": adapter.spec.description,
+            "capabilities": list(adapter.spec.capabilities),
+            "risk": int(step.risk),
+            "risk_name": adapter.spec.risk.name.lower(),
+            "requires_approval": step.requires_approval,
+            "state": step.state.value,
+            "rationale": step.rationale,
+            "policy": {"decision": policy.decision.value, "reason": policy.reason},
+            "readiness": asdict(readiness),
+        }
+        if include_argv:
+            payload["argv"] = list(adapter.build_argv(request))
+        return payload
+
     def preview_plan(self, target: str) -> dict[str, Any]:
-        """Return the exact governed plan the backend would use, without executing it."""
+        """Preview the committed seed plus the governed candidate capability envelope."""
         value = target.strip()
         if not value:
             raise ValueError("target is required")
         with self._lock:
-            plan = MissionPlanner(self.runtime).plan(value)
-            steps: list[dict[str, Any]] = []
-            for step in plan.steps:
-                adapter = self.runtime.registry.get(step.tool)
-                request = ToolRequest(tool=step.tool, target=step.target, parameters=step.parameters)
-                adapter.validate(request)
-                policy = self.runtime.policy.evaluate(adapter.spec, request)
-                readiness = adapter.readiness()
-                steps.append(
-                    {
-                        "id": step.id,
-                        "tool": step.tool,
-                        "target": step.target,
-                        "parameters": dict(step.parameters),
-                        "argv": list(adapter.build_argv(request)),
-                        "category": adapter.spec.category,
-                        "description": adapter.spec.description,
-                        "capabilities": list(adapter.spec.capabilities),
-                        "risk": int(step.risk),
-                        "risk_name": adapter.spec.risk.name.lower(),
-                        "requires_approval": step.requires_approval,
-                        "state": step.state.value,
-                        "rationale": step.rationale,
-                        "policy": {"decision": policy.decision.value, "reason": policy.reason},
-                        "readiness": asdict(readiness),
-                    }
-                )
-            autonomous = [step for step in steps if not step["requires_approval"]]
-            approval = next((step for step in steps if step["requires_approval"]), None)
-            can_start = all(bool(step["readiness"]["ready"]) for step in autonomous)
+            planner = MissionPlanner(self.runtime)
+            seed = planner.seed(value)
+            envelope = planner.plan(value)
+            steps = [self._preview_step(step, include_argv=True) for step in seed.steps]
+            candidates = [self._preview_step(step, include_argv=False) for step in envelope.steps]
+            candidate_autonomous = [step for step in candidates if not step["requires_approval"]]
+            approval = next((step for step in candidates if step["requires_approval"]), None)
+            can_start = all(bool(step["readiness"]["ready"]) for step in steps)
             return {
-                "plan_id": plan.id,
-                "target": plan.target,
-                "planner": "MissionPlanner",
-                "mode": "deterministic-governed",
+                "plan_id": seed.id,
+                "target": seed.target,
+                "planner": "AdaptiveMissionPlanner",
+                "mode": "evidence-driven-adaptive",
                 "executes": False,
+                "future_steps_committed": False,
                 "can_start": can_start,
                 "autonomy": {
-                    "automatic_steps": len(autonomous),
-                    "approval_steps": sum(1 for step in steps if step["requires_approval"]),
+                    "committed_seed_steps": len(steps),
+                    "automatic_candidates": len(candidate_autonomous),
+                    "approval_candidates": sum(1 for step in candidates if step["requires_approval"]),
                     "next_approval_tool": approval["tool"] if approval else None,
                 },
                 "steps": steps,
+                "candidate_capabilities": candidates,
             }
 
     def audit(self, limit: int = 200) -> dict[str, Any]:
@@ -400,13 +408,14 @@ class DashboardState:
                     "event_cursor": self.events.cursor}
 
     def start_mission(self, target: str, policy: MissionLoopPolicy | None = None) -> dict[str, Any]:
-        plan = MissionPlanner(self.runtime).plan(target)
+        plan = MissionPlanner(self.runtime).seed(target)
         for step in plan.steps:
             if not step.requires_approval:
                 self._require_tool_ready(step.tool, step_id=step.id)
         result = MissionLoop(self.runtime, policy or MissionLoopPolicy(), checkpoint=self._checkpoint).run(plan)
-        self._checkpoint(plan, result.run)
-        payload = mission_payload(plan, result.run); payload["stop_reason"] = result.stop_reason.value
+        final_plan = result.plan or plan
+        self._checkpoint(final_plan, result.run)
+        payload = mission_payload(final_plan, result.run); payload["stop_reason"] = result.stop_reason.value
         return payload
 
     def resume_mission(self, run_id: str, policy: MissionLoopPolicy | None = None) -> dict[str, Any]:
@@ -416,8 +425,9 @@ class DashboardState:
             raise ValueError("mission is not budget-stopped in a resumable running state")
         resolved_policy = self._policy_from_run(run, policy)
         result = MissionLoop(self.runtime, resolved_policy, checkpoint=self._checkpoint).resume(plan, run)
-        self._checkpoint(plan, result.run)
-        payload = mission_payload(plan, result.run); payload["stop_reason"] = result.stop_reason.value
+        final_plan = result.plan or plan
+        self._checkpoint(final_plan, result.run)
+        payload = mission_payload(final_plan, result.run); payload["stop_reason"] = result.stop_reason.value
         return payload
 
     def approve_mission(self, run_id: str) -> dict[str, Any]:
@@ -433,8 +443,9 @@ class DashboardState:
                             step_id=waiting.id, tool=waiting.tool, step_target=waiting.target)
         result = MissionLoop(self.runtime, self._policy_from_run(run), checkpoint=self._checkpoint).resume(
             plan, run, approval_tokens={waiting.id: grant.token})
-        self._checkpoint(plan, result.run)
-        payload = mission_payload(plan, result.run); payload["stop_reason"] = result.stop_reason.value
+        final_plan = result.plan or plan
+        self._checkpoint(final_plan, result.run)
+        payload = mission_payload(final_plan, result.run); payload["stop_reason"] = result.stop_reason.value
         return payload
 
     def reason(self, run_id: str) -> dict[str, Any]:
