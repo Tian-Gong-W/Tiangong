@@ -13,6 +13,9 @@ from tonmen.missions import MissionPlan, MissionRun, MissionRunState, MissionSte
 
 from .planner import MissionPlanner
 
+_AI_TIEBREAK_WINDOW = 5.0
+_AI_MAX_ADJUSTMENT = 2.5
+
 
 @dataclass(frozen=True, slots=True)
 class PlanExpansion:
@@ -26,15 +29,22 @@ class PlanExpansion:
     deterministic_score: float = 0.0
     score_reasons: tuple[str, ...] = ()
     candidate_rankings: tuple[dict[str, Any], ...] = ()
+    final_score: float = 0.0
+    ai_tiebreak_applied: bool = False
+    ai_preference: float = 0.0
+    ai_adjustment: float = 0.0
+    ai_rationale: str = ""
+    selection_engine: str = "capability_catalog"
 
 
 class AdaptiveMissionPlanner:
     """Grow a mission one governed semantic capability at a time from evidence.
 
-    Registered ToolSpecs declare their prerequisites, information gain and planning
-    cost. CapabilityCatalog ranks those declarations against the current mission state.
-    This planner therefore has no fixed tool chain. Optional local AI remains advisory
-    only and cannot mutate ranking authority, Scope, Approval or REPORT_ONLY.
+    Registered ToolSpecs declare prerequisites, information gain and planning cost.
+    CapabilityCatalog remains the deterministic authority. Optional local AI may only
+    provide bounded preference signals among already-eligible candidates whose base
+    scores are within a narrow tie-break window. AI cannot alter eligibility, risk,
+    readiness, Scope, Policy, Approval, parameters or REPORT_ONLY.
     """
 
     def __init__(self, runtime: TonmenRuntime) -> None:
@@ -49,20 +59,68 @@ class AdaptiveMissionPlanner:
     def _ai_snapshot(run: MissionRun) -> tuple[str, ...]:
         return tuple(item.id for item in run.evidence[-16:])
 
-    def _record_local_ai_advisory(self, plan: MissionPlan, run: MissionRun) -> None:
+    @staticmethod
+    def _preference_payload(advisory) -> list[dict[str, Any]]:
+        return [
+            {
+                "tool": item.tool,
+                "preference": float(item.preference),
+                "rationale": item.rationale,
+                "basis_fact_ids": list(item.basis_fact_ids),
+            }
+            for item in getattr(advisory, "capability_preferences", ())
+        ]
+
+    @staticmethod
+    def _preferences_from_metadata(metadata: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        result: dict[str, dict[str, Any]] = {}
+        for item in metadata.get("capability_preferences", ()):
+            if not isinstance(item, dict) or not item.get("tool"):
+                continue
+            try:
+                preference = max(-1.0, min(1.0, float(item.get("preference", 0.0))))
+            except (TypeError, ValueError):
+                preference = 0.0
+            result[str(item["tool"])] = {
+                "preference": preference,
+                "rationale": str(item.get("rationale") or "")[:800],
+                "basis_fact_ids": tuple(str(value) for value in item.get("basis_fact_ids", ()))[:16],
+            }
+        return result
+
+    def _record_local_ai_advisory(
+        self,
+        plan: MissionPlan,
+        run: MissionRun,
+        rankings: tuple[CapabilityCandidate, ...] = (),
+    ) -> dict[str, dict[str, Any]]:
         service = self.runtime.ai
         if service is None or not service.enabled or not run.evidence:
-            return
+            return {}
         evidence_ids = self._ai_snapshot(run)
-        if any(
-            node.kind in {"ai.advisory", "ai.advisory_error"}
-            and tuple(node.metadata.get("evidence_ids", ())) == evidence_ids
-            for node in run.graph.nodes.values()
-        ):
-            return
+        for node in run.graph.nodes.values():
+            if (
+                node.kind in {"ai.advisory", "ai.advisory_error"}
+                and tuple(node.metadata.get("evidence_ids", ())) == evidence_ids
+            ):
+                if node.kind == "ai.advisory":
+                    return self._preferences_from_metadata(dict(node.metadata))
+                return {}
 
+        candidate_context = tuple(
+            item.audit_payload()
+            for item in rankings[:8]
+            if item.eligible
+        )
         try:
-            advisory = service.advise(plan, run)
+            try:
+                advisory = service.advise(plan, run, candidates=candidate_context)
+            except TypeError as exc:
+                # Compatibility for injected test/local services written before the
+                # optional candidates keyword existed. Do not mask unrelated TypeError.
+                if "candidates" not in str(exc):
+                    raise
+                advisory = service.advise(plan, run)
         except (AIProviderError, ValueError, OSError) as exc:
             node_id = uuid4().hex
             run.graph.add_node(
@@ -75,6 +133,7 @@ class AdaptiveMissionPlanner:
                         "model": self.runtime.config.ai_model,
                         "error": str(exc)[:600],
                         "evidence_ids": list(evidence_ids),
+                        "candidate_tools": [item["tool"] for item in candidate_context],
                         "execution_authority": False,
                         "local_only": True,
                         "fallback": "deterministic",
@@ -93,10 +152,10 @@ class AdaptiveMissionPlanner:
                     error=str(exc)[:600],
                     deterministic_fallback=True,
                 )
-            return
+            return {}
 
         if advisory is None:
-            return
+            return {}
         node_id = uuid4().hex
         hypotheses = [
             {
@@ -107,6 +166,9 @@ class AdaptiveMissionPlanner:
             }
             for item in advisory.hypotheses
         ]
+        preferences = self._preference_payload(advisory)
+        allowed_tools = {item["tool"] for item in candidate_context}
+        preferences = [item for item in preferences if item["tool"] in allowed_tools]
         run.graph.add_node(
             GraphNode(
                 id=node_id,
@@ -123,6 +185,9 @@ class AdaptiveMissionPlanner:
                     "challenge_reason": advisory.challenge_reason,
                     "basis_fact_ids": list(advisory.basis_fact_ids),
                     "evidence_ids": list(evidence_ids),
+                    "candidate_tools": sorted(allowed_tools),
+                    "capability_preferences": preferences,
+                    "preference_authority": "bounded_tiebreak_only",
                     "execution_authority": False,
                     "local_only": advisory.local_only,
                     "api_key_required": False,
@@ -145,12 +210,84 @@ class AdaptiveMissionPlanner:
                 summary=advisory.summary,
                 focus=list(advisory.focus),
                 basis_fact_ids=list(advisory.basis_fact_ids),
+                candidate_tools=sorted(allowed_tools),
+                capability_preferences=preferences,
                 challenge_decision=advisory.challenge_decision,
                 execution_authority=False,
                 local_only=True,
             )
+        return self._preferences_from_metadata({"capability_preferences": preferences})
 
-    def _build(self, plan: MissionPlan, run: MissionRun, candidate: CapabilityCandidate, rankings) -> PlanExpansion:
+    @staticmethod
+    def _select_candidate(
+        rankings: tuple[CapabilityCandidate, ...],
+        preferences: dict[str, dict[str, Any]],
+    ) -> tuple[CapabilityCandidate | None, tuple[dict[str, Any], ...], dict[str, Any]]:
+        eligible = [item for item in rankings if item.eligible]
+        if not eligible:
+            return None, tuple(item.audit_payload() for item in rankings[:8]), {
+                "applied": False,
+                "selection_engine": "capability_catalog",
+            }
+
+        deterministic_top = eligible[0]
+        rows: list[dict[str, Any]] = []
+        final_scores: dict[str, float] = {}
+        for item in rankings[:8]:
+            row = item.audit_payload()
+            pref = preferences.get(item.tool, {}) if item.eligible else {}
+            preference = max(-1.0, min(1.0, float(pref.get("preference", 0.0)))) if pref else 0.0
+            within_window = bool(
+                item.eligible
+                and deterministic_top.score - item.score <= _AI_TIEBREAK_WINDOW
+            )
+            adjustment = round(preference * _AI_MAX_ADJUSTMENT, 3) if within_window else 0.0
+            final_score = round(item.score + adjustment, 3)
+            final_scores[item.tool] = final_score
+            row.update(
+                {
+                    "ai_preference": preference,
+                    "ai_adjustment": adjustment,
+                    "ai_rationale": str(pref.get("rationale") or "")[:800] if pref else "",
+                    "within_ai_tiebreak_window": within_window,
+                    "final_score": final_score,
+                }
+            )
+            rows.append(row)
+
+        selected = max(
+            eligible,
+            key=lambda item: (final_scores.get(item.tool, item.score), item.score, item.tool),
+        )
+        selected_pref = preferences.get(selected.tool, {})
+        selected_adjustment = round(
+            final_scores.get(selected.tool, selected.score) - selected.score,
+            3,
+        )
+        changed = selected.tool != deterministic_top.tool
+        any_adjustment = any(abs(float(row.get("ai_adjustment", 0.0))) > 0 for row in rows)
+        return selected, tuple(rows), {
+            "applied": any_adjustment,
+            "changed_selection": changed,
+            "deterministic_winner": deterministic_top.tool,
+            "selected_tool": selected.tool,
+            "preference": float(selected_pref.get("preference", 0.0)) if selected_pref else 0.0,
+            "adjustment": selected_adjustment,
+            "rationale": str(selected_pref.get("rationale") or "")[:800] if selected_pref else "",
+            "final_score": final_scores.get(selected.tool, selected.score),
+            "selection_engine": "capability_catalog+bounded_ai_tiebreak" if any_adjustment else "capability_catalog",
+            "tiebreak_window": _AI_TIEBREAK_WINDOW,
+            "max_adjustment": _AI_MAX_ADJUSTMENT,
+        }
+
+    def _build(
+        self,
+        plan: MissionPlan,
+        run: MissionRun,
+        candidate: CapabilityCandidate,
+        ranking_rows: tuple[dict[str, Any], ...],
+        ai_result: dict[str, Any],
+    ) -> PlanExpansion:
         step = self.base.build_step(
             candidate.tool,
             plan.target,
@@ -166,7 +303,13 @@ class AdaptiveMissionPlanner:
             profile_unknowns=tuple(profile.unknowns),
             deterministic_score=candidate.score,
             score_reasons=candidate.reasons,
-            candidate_rankings=tuple(item.audit_payload() for item in rankings[:8]),
+            candidate_rankings=ranking_rows,
+            final_score=float(ai_result.get("final_score", candidate.score)),
+            ai_tiebreak_applied=bool(ai_result.get("applied", False)),
+            ai_preference=float(ai_result.get("preference", 0.0)),
+            ai_adjustment=float(ai_result.get("adjustment", 0.0)),
+            ai_rationale=str(ai_result.get("rationale") or ""),
+            selection_engine=str(ai_result.get("selection_engine") or "capability_catalog"),
         )
 
     def propose(self, plan: MissionPlan, run: MissionRun) -> PlanExpansion | None:
@@ -175,12 +318,15 @@ class AdaptiveMissionPlanner:
         if run.state in {MissionRunState.FAILED, MissionRunState.DENIED, MissionRunState.WAITING_APPROVAL}:
             return None
 
-        self._record_local_ai_advisory(plan, run)
         rankings = self.catalog.rank(plan, run)
-        candidate = next((item for item in rankings if item.eligible), None)
+        if not any(item.eligible for item in rankings):
+            self._record_local_ai_advisory(plan, run, rankings)
+            return None
+        preferences = self._record_local_ai_advisory(plan, run, rankings)
+        candidate, ranking_rows, ai_result = self._select_candidate(rankings, preferences)
         if candidate is None:
             return None
-        return self._build(plan, run, candidate, rankings)
+        return self._build(plan, run, candidate, ranking_rows, ai_result)
 
     def apply(self, plan: MissionPlan, run: MissionRun, proposal: PlanExpansion) -> MissionPlan:
         """Append a proposal to immutable plan history and mutable run state."""
@@ -218,9 +364,19 @@ class AdaptiveMissionPlanner:
                     "basis_fact_ids": list(proposal.basis_fact_ids),
                     "profile_unknowns": list(proposal.profile_unknowns),
                     "deterministic_score": proposal.deterministic_score,
+                    "final_score": proposal.final_score,
                     "score_reasons": list(proposal.score_reasons),
                     "candidate_rankings": list(proposal.candidate_rankings),
-                    "selection_engine": "capability_catalog",
+                    "ai_tiebreak": {
+                        "applied": proposal.ai_tiebreak_applied,
+                        "preference": proposal.ai_preference,
+                        "adjustment": proposal.ai_adjustment,
+                        "rationale": proposal.ai_rationale,
+                        "window": _AI_TIEBREAK_WINDOW,
+                        "max_adjustment": _AI_MAX_ADJUSTMENT,
+                        "execution_authority": False,
+                    },
+                    "selection_engine": proposal.selection_engine,
                     "execution_authority": False,
                 },
             )
@@ -236,7 +392,9 @@ class AdaptiveMissionPlanner:
         execution.metadata["expected_information_gain"] = proposal.expected_information_gain
         execution.metadata["basis_fact_ids"] = list(proposal.basis_fact_ids)
         execution.metadata["deterministic_score"] = proposal.deterministic_score
-        execution.metadata["selection_engine"] = "capability_catalog"
+        execution.metadata["final_score"] = proposal.final_score
+        execution.metadata["selection_engine"] = proposal.selection_engine
+        execution.metadata["ai_tiebreak_applied"] = proposal.ai_tiebreak_applied
 
         if self.runtime.events is not None:
             self.runtime.events.publish(
@@ -253,8 +411,11 @@ class AdaptiveMissionPlanner:
                 rationale=proposal.rationale,
                 expected_information_gain=proposal.expected_information_gain,
                 deterministic_score=proposal.deterministic_score,
+                final_score=proposal.final_score,
                 score_reasons=list(proposal.score_reasons),
-                selection_engine="capability_catalog",
+                ai_tiebreak_applied=proposal.ai_tiebreak_applied,
+                ai_adjustment=proposal.ai_adjustment,
+                selection_engine=proposal.selection_engine,
                 basis_fact_ids=list(proposal.basis_fact_ids),
             )
         return revised
