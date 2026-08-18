@@ -203,9 +203,6 @@ class MissionCoordinator:
             execution.metadata.pop("preflight", None)
             return True
 
-        if token and self.runtime.approvals is not None:
-            self.runtime.approvals.revoke(token)
-
         execution.error = f"tool preflight blocked: {readiness.detail}"
         execution.metadata["preflight"] = {
             "ready": False,
