@@ -456,7 +456,7 @@ class TonmenDashboardServer(ThreadingHTTPServer):
 class TonmenDashboardHandler(BaseHTTPRequestHandler):
     server: TonmenDashboardServer
     def log_message(self, fmt: str, *args) -> None:
-        if args and str(args[1]).startswith(("4", "5")): super().loglog_message(fmt, *args)
+        if args and str(args[1]).startswith(("4", "5")): super().log_message(fmt, *args)
 
     def _security_headers(self) -> None:
         self.send_header("X-Content-Type-Options", "nosniff"); self.send_header("X-Frame-Options", "DENY")
