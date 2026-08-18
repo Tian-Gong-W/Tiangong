@@ -4,9 +4,67 @@ import json
 import os
 from pathlib import Path
 
+from tonmen.adaptive import assess_evidence_confidence
 from tonmen.missions import MissionPlan, MissionRun
 
 from .generator import build_report, render_markdown
+
+
+def _confidence_payload(plan: MissionPlan, run: MissionRun) -> dict:
+    assessment = assess_evidence_confidence(plan, run)
+    claims = [
+        {
+            "key": item.key,
+            "subject": item.subject,
+            "assertion": item.assertion,
+            "state": item.state.value,
+            "confidence": item.confidence,
+            "support_fact_ids": list(item.support_fact_ids),
+            "conflict_fact_ids": list(item.conflict_fact_ids),
+            "sources": list(item.sources),
+            "observed_values": list(item.observed_values),
+        }
+        for item in assessment.claims
+    ]
+    return {
+        "supported": len(assessment.supported),
+        "conflicted": len(assessment.conflicted),
+        "unresolved": len(assessment.unresolved),
+        "conflict_fact_ids": list(assessment.conflict_fact_ids),
+        "claims": claims,
+    }
+
+
+def _confidence_markdown(payload: dict) -> str:
+    lines = [
+        "## Evidence Confidence / Conflict",
+        "",
+        f"- Supported claims: {payload.get('supported', 0)}",
+        f"- Conflicted claims: {payload.get('conflicted', 0)}",
+        f"- Unresolved claims: {payload.get('unresolved', 0)}",
+        "- Rule: absence of evidence is not treated as contradictory evidence.",
+        "",
+    ]
+    claims = payload.get("claims", [])
+    if not claims:
+        lines.extend(["No confidence claims were derived.", ""])
+        return "\n".join(lines)
+    for claim in claims:
+        lines.extend(
+            [
+                f"### {claim.get('subject') or claim.get('key')}",
+                "",
+                f"- State: **{claim.get('state', 'unresolved')}**",
+                f"- Assertion: `{claim.get('assertion') or '—'}`",
+                f"- Confidence: `{float(claim.get('confidence', 0.0)):.4f}`",
+                f"- Sources: `{', '.join(claim.get('sources', [])) or '—'}`",
+                f"- Observed values: `{', '.join(claim.get('observed_values', [])) or '—'}`",
+                f"- Support Facts: `{', '.join(claim.get('support_fact_ids', [])) or '—'}`",
+                f"- Conflict Facts: `{', '.join(claim.get('conflict_fact_ids', [])) or '—'}`",
+                "",
+            ]
+        )
+    return "\n".join(lines)
 
 
 class ReportStore:
@@ -55,11 +113,17 @@ class ReportStore:
             raise ValueError("mission run does not belong to this plan")
         self._ensure_root()
         report = build_report(plan, run)
+        confidence = _confidence_payload(plan, run)
+        report["evidence_confidence"] = confidence
+        report.setdefault("summary", {})["supported_claims"] = confidence["supported"]
+        report["summary"]["conflicted_claims"] = confidence["conflicted"]
+        report["summary"]["unresolved_claims"] = confidence["unresolved"]
         self._atomic_write(
             self._path(run.id, "json"),
             json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
         )
-        self._atomic_write(self._path(run.id, "md"), render_markdown(report))
+        markdown = render_markdown(report).rstrip() + "\n\n" + _confidence_markdown(confidence).rstrip() + "\n"
+        self._atomic_write(self._path(run.id, "md"), markdown)
         return report
 
     def load_json(self, run_id: str) -> dict:
