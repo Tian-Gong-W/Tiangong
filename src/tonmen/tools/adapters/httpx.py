@@ -24,6 +24,7 @@ class HttpxAdapter(ToolAdapter):
             information_gain_score=0.88,
             cost_score=0.24,
         ),
+        preflight_readiness=True,
     )
 
     def readiness(self) -> ToolReadiness:
@@ -76,8 +77,6 @@ class HttpxAdapter(ToolAdapter):
 
     def build_argv(self, request: ToolRequest) -> tuple[str, ...]:
         self.validate(request)
-        # Production ToolExecutor injects an identity-verified absolute path for local
-        # subprocess execution. Standalone/injected-runner tests keep the logical name.
         binary = str(request.context.get("_verified_binary_path") or "httpx")
         argv: list[str] = [
             binary,
