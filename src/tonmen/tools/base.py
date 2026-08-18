@@ -62,6 +62,7 @@ class ToolSpec:
     capabilities: tuple[str, ...] = ()
     planning: CapabilityPlanningSpec | None = None
     execution_timeout_seconds: int | None = None
+    preflight_readiness: bool = False
 
     def __post_init__(self) -> None:
         if self.execution_timeout_seconds is not None and not 1 <= int(self.execution_timeout_seconds) <= 3600:
