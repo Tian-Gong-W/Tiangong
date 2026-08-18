@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from tonmen.missions import MissionRun
+from tonmen.missions import MissionPlan, MissionRun
 from tonmen.reasoning import ReasoningDecision
 
 
@@ -53,3 +53,4 @@ class MissionLoopResult:
     executions: int
     session_id: str
     last_decision: ReasoningDecision | None = None
+    plan: MissionPlan | None = None
