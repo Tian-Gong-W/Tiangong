@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 
-from tonmen.tools.base import RiskLevel, ToolAdapter, ToolReadiness, ToolRequest, ToolSpec
+from tonmen.tools.base import CapabilityPlanningSpec, RiskLevel, ToolAdapter, ToolReadiness, ToolRequest, ToolSpec
 from tonmen.tools.validation import reject_unknown_parameters, validate_web_target
 
 
@@ -19,6 +19,18 @@ class CrawlerAdapter(ToolAdapter):
             "security_headers.observe",
             "session_cookie.observe",
             "cors.observe",
+        ),
+        planning=CapabilityPlanningSpec(
+            target_kinds=("host", "web"),
+            requires_profile=("has_web_surface",),
+            requires_capabilities=("http.metadata",),
+            basis_fact_kinds=("intelligence.web", "intelligence.service"),
+            resolves_unknowns=("same_origin_endpoint_coverage",),
+            default_parameters={"max_pages": 25, "max_depth": 2, "timeout": 10},
+            rationale="Expand a confirmed HTTP surface with bounded same-origin endpoint and passive posture evidence.",
+            information_gain="same-origin pages, routes, page metadata and passive security posture",
+            information_gain_score=0.82,
+            cost_score=0.42,
         ),
     )
 
