@@ -43,6 +43,7 @@ class NucleiAdapter(ToolAdapter):
             cost_score=0.58,
         ),
         execution_timeout_seconds=600,
+        preflight_readiness=True,
     )
 
     def readiness(self) -> ToolReadiness:
