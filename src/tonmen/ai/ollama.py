@@ -8,7 +8,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import ProxyHandler, Request, build_opener
 
-from tonmen.core.config import validate_local_ai_base_url
+from tonmen.core.config import validate_local_ai_base_url, validate_local_ai_model
 
 from .model import AIAdvisory, AIHypothesis, AIProviderError, AIProviderStatus
 
@@ -57,13 +57,13 @@ def _clean_text(value: Any, *, limit: int) -> str:
 
 
 class OllamaProvider:
-    """No-key Ollama provider restricted to a loopback HTTP origin."""
+    """No-key Ollama provider restricted to a loopback HTTP origin and local model tag."""
 
     name = "ollama"
 
     def __init__(self, *, base_url: str, model: str, timeout_seconds: int = 20) -> None:
         self.base_url = validate_local_ai_base_url(base_url)
-        self.model = str(model).strip()
+        self.model = validate_local_ai_model(model)
         if not self.model:
             raise ValueError("Ollama model is required")
         self.timeout_seconds = int(timeout_seconds)
