@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from tonmen.adaptive import build_target_profile, desired_assessment_rounds, select_agent_roster
+from tonmen.adaptive import assess_evidence_confidence, build_target_profile, desired_assessment_rounds, select_agent_roster
 from tonmen.evidence import GraphNode
 from tonmen.missions import MissionPlan, MissionRun, MissionRunState, StepExecutionState
 
@@ -24,9 +24,10 @@ _FOCI = (
 class AssessmentCouncil:
     """Evidence-only adaptive subagent council.
 
-    Council composition changes with the live target profile, but the governance
-    envelope is fixed: 7-10 rounds and 3-5 read-only subagents per round. Members never
-    execute tools, expand Scope, issue approvals, or mutate the mission plan.
+    Council composition changes with the live target profile and explicit evidence
+    conflicts, but the governance envelope is fixed: 7-10 rounds and 3-5 read-only
+    subagents per round. Members never execute tools, expand Scope, issue approvals,
+    or mutate the mission plan.
     """
 
     def __init__(
@@ -78,12 +79,21 @@ class AssessmentCouncil:
         fact_ids = tuple(node.id for node in facts)
         findings = self._finding_nodes(run)
         profile = build_target_profile(plan, run)
+        confidence = assess_evidence_confidence(plan, run)
         failed = [step for step in run.steps if step.state in {StepExecutionState.FAILED, StepExecutionState.DENIED}]
         degraded = [step for step in run.steps if step.state is StepExecutionState.DEGRADED]
         waiting = [step for step in run.steps if step.state is StepExecutionState.WAITING_APPROVAL]
         completed = [step for step in run.steps if step.state is StepExecutionState.SUCCEEDED]
 
-        if role == "network_surface_mapper":
+        if role == "conflict_analyst":
+            subjects = ", ".join(item.subject for item in confidence.conflicted[:4]) or "none"
+            summary = (
+                f"{focus}: supported={len(confidence.supported)}, conflicted={len(confidence.conflicted)}, "
+                f"unresolved={len(confidence.unresolved)}; conflict subjects={subjects}. "
+                "Absence of evidence is not treated as contradictory evidence."
+            )
+            fact_ids = confidence.conflict_fact_ids or fact_ids
+        elif role == "network_surface_mapper":
             summary = (
                 f"{focus}: observed ports={','.join(str(port) for port in profile.ports) or 'none'}; "
                 f"services={','.join(profile.services) or 'none'}; unknowns={','.join(profile.unknowns) or 'none'}."
@@ -103,7 +113,8 @@ class AssessmentCouncil:
             nonzero = sum(1 for item in run.evidence if item.exit_code != 0)
             summary = (
                 f"{focus}: provenance review sees {len(run.evidence)} evidence records, {nonzero} non-zero exits, "
-                f"{len(degraded)} degraded steps and {len(failed)} failed/denied steps."
+                f"{len(degraded)} degraded steps, {len(failed)} failed/denied steps and "
+                f"{len(confidence.conflicted)} explicit comparable-fact conflict(s)."
             )
         elif role == "vulnerability_analyst":
             severities = [str(node.metadata.get("severity", "info")) for node in findings]
@@ -135,12 +146,15 @@ class AssessmentCouncil:
         return summary, evidence_ids, fact_ids
 
     def _desired_rounds(self, plan: MissionPlan, run: MissionRun) -> int:
-        return desired_assessment_rounds(
+        rounds = desired_assessment_rounds(
             build_target_profile(plan, run),
             minimum=self.min_rounds,
             preferred=self.target_rounds,
             maximum=self.max_rounds,
         )
+        if assess_evidence_confidence(plan, run).conflicted:
+            rounds += 1
+        return max(self.min_rounds, min(self.max_rounds, rounds))
 
     def record_round(
         self,
@@ -158,6 +172,7 @@ class AssessmentCouncil:
         round_number = current + 1
         focus = _FOCI[min(round_number - 1, len(_FOCI) - 1)]
         profile = build_target_profile(plan, run)
+        confidence = assess_evidence_confidence(plan, run)
         roster = select_agent_roster(
             plan,
             run,
@@ -184,6 +199,13 @@ class AssessmentCouncil:
                         "complexity": profile.complexity,
                         "unknowns": list(profile.unknowns),
                         "hypotheses": [item.key for item in profile.hypotheses],
+                    },
+                    "evidence_confidence": {
+                        "supported": len(confidence.supported),
+                        "conflicted": len(confidence.conflicted),
+                        "unresolved": len(confidence.unresolved),
+                        "conflict_keys": [item.key for item in confidence.conflicted],
+                        "conflict_fact_ids": list(confidence.conflict_fact_ids),
                     },
                     "desired_rounds": desired_rounds,
                 },
