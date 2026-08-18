@@ -10,7 +10,7 @@ from tonmen.core.config import TonmenConfig
 from tonmen.core.runtime import TonmenRuntime
 from tonmen.evidence import GraphNode
 from tonmen.execution import ExecutionDenied, ToolExecutor
-from tonmen.policy import PolicyEngine
+from tonmen.policy import ApprovalStore, PolicyEngine
 from tonmen.tools import ToolRegistry, ToolRequest
 from tonmen.tools.adapters import HttpxAdapter, NucleiAdapter
 from tonmen.tools.validation import validate_web_target
@@ -100,6 +100,43 @@ def test_nuclei_argv_binds_configured_verified_template_root(monkeypatch, tmp_pa
     assert readiness.metadata["templates_path"] == str(root.resolve())
     template_index = argv.index("-t")
     assert argv[template_index + 1] == str(root.resolve())
+
+
+def test_nuclei_has_wider_typed_process_budget_but_remaining_mission_time_still_caps_it():
+    adapter = NucleiAdapter()
+    assert adapter.spec.execution_timeout_seconds == 600
+
+    registry = ToolRegistry()
+    registry.register(adapter)
+    approvals = ApprovalStore()
+    captured: dict[str, float] = {}
+
+    def fake_runner(argv, **kwargs):
+        captured["timeout"] = float(kwargs["timeout"])
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    executor = ToolExecutor(registry, PolicyEngine(), timeout_seconds=120, runner=fake_runner, approvals=approvals)
+    request = ToolRequest(
+        tool="nuclei",
+        target="https://example.test",
+        parameters={"severity": ("medium", "high"), "rate_limit": 10, "timeout": 8},
+        context={"execution_timeout_seconds": 75.0},
+    )
+    grant = approvals.issue(tool="nuclei", target="https://example.test")
+    executor.execute(request, approval_token=grant.token)
+
+    assert captured["timeout"] == 75.0
+
+
+def test_approval_validation_does_not_consume_grant_before_preflight():
+    approvals = ApprovalStore()
+    request = ToolRequest(tool="nuclei", target="https://example.test")
+    grant = approvals.issue(tool="nuclei", target="https://example.test")
+
+    assert approvals.validate(grant.token, request) == grant
+    assert approvals.validate(grant.token, request) == grant
+    assert approvals.consume(grant.token, request) == grant
+    assert approvals.validate(grant.token, request) is None
 
 
 @pytest.mark.parametrize(
