@@ -14,6 +14,13 @@ from tonmen.reasoning import MissionReasoner, ReasoningAction, ReasoningDecision
 from tonmen.tools import RiskLevel, ToolRequest
 
 
+_SUCCESS_STATES = {
+    StepExecutionState.SUCCEEDED,
+    StepExecutionState.DEGRADED,
+    StepExecutionState.SKIPPED,
+}
+
+
 class MissionRunDenied(RuntimeError):
     pass
 
@@ -70,7 +77,7 @@ class MissionCoordinator:
             execution.state = StepExecutionState.SKIPPED
             execution.error = None
             execution.metadata["reasoning_decision_id"] = decision.id
-            if all(item.state in {StepExecutionState.SUCCEEDED, StepExecutionState.DEGRADED, StepExecutionState.SKIPPED} for item in run.steps):
+            if all(item.state in _SUCCESS_STATES for item in run.steps):
                 run.finish(MissionRunState.SUCCEEDED)
             else:
                 run.state = MissionRunState.RUNNING
@@ -86,6 +93,19 @@ class MissionCoordinator:
         if evidence.id not in run.graph.nodes:
             run.graph.add_node(GraphNode(id=evidence.id, kind="evidence", label=f"evidence:{execution.tool}", metadata={"exit_code": evidence.exit_code, "argv": evidence.argv}))
             run.graph.link(execution.step_id, "produced", evidence.id)
+
+    def _settle_success(self, mission_run: MissionRun, *, defer_success: bool) -> None:
+        if not all(item.state in _SUCCESS_STATES for item in mission_run.steps):
+            mission_run.state = MissionRunState.RUNNING
+            return
+        if defer_success:
+            # MissionLoop still has to ask the adaptive planner whether this local
+            # frontier is truly terminal. Do not publish a false completion event.
+            mission_run.state = MissionRunState.RUNNING
+            mission_run.finished_at = None
+            return
+        mission_run.finish(MissionRunState.SUCCEEDED)
+        self._emit("mission.completed", mission_run)
 
     def start(self, plan: MissionPlan) -> MissionRun:
         self._check_scope(plan)
@@ -151,7 +171,14 @@ class MissionCoordinator:
         self._emit("mission.failed", mission_run)
         return False
 
-    def advance_once(self, plan: MissionPlan, mission_run: MissionRun, *, approval_tokens: Mapping[str, str] | None = None) -> MissionRun:
+    def advance_once(
+        self,
+        plan: MissionPlan,
+        mission_run: MissionRun,
+        *,
+        approval_tokens: Mapping[str, str] | None = None,
+        defer_success: bool = False,
+    ) -> MissionRun:
         if mission_run.plan_id != plan.id:
             raise ValueError("mission run does not belong to this plan")
         self._check_scope(plan)
@@ -162,7 +189,7 @@ class MissionCoordinator:
         tokens = approval_tokens or {}
         mission_run.state = MissionRunState.RUNNING
         for step, execution in zip(plan.steps, mission_run.steps, strict=True):
-            if execution.state in {StepExecutionState.SUCCEEDED, StepExecutionState.DEGRADED, StepExecutionState.SKIPPED}:
+            if execution.state in _SUCCESS_STATES:
                 continue
 
             if execution.state is StepExecutionState.PENDING:
@@ -186,11 +213,7 @@ class MissionCoordinator:
                         reason=justification,
                         adaptive=True,
                     )
-                    if all(item.state in {StepExecutionState.SUCCEEDED, StepExecutionState.DEGRADED, StepExecutionState.SKIPPED} for item in mission_run.steps):
-                        mission_run.finish(MissionRunState.SUCCEEDED)
-                        self._emit("mission.completed", mission_run)
-                    else:
-                        mission_run.state = MissionRunState.RUNNING
+                    self._settle_success(mission_run, defer_success=defer_success)
                     return mission_run
 
             token = tokens.get(step.id)
@@ -297,15 +320,10 @@ class MissionCoordinator:
                 self._emit("intelligence.created", mission_run, step_id=step.id, fact_id=fact.id, kind=fact.kind.value, title=fact.title, severity=fact.severity.value, evidence_id=fact.evidence_id)
 
             self._emit("step.completed", mission_run, step_id=step.id, tool=step.tool, evidence_id=evidence.id, observation_id=observation.id, facts=len(facts))
-            if all(item.state in {StepExecutionState.SUCCEEDED, StepExecutionState.DEGRADED, StepExecutionState.SKIPPED} for item in mission_run.steps):
-                mission_run.finish(MissionRunState.SUCCEEDED)
-                self._emit("mission.completed", mission_run)
-            else:
-                mission_run.state = MissionRunState.RUNNING
+            self._settle_success(mission_run, defer_success=defer_success)
             return mission_run
 
-        mission_run.finish(MissionRunState.SUCCEEDED)
-        self._emit("mission.completed", mission_run)
+        self._settle_success(mission_run, defer_success=defer_success)
         return mission_run
 
     def _drive(self, plan: MissionPlan, run: MissionRun, approval_tokens: Mapping[str, str]) -> MissionRun:
