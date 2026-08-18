@@ -70,7 +70,6 @@ class ToolExecutor:
 
     @property
     def uses_local_subprocess(self) -> bool:
-        """True when this executor will invoke local binaries through the production backend."""
         return self._runner is subprocess.run
 
     def _emit(self, event_type: str, request: ToolRequest, **data: object) -> None:
@@ -91,8 +90,6 @@ class ToolExecutor:
             )
 
     def _effective_timeout(self, request: ToolRequest, adapter) -> float:
-        # A typed ToolSpec may request a wider process budget than the generic
-        # discovery-oriented executor default. Mission remaining time still wins.
         typed = adapter.spec.execution_timeout_seconds
         timeout = float(typed if typed is not None else self.timeout_seconds)
         raw = request.context.get("execution_timeout_seconds")
@@ -199,8 +196,18 @@ class ToolExecutor:
             self._emit("tool.denied", request, reason=decision.reason)
             raise ExecutionDenied(decision.reason)
 
+        # Validate a one-shot approval before environment probing, but do not consume
+        # it until readiness/identity checks have passed.
+        if decision.decision is Decision.REQUIRE_APPROVAL:
+            grant = self.approvals.validate(approval_token, request) if approval_token and self.approvals else None
+            if grant is None:
+                message = "higher-risk action requires approval grant"
+                self._audit(request, "deny", message)
+                self._emit("tool.approval_required", request, reason=message)
+                raise ExecutionDenied(message)
+
         build_request = request
-        if self.uses_local_subprocess:
+        if self.uses_local_subprocess and adapter.spec.preflight_readiness:
             readiness = adapter.readiness()
             if not readiness.ready:
                 message = f"tool preflight blocked: {readiness.detail}"
@@ -224,11 +231,10 @@ class ToolExecutor:
                     context=context,
                 )
 
-        # Readiness/identity is checked before consuming a one-shot approval token.
         if decision.decision is Decision.REQUIRE_APPROVAL:
-            grant = self.approvals.consume(approval_token, request) if approval_token and self.approvals else None
-            if grant is None:
-                message = "higher-risk action requires approval grant"
+            consumed = self.approvals.consume(approval_token, request) if approval_token and self.approvals else None
+            if consumed is None:
+                message = "approval grant became unavailable before execution"
                 self._audit(request, "deny", message)
                 self._emit("tool.approval_required", request, reason=message)
                 raise ExecutionDenied(message)
