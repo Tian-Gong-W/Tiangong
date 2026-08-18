@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Mapping
 
 from tonmen.adaptive import AdaptiveParameterResolver
@@ -37,24 +38,77 @@ class MissionCoordinator:
 
     def _emit(self, event_type: str, run: MissionRun, **data: object) -> None:
         if self.runtime.events is not None:
-            self.runtime.events.publish(event_type, mission_id=run.id, plan_id=run.plan_id, target=run.target, **data)
+            self.runtime.events.publish(
+                event_type,
+                mission_id=run.id,
+                plan_id=run.plan_id,
+                target=run.target,
+                **data,
+            )
 
     def _check_scope(self, plan: MissionPlan) -> None:
         if self.runtime.scope is None or not self.runtime.scope.is_allowed(plan.target):
             raise MissionRunDenied("target is outside the authorized scope")
 
     @staticmethod
+    def _remaining_mission_seconds(run: MissionRun) -> float | None:
+        """Return the remaining persisted mission wall-clock budget, when loop-governed.
+
+        The budget intentionally uses MissionRun.started_at, so approval waits and resume
+        sessions cannot silently reset a mission-wide duration boundary. The MissionLoop
+        still performs its own monotonic iteration checks; this value additionally caps
+        each synchronous tool invocation at the remaining global wall-clock budget.
+        """
+        sessions = [node for node in run.graph.nodes.values() if node.kind == "loop.session"]
+        if not sessions:
+            return None
+        try:
+            maximum = float(sessions[-1].metadata.get("max_duration_seconds", 0))
+        except (TypeError, ValueError):
+            return None
+        if maximum <= 0:
+            return None
+        elapsed = max(0.0, (datetime.now(timezone.utc) - run.started_at).total_seconds())
+        return max(0.001, maximum - elapsed)
+
+    @staticmethod
     def _ensure_graph(plan: MissionPlan, run: MissionRun) -> None:
         if run.graph.nodes:
             return
-        run.graph.add_node(GraphNode(id=run.id, kind="mission", label=f"mission:{plan.target}", metadata={"plan_id": plan.id}))
+        run.graph.add_node(
+            GraphNode(
+                id=run.id,
+                kind="mission",
+                label=f"mission:{plan.target}",
+                metadata={"plan_id": plan.id},
+            )
+        )
         for step, execution in zip(plan.steps, run.steps, strict=True):
-            run.graph.add_node(GraphNode(id=execution.step_id, kind="step", label=f"{step.tool}:{step.target}", metadata={"risk": step.risk, "requires_approval": step.requires_approval}))
+            run.graph.add_node(
+                GraphNode(
+                    id=execution.step_id,
+                    kind="step",
+                    label=f"{step.tool}:{step.target}",
+                    metadata={"risk": step.risk, "requires_approval": step.requires_approval},
+                )
+            )
             run.graph.link(run.id, "contains", execution.step_id)
 
     @staticmethod
     def record_reasoning(run: MissionRun, decision: ReasoningDecision) -> None:
-        run.graph.add_node(GraphNode(id=decision.id, kind=f"reasoning.{decision.action.value}", label=decision.summary, metadata={"action": decision.action.value, "basis_fact_ids": list(decision.basis_fact_ids), "next_step_id": decision.next_step_id, "requires_human": decision.requires_human}))
+        run.graph.add_node(
+            GraphNode(
+                id=decision.id,
+                kind=f"reasoning.{decision.action.value}",
+                label=decision.summary,
+                metadata={
+                    "action": decision.action.value,
+                    "basis_fact_ids": list(decision.basis_fact_ids),
+                    "next_step_id": decision.next_step_id,
+                    "requires_human": decision.requires_human,
+                },
+            )
+        )
         run.graph.link(run.id, "decided", decision.id)
         for fact_id in decision.basis_fact_ids:
             if fact_id in run.graph.nodes:
@@ -91,7 +145,14 @@ class MissionCoordinator:
         execution.evidence_id = evidence.id
         execution.metadata["exit_code"] = evidence.exit_code
         if evidence.id not in run.graph.nodes:
-            run.graph.add_node(GraphNode(id=evidence.id, kind="evidence", label=f"evidence:{execution.tool}", metadata={"exit_code": evidence.exit_code, "argv": evidence.argv}))
+            run.graph.add_node(
+                GraphNode(
+                    id=evidence.id,
+                    kind="evidence",
+                    label=f"evidence:{execution.tool}",
+                    metadata={"exit_code": evidence.exit_code, "argv": evidence.argv},
+                )
+            )
             run.graph.link(execution.step_id, "produced", evidence.id)
 
     def _settle_success(self, mission_run: MissionRun, *, defer_success: bool) -> None:
@@ -99,8 +160,6 @@ class MissionCoordinator:
             mission_run.state = MissionRunState.RUNNING
             return
         if defer_success:
-            # MissionLoop still has to ask the adaptive planner whether this local
-            # frontier is truly terminal. Do not publish a false completion event.
             mission_run.state = MissionRunState.RUNNING
             mission_run.finished_at = None
             return
@@ -119,7 +178,13 @@ class MissionCoordinator:
         run = self.start(plan)
         return self._drive(plan, run, approval_tokens or {})
 
-    def resume(self, plan: MissionPlan, mission_run: MissionRun, *, approval_tokens: Mapping[str, str] | None = None) -> MissionRun:
+    def resume(
+        self,
+        plan: MissionPlan,
+        mission_run: MissionRun,
+        *,
+        approval_tokens: Mapping[str, str] | None = None,
+    ) -> MissionRun:
         if mission_run.plan_id != plan.id:
             raise ValueError("mission run does not belong to this plan")
         if mission_run.state is not MissionRunState.WAITING_APPROVAL:
@@ -221,7 +286,14 @@ class MissionCoordinator:
                 execution.state = StepExecutionState.WAITING_APPROVAL
                 execution.error = "explicit approval grant required"
                 mission_run.state = MissionRunState.WAITING_APPROVAL
-                self._emit("approval.required", mission_run, step_id=step.id, tool=step.tool, step_target=step.target, risk=step.risk)
+                self._emit(
+                    "approval.required",
+                    mission_run,
+                    step_id=step.id,
+                    tool=step.tool,
+                    step_target=step.target,
+                    risk=step.risk,
+                )
                 return mission_run
 
             if not self._preflight_step(step, execution, mission_run, token):
@@ -238,17 +310,23 @@ class MissionCoordinator:
                 "hypotheses": [item.key for item in profile.hypotheses],
             }
 
+            remaining_seconds = self._remaining_mission_seconds(mission_run)
+            request_context: dict[str, object] = {
+                "mission_id": mission_run.id,
+                "plan_id": mission_run.plan_id,
+                "step_id": step.id,
+                "adaptive": True,
+                "profile_complexity": profile.complexity,
+            }
+            if remaining_seconds is not None:
+                request_context["execution_timeout_seconds"] = remaining_seconds
+                execution.metadata["mission_remaining_seconds_at_start"] = round(remaining_seconds, 6)
+
             request = ToolRequest(
                 tool=step.tool,
                 target=step.target,
                 parameters=resolved_parameters,
-                context={
-                    "mission_id": mission_run.id,
-                    "plan_id": mission_run.plan_id,
-                    "step_id": step.id,
-                    "adaptive": True,
-                    "profile_complexity": profile.complexity,
-                },
+                context=request_context,
             )
             execution.state = StepExecutionState.RUNNING
             execution.error = None
@@ -262,6 +340,7 @@ class MissionCoordinator:
                 parameters=dict(resolved_parameters),
                 profile_complexity=profile.complexity,
                 profile_unknowns=list(profile.unknowns),
+                mission_remaining_seconds=remaining_seconds,
             )
             job = self.runtime.jobs.submit(request, approval_token=token)
             execution.job_id = job.id
@@ -278,7 +357,14 @@ class MissionCoordinator:
                 execution.state = StepExecutionState.FAILED
                 if job.outcome is not None:
                     self._record_execution_evidence(mission_run, execution, job.outcome.evidence)
-                    self._emit("evidence.created", mission_run, step_id=step.id, tool=step.tool, evidence_id=job.outcome.evidence.id, exit_code=job.outcome.evidence.exit_code)
+                    self._emit(
+                        "evidence.created",
+                        mission_run,
+                        step_id=step.id,
+                        tool=step.tool,
+                        evidence_id=job.outcome.evidence.id,
+                        exit_code=job.outcome.evidence.exit_code,
+                    )
                     execution.error = job.error or job.outcome.result.summary
                     timed_out = bool(job.outcome.result.evidence.get("timed_out"))
                     if timed_out and step.risk <= int(RiskLevel.DISCOVERY):
@@ -287,7 +373,15 @@ class MissionCoordinator:
                         execution.metadata["timeout_seconds"] = job.outcome.result.evidence.get("timeout_seconds")
                         execution.metadata["degraded_reason"] = "discovery_timeout"
                         mission_run.state = MissionRunState.RUNNING
-                        self._emit("step.degraded", mission_run, step_id=step.id, tool=step.tool, error=execution.error, reason="discovery_timeout", evidence_id=job.outcome.evidence.id)
+                        self._emit(
+                            "step.degraded",
+                            mission_run,
+                            step_id=step.id,
+                            tool=step.tool,
+                            error=execution.error,
+                            reason="discovery_timeout",
+                            evidence_id=job.outcome.evidence.id,
+                        )
                         return mission_run
                 else:
                     execution.error = job.error or "execution failed"
@@ -299,27 +393,89 @@ class MissionCoordinator:
             outcome = job.outcome
             evidence = outcome.evidence
             self._record_execution_evidence(mission_run, execution, evidence)
-            self._emit("evidence.created", mission_run, step_id=step.id, tool=step.tool, evidence_id=evidence.id, exit_code=evidence.exit_code)
+            self._emit(
+                "evidence.created",
+                mission_run,
+                step_id=step.id,
+                tool=step.tool,
+                evidence_id=evidence.id,
+                exit_code=evidence.exit_code,
+            )
 
             facts = parse_evidence(evidence)
-            observation = Observation.create(source=step.tool, target=step.target, summary=summarize_facts(step.tool, facts, outcome.result.summary), evidence_id=evidence.id, metadata={"exit_code": evidence.exit_code, "job_id": job.id, "fact_ids": [fact.id for fact in facts]})
+            observation = Observation.create(
+                source=step.tool,
+                target=step.target,
+                summary=summarize_facts(step.tool, facts, outcome.result.summary),
+                evidence_id=evidence.id,
+                metadata={
+                    "exit_code": evidence.exit_code,
+                    "job_id": job.id,
+                    "fact_ids": [fact.id for fact in facts],
+                },
+            )
             mission_run.observations.append(observation)
             execution.state = StepExecutionState.SUCCEEDED
             execution.observation_id = observation.id
             execution.metadata["fact_ids"] = [fact.id for fact in facts]
-            mission_run.graph.add_node(GraphNode(id=observation.id, kind="observation", label=observation.summary, metadata={"source": observation.source, "target": observation.target}))
+            mission_run.graph.add_node(
+                GraphNode(
+                    id=observation.id,
+                    kind="observation",
+                    label=observation.summary,
+                    metadata={"source": observation.source, "target": observation.target},
+                )
+            )
             mission_run.graph.link(evidence.id, "supports", observation.id)
             mission_run.graph.link(mission_run.id, "observed", observation.id)
-            self._emit("observation.created", mission_run, step_id=step.id, observation_id=observation.id, evidence_id=evidence.id, summary=observation.summary)
+            self._emit(
+                "observation.created",
+                mission_run,
+                step_id=step.id,
+                observation_id=observation.id,
+                evidence_id=evidence.id,
+                summary=observation.summary,
+            )
 
             for fact in facts:
-                mission_run.graph.add_node(GraphNode(id=fact.id, kind=f"intelligence.{fact.kind.value}", label=fact.title, metadata={"source": fact.source, "target": fact.target, "severity": fact.severity.value, "confidence": fact.confidence, "evidence_id": fact.evidence_id, "data": dict(fact.data)}))
+                mission_run.graph.add_node(
+                    GraphNode(
+                        id=fact.id,
+                        kind=f"intelligence.{fact.kind.value}",
+                        label=fact.title,
+                        metadata={
+                            "source": fact.source,
+                            "target": fact.target,
+                            "severity": fact.severity.value,
+                            "confidence": fact.confidence,
+                            "evidence_id": fact.evidence_id,
+                            "data": dict(fact.data),
+                        },
+                    )
+                )
                 mission_run.graph.link(evidence.id, "reveals", fact.id)
                 mission_run.graph.link(observation.id, "summarizes", fact.id)
                 mission_run.graph.link(mission_run.id, "knows", fact.id)
-                self._emit("intelligence.created", mission_run, step_id=step.id, fact_id=fact.id, kind=fact.kind.value, title=fact.title, severity=fact.severity.value, evidence_id=fact.evidence_id)
+                self._emit(
+                    "intelligence.created",
+                    mission_run,
+                    step_id=step.id,
+                    fact_id=fact.id,
+                    kind=fact.kind.value,
+                    title=fact.title,
+                    severity=fact.severity.value,
+                    evidence_id=fact.evidence_id,
+                )
 
-            self._emit("step.completed", mission_run, step_id=step.id, tool=step.tool, evidence_id=evidence.id, observation_id=observation.id, facts=len(facts))
+            self._emit(
+                "step.completed",
+                mission_run,
+                step_id=step.id,
+                tool=step.tool,
+                evidence_id=evidence.id,
+                observation_id=observation.id,
+                facts=len(facts),
+            )
             self._settle_success(mission_run, defer_success=defer_success)
             return mission_run
 
@@ -333,11 +489,25 @@ class MissionCoordinator:
             self.advance_once(plan, run, approval_tokens=approval_tokens)
             decision = self.reasoner.decide(plan, run)
             self.record_reasoning(run, decision)
-            self._emit("reasoning.decided", run, decision_id=decision.id, action=decision.action.value, summary=decision.summary, basis_fact_ids=list(decision.basis_fact_ids), next_step_id=decision.next_step_id, requires_human=decision.requires_human)
+            self._emit(
+                "reasoning.decided",
+                run,
+                decision_id=decision.id,
+                action=decision.action.value,
+                summary=decision.summary,
+                basis_fact_ids=list(decision.basis_fact_ids),
+                next_step_id=decision.next_step_id,
+                requires_human=decision.requires_human,
+            )
             if decision.action is ReasoningAction.SKIP and self.apply_reasoning_decision(plan, run, decision):
                 self._emit("step.skipped", run, step_id=decision.next_step_id, reason=decision.summary)
                 continue
-            if run.state in {MissionRunState.WAITING_APPROVAL, MissionRunState.SUCCEEDED, MissionRunState.FAILED, MissionRunState.DENIED}:
+            if run.state in {
+                MissionRunState.WAITING_APPROVAL,
+                MissionRunState.SUCCEEDED,
+                MissionRunState.FAILED,
+                MissionRunState.DENIED,
+            }:
                 return run
             after = (run.state, tuple(step.state for step in run.steps), len(run.evidence))
             if after == before:
