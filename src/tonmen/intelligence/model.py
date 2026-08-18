@@ -9,6 +9,8 @@ from uuid import uuid4
 class FactKind(str, Enum):
     HOST = "host"
     SERVICE = "service"
+    DNS = "dns"
+    TLS = "tls"
     WEB = "web"
     FINDING = "finding"
 
