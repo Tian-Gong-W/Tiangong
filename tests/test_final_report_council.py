@@ -78,27 +78,31 @@ def test_assessment_policy_is_bounded_to_requested_ranges():
         MissionLoopPolicy(subagents_per_round=6)
 
 
-def test_terminal_mission_has_eight_rounds_and_four_evidence_only_subagents(tmp_path):
+def test_complex_terminal_mission_expands_within_round_and_agent_bounds(tmp_path):
     _, _, run = _completed_run(tmp_path, rounds=8, agents=4)
 
     rounds = [node for node in run.graph.nodes.values() if node.kind == "council.round"]
     agents = [node for node in run.graph.nodes.values() if node.kind == "council.subagent"]
 
-    assert len(rounds) == 8
-    assert len(agents) == 32
-    assert [node.metadata["round"] for node in rounds] == list(range(1, 9))
+    assert len(rounds) == 10
+    assert [node.metadata["round"] for node in rounds] == list(range(1, 11))
+    assert all(3 <= int(node.metadata["agents"]) <= 5 for node in rounds)
+    assert 3 * len(rounds) <= len(agents) <= 5 * len(rounds)
     assert all(node.metadata["execution_authority"] is False for node in agents)
     assert all(node.metadata["recommended_action"] for node in agents)
+    assert all(node.metadata["report_only"] is True for node in agents)
 
 
 def test_complete_report_contains_executed_payload_request_response_and_council(tmp_path):
     _, plan, run = _completed_run(tmp_path)
 
     report = build_report(plan, run)
+    rounds = [node for node in run.graph.nodes.values() if node.kind == "council.round"]
+    agents = [node for node in run.graph.nodes.values() if node.kind == "council.subagent"]
 
     assert report["report_type"] == "final"
-    assert report["summary"]["assessment_rounds"] == 8
-    assert report["summary"]["subagent_reviews"] == 32
+    assert report["summary"]["assessment_rounds"] == len(rounds) == 10
+    assert report["summary"]["subagent_reviews"] == len(agents)
     assert report["summary"]["executed_payloads"] == 1
     payload = report["executed_payloads"][0]
     assert payload["template_id"] == "CVE-2014-2323"
@@ -108,6 +112,7 @@ def test_complete_report_contains_executed_payload_request_response_and_council(
     assert report["evidence"][-1]["tool"] == "nuclei"
     assert report["governance"]["approval_tokens_persisted"] is False
     assert report["governance"]["arbitrary_shell"] is False
+    assert any(node.kind == "governance.report_gate" for node in run.graph.nodes.values())
 
 
 def test_report_store_persists_json_and_markdown(tmp_path):
@@ -168,7 +173,7 @@ def test_dashboard_terminal_checkpoint_publishes_final_report_event(tmp_path):
 
     report = state.report(result.run.id)
     assert report["report_type"] == "final"
-    assert report["summary"]["assessment_rounds"] == 8
+    assert 7 <= report["summary"]["assessment_rounds"] <= 10
     events = state.event_stream(0, timeout=0, limit=500)["events"]
     ready = [event for event in events if event["type"] == "report.ready"]
     assert ready
