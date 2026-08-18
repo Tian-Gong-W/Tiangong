@@ -27,6 +27,8 @@ def test_module_workspace_assets_are_packaged_and_routed():
     static = resources.files("tonmen.dashboard.static")
     js = static.joinpath("module-pages.js").read_text(encoding="utf-8")
     css = static.joinpath("module-pages.css").read_text(encoding="utf-8")
+    deck = static.joinpath("deck.js").read_text(encoding="utf-8")
+    operator_css = static.joinpath("history-delete.css").read_text(encoding="utf-8")
 
     for route in (
         "/missions",
@@ -49,6 +51,10 @@ def test_module_workspace_assets_are_packaged_and_routed():
     assert "stderr" in js
     assert ".module-page-root" in css
     assert ".terminal" in css
+    assert "生成测试计划" in deck
+    assert "实际执行清单" in deck
+    assert "记录 / 删除" in deck
+    assert ".operator-hub" in operator_css
 
 
 def test_dashboard_detail_apis_expose_tools_guard_and_settings(tmp_path):
@@ -56,9 +62,12 @@ def test_dashboard_detail_apis_expose_tools_guard_and_settings(tmp_path):
     state = DashboardState(config)
 
     tools = state.tools()
-    assert tools["count"] == 3
-    assert {tool["name"] for tool in tools["tools"]} == {"nmap", "httpx", "nuclei"}
+    assert tools["count"] == 4
+    assert {tool["name"] for tool in tools["tools"]} == {"nmap", "httpx", "crawler", "nuclei"}
     assert all("risk" in tool and "capabilities" in tool for tool in tools["tools"])
+    crawler = next(tool for tool in tools["tools"] if tool["name"] == "crawler")
+    assert crawler["available"] is True
+    assert "endpoint.discover" in crawler["capabilities"]
 
     guard = state.guard()
     assert guard["mode"] == "deny-by-default"
