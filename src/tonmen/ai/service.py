@@ -122,6 +122,9 @@ class LocalAIService:
                 "complexity": profile.complexity,
                 "ports": list(profile.ports),
                 "services": list(profile.services),
+                "dns_addresses": list(profile.dns_addresses[:16]),
+                "tls_versions": list(profile.tls_versions[:8]),
+                "certificate_sans": list(profile.certificate_sans[:32]),
                 "technologies": list(profile.technologies),
                 "unknowns": list(profile.unknowns),
                 "hypotheses": [
@@ -184,7 +187,5 @@ class LocalAIService:
         else:
             advisory = self.provider.advise(context, allowed_fact_ids=fact_ids)
         if decision is None and (advisory.challenge_decision or advisory.challenge_reason):
-            # A pre-reasoning snapshot has no deterministic decision to challenge.
-            # Preserve the analysis while removing a misleading decision-review claim.
             advisory = replace(advisory, challenge_decision=False, challenge_reason="")
         return advisory
