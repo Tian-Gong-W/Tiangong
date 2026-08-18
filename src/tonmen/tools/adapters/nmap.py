@@ -23,6 +23,7 @@ class NmapAdapter(ToolAdapter):
             information_gain_score=0.78,
             cost_score=0.28,
         ),
+        preflight_readiness=True,
     )
 
     def validate(self, request: ToolRequest) -> None:
