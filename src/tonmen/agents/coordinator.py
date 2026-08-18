@@ -70,7 +70,10 @@ class MissionCoordinator:
             execution.state = StepExecutionState.SKIPPED
             execution.error = None
             execution.metadata["reasoning_decision_id"] = decision.id
-            run.state = MissionRunState.RUNNING
+            if all(item.state in {StepExecutionState.SUCCEEDED, StepExecutionState.DEGRADED, StepExecutionState.SKIPPED} for item in run.steps):
+                run.finish(MissionRunState.SUCCEEDED)
+            else:
+                run.state = MissionRunState.RUNNING
             return True
         return False
 
@@ -162,28 +165,33 @@ class MissionCoordinator:
             if execution.state in {StepExecutionState.SUCCEEDED, StepExecutionState.DEGRADED, StepExecutionState.SKIPPED}:
                 continue
 
-            justified, justification = self.parameter_resolver.justify(plan, mission_run, step)
-            if not justified:
-                execution.state = StepExecutionState.SKIPPED
-                execution.error = None
-                execution.metadata["adaptive_skip_reason"] = justification
-                profile = self.parameter_resolver.profile(plan, mission_run)
-                execution.metadata["adaptive_profile"] = {
-                    "kind": profile.target_kind,
-                    "complexity": profile.complexity,
-                    "unknowns": list(profile.unknowns),
-                    "hypotheses": [item.key for item in profile.hypotheses],
-                }
-                self._emit(
-                    "step.skipped",
-                    mission_run,
-                    step_id=step.id,
-                    tool=step.tool,
-                    reason=justification,
-                    adaptive=True,
-                )
-                mission_run.state = MissionRunState.RUNNING
-                return mission_run
+            if execution.state is StepExecutionState.PENDING:
+                justified, justification = self.parameter_resolver.justify(plan, mission_run, step)
+                if not justified:
+                    execution.state = StepExecutionState.SKIPPED
+                    execution.error = None
+                    execution.metadata["adaptive_skip_reason"] = justification
+                    profile = self.parameter_resolver.profile(plan, mission_run)
+                    execution.metadata["adaptive_profile"] = {
+                        "kind": profile.target_kind,
+                        "complexity": profile.complexity,
+                        "unknowns": list(profile.unknowns),
+                        "hypotheses": [item.key for item in profile.hypotheses],
+                    }
+                    self._emit(
+                        "step.skipped",
+                        mission_run,
+                        step_id=step.id,
+                        tool=step.tool,
+                        reason=justification,
+                        adaptive=True,
+                    )
+                    if all(item.state in {StepExecutionState.SUCCEEDED, StepExecutionState.DEGRADED, StepExecutionState.SKIPPED} for item in mission_run.steps):
+                        mission_run.finish(MissionRunState.SUCCEEDED)
+                        self._emit("mission.completed", mission_run)
+                    else:
+                        mission_run.state = MissionRunState.RUNNING
+                    return mission_run
 
             token = tokens.get(step.id)
             if step.requires_approval and not token:
