@@ -10,6 +10,14 @@ from tonmen.jobs import JobManager
 from tonmen.missions import MissionRunState, StepExecutionState
 
 
+def _tool_name(argv) -> str:
+    if argv and argv[0] in {"nmap", "httpx", "nuclei"}:
+        return argv[0]
+    if len(argv) >= 3 and argv[1:3] == ["-m", "tonmen.tools.runners.crawler"]:
+        return "crawler"
+    return str(argv[0]) if argv else "unknown"
+
+
 def _runtime(tmp_path, *, returncode: int = 0):
     runtime = TonmenRuntime.sentinel(TonmenConfig(workspace=tmp_path))
     calls: list[list[str]] = []
@@ -25,6 +33,7 @@ PORT   STATE SERVICE VERSION
 80/tcp open  http    nginx 1.24.0
 """,
             "httpx": "https://localhost [200] [Welcome] [nginx]\n",
+            "crawler": '{"type":"page","url":"https://localhost/","status":200,"title":"Welcome","content_type":"text/html","depth":0,"bytes":120,"truncated":false}\n{"type":"summary","visited":1,"successful":1}\n',
             "nuclei": json.dumps(
                 {
                     "template-id": "demo-check",
@@ -34,7 +43,7 @@ PORT   STATE SERVICE VERSION
                 }
             )
             + "\n",
-        }[argv[0]]
+        }[_tool_name(argv)]
         return subprocess.CompletedProcess(argv, 0, stdout=output, stderr="")
 
     runtime.executor._runner = fake_runner
@@ -52,12 +61,11 @@ def test_coordinator_executes_discovery_and_stops_at_approval(tmp_path):
     assert [step.state for step in run.steps] == [
         StepExecutionState.SUCCEEDED,
         StepExecutionState.SUCCEEDED,
+        StepExecutionState.SUCCEEDED,
         StepExecutionState.WAITING_APPROVAL,
     ]
-    assert len(calls) == 2
-    assert calls[0][0] == "nmap"
-    assert calls[1][0] == "httpx"
-    assert len(run.observations) == 2
+    assert [_tool_name(call) for call in calls] == ["nmap", "httpx", "crawler"]
+    assert len(run.observations) == 3
     assert all(observation.evidence_id for observation in run.observations)
     assert any(node.kind == "reasoning.request_approval" for node in run.graph.nodes.values())
 
@@ -75,9 +83,8 @@ def test_coordinator_can_resume_with_bound_approval(tmp_path):
     assert resumed is run
     assert run.state is MissionRunState.SUCCEEDED
     assert all(step.state is StepExecutionState.SUCCEEDED for step in run.steps)
-    assert len(calls) == 3
-    assert calls[-1][0] == "nuclei"
-    assert len(run.observations) == 3
+    assert [_tool_name(call) for call in calls] == ["nmap", "httpx", "crawler", "nuclei"]
+    assert len(run.observations) == 4
 
 
 def test_coordinator_stops_after_execution_failure_and_keeps_raw_evidence(tmp_path):
