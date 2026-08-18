@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from .inspector import ArtifactInspector
+from .model import ArtifactReport
 
 
 def _private_dir(path: Path) -> None:
@@ -69,8 +70,10 @@ class ArtifactStore:
         _private_dir(self.blobs)
         _private_dir(self.reports)
 
-    def ingest(self, source: str | Path) -> dict:
-        report, data = self.inspector.read(source)
+    def _persist(self, report: ArtifactReport, data: bytes) -> dict:
+        if len(data) != report.size or hashlib.sha256(data).hexdigest() != report.sha256:
+            raise ValueError("artifact report/data identity mismatch")
+
         blob = self.blobs / report.sha256
         if blob.exists():
             if not blob.is_file() or _sha256_file(blob) != report.sha256:
@@ -92,6 +95,18 @@ class ArtifactStore:
         encoded = (json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
         _atomic_private_write(report_path, encoded)
         return payload
+
+    def ingest(self, source: str | Path) -> dict:
+        """CLI/local API intake. The Dashboard never calls this path-based method."""
+        report, data = self.inspector.read(source)
+        return self._persist(report, data)
+
+    def ingest_bytes(self, data: bytes, *, source_name: str = "artifact") -> dict:
+        """Dashboard-safe intake: inspect supplied bytes, never resolve a server path."""
+        if not isinstance(data, bytes):
+            raise TypeError("artifact upload must be bytes")
+        report = self.inspector.inspect_bytes(data, source_name=source_name)
+        return self._persist(report, data)
 
     def load(self, artifact_id: str) -> dict:
         digest = _validate_sha256(artifact_id)
