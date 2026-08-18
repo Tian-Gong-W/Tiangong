@@ -2,6 +2,19 @@
   "use strict";
 
   const path = location.pathname.replace(/\/+$/, "") || "/";
+
+  function installArtifactNav() {
+    const nav = document.querySelector(".operator-nav");
+    if (!nav || nav.querySelector('a[href="/artifacts"]')) return;
+    const link = document.createElement("a");
+    link.href = "/artifacts";
+    link.className = path === "/artifacts" ? "active" : "";
+    link.innerHTML = `<span class="op-icon">◇</span><span><strong>逆向 / Binary</strong><small>Artifact 静态分析 · 不执行</small></span>`;
+    const plan = nav.querySelector("[data-operator-plan]");
+    nav.insertBefore(link, plan || null);
+  }
+
+  installArtifactNav();
   if (path !== "/artifacts") return;
 
   const MAX_BYTES = 32 * 1024 * 1024;
