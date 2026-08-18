@@ -150,7 +150,7 @@
       ["/scope", "◎", "授权范围", "目标 Scope 与边界"],
     ];
     nav.innerHTML = links.map(([href, icon, label, sub]) => `<a href="${href}" class="${path === href ? "active" : ""}"><span class="op-icon">${icon}</span><span><strong>${label}</strong><small>${sub}</small></span></a>`).join("") + `
-      <button type="button" data-operator-plan><span class="op-icon">✺</span><span><strong>生成测试计划</strong><small>只预览，不执行</small></span></button>
+      <button type="button" data-operator-plan><span class="op-icon">✺</span><span><strong>生成测试计划</strong><small>后端真实 Planner · 只预览</small></span></button>
       <details><summary>高级模块 ▾</summary><div class="advanced-links">
         <a href="/tools">天工 / Tools</a><a href="/guard">天律 / Guard</a><a href="/reasoner">天策 / Reasoner</a><a href="/loop">天衡 / Loop</a><a href="/settings">设置 / Doctor</a>
       </div></details>`;
@@ -158,12 +158,9 @@
     nav.querySelector("[data-operator-plan]")?.addEventListener("click", () => openPlanDialog());
   }
 
-  const plannedSteps = [
-    {tool:"nmap", title:"网络入口确认", operation:"TCP 80/443 可达性，不做版本探测", params:"ports=80,443 · service_detection=false", risk:"L1 · 自动"},
-    {tool:"httpx", title:"Web 元数据", operation:"HTTP 状态、标题与技术栈识别", params:"redirects=false · timeout=10s", risk:"L1 · 自动"},
-    {tool:"crawler", title:"同域爬虫", operation:"发现站内页面与端点；不提交表单、不跨主机", params:"max_pages=25 · depth=2 · timeout=10s", risk:"L1 · 自动"},
-    {tool:"nuclei", title:"漏洞验证", operation:"基于模板的受控验证，仅在已有 Web Evidence 后进入", params:"severity=medium,high,critical · rate=10", risk:"L3 · 人工审批", approval:true},
-  ];
+  function parameterText(parameters) {
+    return Object.entries(parameters || {}).map(([key, value]) => `${key}=${Array.isArray(value) ? value.join(",") : value}`).join(" · ") || "无额外参数";
+  }
 
   function ensurePlanDialog() {
     let dialog = document.getElementById("operator-plan-dialog");
@@ -172,7 +169,7 @@
     dialog.id = "operator-plan-dialog";
     dialog.className = "operator-plan-dialog";
     dialog.innerHTML = `<div class="operator-plan-shell">
-      <div class="operator-plan-head"><div><h2>测试 / 攻击面评估计划</h2><p>先看会做什么，再决定是否启动。这里不会执行任何工具。</p></div><button class="ghost" type="button" data-plan-close>×</button></div>
+      <div class="operator-plan-head"><div><h2>测试 / 攻击面评估计划</h2><p>由后端 MissionPlanner 生成真实计划；这里只构建与检查 argv，不执行工具。</p></div><button class="ghost" type="button" data-plan-close>×</button></div>
       <div class="operator-plan-target"><input data-plan-target placeholder="已授权 Target，例如 https://app.example.test"><button class="primary" type="button" data-plan-build>生成计划</button></div>
       <div data-plan-result class="operator-plan-list"><div class="operator-empty">输入 Target 后生成计划预览。</div></div>
       <div class="operator-capability-strip">
@@ -189,9 +186,14 @@
     dialog.querySelector("[data-plan-target]")?.addEventListener("keydown", event => {
       if (event.key === "Enter") { event.preventDefault(); renderPlan(dialog); }
     });
+    dialog.querySelector("[data-plan-target]")?.addEventListener("input", () => {
+      dialog.dataset.previewTarget = "";
+      const start = dialog.querySelector("[data-plan-start]");
+      if (start) start.disabled = true;
+    });
     dialog.querySelector("[data-plan-start]")?.addEventListener("click", () => {
       const target = dialog.querySelector("[data-plan-target]")?.value?.trim();
-      if (!target) return;
+      if (!target || dialog.dataset.previewTarget !== target) return;
       dialog.close();
       const missionInput = document.getElementById("mission-input");
       if (missionInput) missionInput.value = target;
@@ -205,18 +207,27 @@
     const result = dialog.querySelector("[data-plan-result]");
     const start = dialog.querySelector("[data-plan-start]");
     if (!target || !result || !start) return;
-    result.innerHTML = `<div class="operator-empty">正在读取 Tool Registry…</div>`;
+    dialog.dataset.previewTarget = "";
+    start.disabled = true;
+    result.innerHTML = `<div class="operator-empty">正在向后端 MissionPlanner 生成计划…</div>`;
     try {
-      const tools = (await api("/api/tools")).tools || [];
-      const readiness = new Map(tools.map(tool => [tool.name, Boolean(tool.available)]));
-      result.innerHTML = plannedSteps.map((step, index) => {
-        const ready = readiness.get(step.tool);
-        const readyText = ready === false ? "未就绪" : ready === true ? "Ready" : "待检查";
-        return `<article class="operator-plan-step"><span class="num">${String(index + 1).padStart(2,"0")}</span><div><strong>${esc(step.tool)} · ${esc(step.title)}</strong><p>${esc(step.operation)}</p><code>${esc(step.params)}</code></div><div class="gate ${step.approval ? "approval" : ""}"><b>${esc(step.risk)}</b><span>${readyText}</span></div></article>`;
-      }).join("") + `<div class="operator-empty">Target: ${esc(target)} · 执行时仍会再次经过 Scope、Policy、Readiness 与 Approval 检查。</div>`;
-      start.disabled = false;
+      const preview = await api(`/api/plans/preview?target=${encodeURIComponent(target)}`);
+      const steps = preview.steps || [];
+      result.innerHTML = steps.map((step, index) => {
+        const ready = step.readiness?.ready;
+        const readyText = ready === false ? `未就绪 · ${step.readiness?.detail || "dependency missing"}` : ready === true ? "Ready" : "待检查";
+        const gateText = step.requires_approval ? `L${step.risk} · 人工审批` : `L${step.risk} · 自动`;
+        const command = `$ ${(step.argv || []).join(" ")}`;
+        const policy = `${step.policy?.decision || "unknown"} · ${step.policy?.reason || ""}`;
+        return `<article class="operator-plan-step"><span class="num">${String(index + 1).padStart(2,"0")}</span><div><strong>${esc(step.tool)} · ${esc(step.category || step.description || "governed tool")}</strong><p>${esc(step.rationale || step.description || "")}</p><code title="${esc(command)}">${esc(command)}</code><p>Target: ${esc(step.target)} · Params: ${esc(parameterText(step.parameters))}</p><p>Policy: ${esc(policy)}</p></div><div class="gate ${step.requires_approval ? "approval" : ""}"><b>${esc(gateText)}</b><span>${esc(readyText)}</span></div></article>`;
+      }).join("") + `<div class="operator-empty">Plan ${esc(short(preview.plan_id))} · ${esc(preview.mode)} · 自动步骤 ${esc(preview.autonomy?.automatic_steps ?? 0)} · 审批步骤 ${esc(preview.autonomy?.approval_steps ?? 0)}${preview.autonomy?.next_approval_tool ? ` · 下一治理边界 ${esc(preview.autonomy.next_approval_tool)}` : ""}。预览不执行；启动时会重新经过 Scope、Policy、Readiness 与 Approval。</div>`;
+      dialog.dataset.previewTarget = target;
+      start.disabled = !preview.can_start;
+      if (!preview.can_start) {
+        result.insertAdjacentHTML("beforeend", `<div class="operator-empty">自动执行阶段存在未就绪工具，先到 Tools / Doctor 修复后再启动。</div>`);
+      }
     } catch (error) {
-      result.innerHTML = `<div class="operator-empty">无法读取工具状态：${esc(error.message || error)}</div>`;
+      result.innerHTML = `<div class="operator-empty">计划生成失败：${esc(error.message || error)}</div>`;
       start.disabled = true;
     }
   }
@@ -226,6 +237,9 @@
     const input = dialog.querySelector("[data-plan-target]");
     const current = document.getElementById("mission-target")?.textContent?.trim();
     if (input) input.value = target || (current && current !== "—" ? current : "");
+    dialog.dataset.previewTarget = "";
+    const start = dialog.querySelector("[data-plan-start]");
+    if (start) start.disabled = true;
     dialog.showModal();
     if (input?.value) renderPlan(dialog);
   }
@@ -242,7 +256,7 @@
     hub.innerHTML = `<div class="operator-hub-head"><div><h1>操作控制台</h1><p>流程固定：先授权 Scope → 生成计划 → 自动执行低风险步骤 → 查看实时工具操作与证据 → 需要时人工审批 → 归档/删除记录。</p></div><div class="operator-autonomy"><strong>自治模式：运行到治理边界</strong><span>Discovery 步骤自动连续执行；遇到 Approval、预算、工具故障或人工 Review 自动停下。</span></div></div>
       <div class="operator-actions">
         <button class="operator-action" id="operator-start" type="button"><b>▶</b><strong>1 · 开始任务</strong><small>创建 Target 与执行预算</small></button>
-        <button class="operator-action plan" id="operator-plan" type="button"><b>✺</b><strong>2 · 生成测试计划</strong><small>先预览工具与操作，不执行</small></button>
+        <button class="operator-action plan" id="operator-plan" type="button"><b>✺</b><strong>2 · 生成测试计划</strong><small>后端真实 Planner，只预览</small></button>
         <a class="operator-action" href="/missions"><b>⌁</b><strong>3 · 实时执行</strong><small>看 Tool、argv、stdout、stderr</small></a>
         <a class="operator-action" href="/intelligence"><b>◉</b><strong>4 · 数据 / 证据</strong><small>看 Evidence、Facts、Findings</small></a>
         <a class="operator-action attention" href="/approval"><b>♙</b><strong>5 · 审批</strong><small>只处理等待人工批准的动作</small></a>
