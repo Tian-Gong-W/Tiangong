@@ -11,6 +11,14 @@ from tonmen.jobs import JobManager
 from tonmen.missions import MissionRunState, StepExecutionState
 
 
+def _tool_name(argv) -> str:
+    if argv and argv[0] in {"nmap", "httpx", "nuclei"}:
+        return argv[0]
+    if len(argv) >= 3 and argv[1:3] == ["-m", "tonmen.tools.runners.crawler"]:
+        return "crawler"
+    return str(argv[0]) if argv else "unknown"
+
+
 def _runtime(tmp_path, calls):
     runtime = TonmenRuntime.sentinel(TonmenConfig(workspace=tmp_path))
 
@@ -23,6 +31,7 @@ PORT   STATE SERVICE VERSION
 80/tcp open  http    nginx 1.24.0
 """,
             "httpx": "https://localhost [200] [Welcome] [nginx]\n",
+            "crawler": '{"type":"page","url":"https://localhost/","status":200,"title":"Welcome","content_type":"text/html","depth":0,"bytes":120,"truncated":false}\n{"type":"summary","visited":1,"successful":1}\n',
             "nuclei": json.dumps(
                 {
                     "template-id": "demo-check",
@@ -32,7 +41,7 @@ PORT   STATE SERVICE VERSION
                 }
             )
             + "\n",
-        }[argv[0]]
+        }[_tool_name(argv)]
         return subprocess.CompletedProcess(argv, 0, stdout=output, stderr="")
 
     runtime.executor._runner = fake_runner
@@ -54,9 +63,10 @@ def test_chronicle_roundtrip_preserves_evidence_and_graph(tmp_path):
     assert loaded_plan.id == plan.id
     assert loaded_run.id == run.id
     assert loaded_run.state is MissionRunState.WAITING_APPROVAL
-    assert len(loaded_run.evidence) == 2
+    assert len(loaded_run.evidence) == 3
     assert loaded_run.evidence[0].stdout.startswith("Nmap scan report")
-    assert len(loaded_run.observations) == 2
+    assert loaded_run.evidence[2].tool == "crawler"
+    assert len(loaded_run.observations) == 3
     assert len(loaded_run.graph.nodes) == len(run.graph.nodes)
     assert any(node.kind == "reasoning.request_approval" for node in loaded_run.graph.nodes.values())
     assert [entry.run_id for entry in store.list()] == [run.id]
@@ -82,8 +92,8 @@ def test_persisted_mission_resumes_without_replaying_discovery(tmp_path):
     assert loaded_run.state is MissionRunState.SUCCEEDED
     assert all(step.state is StepExecutionState.SUCCEEDED for step in loaded_run.steps)
     assert len(second_calls) == 1
-    assert second_calls[0][0] == "nuclei"
-    assert len(loaded_run.evidence) == 3
+    assert _tool_name(second_calls[0]) == "nuclei"
+    assert len(loaded_run.evidence) == 4
 
 
 def test_chronicle_rejects_path_traversal_ids(tmp_path):
