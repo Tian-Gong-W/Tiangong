@@ -86,6 +86,10 @@ def _loop_policy(run: MissionRun) -> dict[str, Any]:
     return dict(latest.metadata)
 
 
+def _model_calls(run: MissionRun) -> list[dict[str, Any]]:
+    return [_node(node) for node in run.graph.nodes.values() if node.kind == "model.call"]
+
+
 def build_report(plan: MissionPlan, run: MissionRun) -> dict[str, Any]:
     evidence = []
     payloads: list[dict[str, Any]] = []
@@ -131,10 +135,15 @@ def build_report(plan: MissionPlan, run: MissionRun) -> dict[str, Any]:
     reasoning = [_node(node) for node in run.graph.nodes.values() if node.kind.startswith("reasoning.")]
     loop = [_node(node) for node in run.graph.nodes.values() if node.kind.startswith("loop.")]
     council = _council(run)
+    model_calls = _model_calls(run)
     findings = [node for node in intelligence if node["kind"] == "intelligence.finding"]
     approval_steps = [step for step in steps if step["requires_approval"]]
     failures = [step for step in steps if step["state"] in {"failed", "denied"}]
     degraded = [step for step in steps if step["state"] == "degraded"]
+    prompt_tokens = sum(int(item.get("metadata", {}).get("prompt_tokens", 0) or 0) for item in model_calls)
+    output_tokens = sum(int(item.get("metadata", {}).get("output_tokens", 0) or 0) for item in model_calls)
+    model_successes = sum(1 for item in model_calls if item.get("metadata", {}).get("status") == "success")
+    report_gates = [_node(node) for node in run.graph.nodes.values() if node.kind == "governance.report_gate"]
 
     return {
         "schema": 1,
@@ -158,11 +167,17 @@ def build_report(plan: MissionPlan, run: MissionRun) -> dict[str, Any]:
             "executed_payloads": len(payloads),
             "assessment_rounds": len(council),
             "subagent_reviews": sum(len(item["subagents"]) for item in council),
+            "model_calls": len(model_calls),
+            "model_successes": model_successes,
+            "model_prompt_tokens": prompt_tokens,
+            "model_output_tokens": output_tokens,
         },
         "governance": {
             "execution_model": "Scope -> Guard -> Approval -> structured adapter -> shell=False Executor",
             "approval_tokens_persisted": False,
             "arbitrary_shell": False,
+            "report_only": bool(report_gates) or bool(_loop_policy(run).get("report_only", False)),
+            "report_gates": report_gates,
             "policy": _loop_policy(run),
             "approval_steps": approval_steps,
         },
@@ -184,6 +199,7 @@ def build_report(plan: MissionPlan, run: MissionRun) -> dict[str, Any]:
         "reasoning": reasoning,
         "loop": loop,
         "assessment_council": council,
+        "model_calls": model_calls,
         "executed_payloads": payloads,
         "evidence": evidence,
         "graph": {
@@ -222,12 +238,15 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- Executed request/payload records: {summary['executed_payloads']}",
         f"- Assessment rounds: {summary['assessment_rounds']}",
         f"- Subagent reviews: {summary['subagent_reviews']}",
+        f"- Model calls: {summary.get('model_calls', 0)}",
+        f"- Model tokens (prompt/output): {summary.get('model_prompt_tokens', 0)} / {summary.get('model_output_tokens', 0)}",
         "",
         "## Governance",
         "",
         f"- Execution model: {report['governance']['execution_model']}",
         "- Approval tokens persisted: no",
         "- Arbitrary shell: disabled",
+        f"- Report only: {'yes' if report['governance'].get('report_only') else 'no'}",
         "",
         "## Execution Steps",
         "",
@@ -296,13 +315,25 @@ def render_markdown(report: dict[str, Any]) -> str:
             [
                 f"### Round {rm.get('round')} — {rm.get('focus')}",
                 "",
-                f"Phase: `{rm.get('phase')}` · Subagents: {len(round_item.get('subagents', []))}",
+                f"Phase: `{rm.get('phase')}` · Subagents: {len(round_item.get('subagents', []))} · Mode: `{rm.get('agent_mode', 'deterministic')}`",
                 "",
             ]
         )
         for agent in round_item.get("subagents", []):
             am = agent.get("metadata", {})
-            lines.append(f"- **{am.get('role')}** — {am.get('summary')} → `{am.get('recommended_action')}`")
+            mode = am.get("agent_mode", "deterministic")
+            lines.append(f"- **{am.get('role')}** [{mode}] — {am.get('summary')} → `{am.get('recommended_action')}`")
+        lines.append("")
+
+    if report.get("model_calls"):
+        lines.extend(["## Model Runtime", ""])
+        for item in report["model_calls"]:
+            md = item.get("metadata", {})
+            lines.append(
+                f"- `{md.get('provider')}:{md.get('model')}` — {md.get('status')} · "
+                f"tokens {md.get('prompt_tokens', 0)}/{md.get('output_tokens', 0)} · "
+                f"execution authority: {md.get('execution_authority')}"
+            )
         lines.append("")
 
     lines.extend(["## Reasoning", ""])
