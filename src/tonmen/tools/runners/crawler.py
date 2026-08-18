@@ -89,6 +89,71 @@ def _normalize(url: str, origin: tuple[str, str, int]) -> str | None:
     return parsed.geturl()
 
 
+def _cookie_metadata(headers) -> list[dict[str, object]]:
+    """Return cookie names/flags only. Cookie values are never copied into Evidence."""
+    try:
+        raw_values = headers.get_all("Set-Cookie") or []
+    except AttributeError:
+        raw = headers.get("Set-Cookie") if headers is not None else None
+        raw_values = [raw] if raw else []
+
+    cookies: list[dict[str, object]] = []
+    for raw in raw_values[:64]:
+        parts = [part.strip() for part in str(raw).split(";") if part.strip()]
+        if not parts or "=" not in parts[0]:
+            continue
+        name = parts[0].split("=", 1)[0].strip()[:128]
+        if not name:
+            continue
+        flags: set[str] = set()
+        same_site: str | None = None
+        for attribute in parts[1:]:
+            key, separator, value = attribute.partition("=")
+            normalized = key.strip().lower()
+            if normalized in {"secure", "httponly", "partitioned"}:
+                flags.add(normalized)
+            elif normalized == "samesite" and separator:
+                candidate = value.strip().lower()
+                if candidate in {"strict", "lax", "none"}:
+                    same_site = candidate
+        cookies.append(
+            {
+                "name": name,
+                "secure": "secure" in flags,
+                "httponly": "httponly" in flags,
+                "samesite": same_site,
+                "partitioned": "partitioned" in flags,
+            }
+        )
+    return cookies
+
+
+def _security_posture(headers, url: str) -> dict[str, object]:
+    """Observe response policy without retaining credential/session values."""
+    def present(name: str) -> bool:
+        value = headers.get(name) if headers is not None else None
+        return bool(str(value).strip()) if value is not None else False
+
+    allow_origin = str(headers.get("Access-Control-Allow-Origin", "")).strip()[:512] if headers is not None else ""
+    allow_credentials = str(headers.get("Access-Control-Allow-Credentials", "")).strip().lower() if headers is not None else ""
+    vary = str(headers.get("Vary", "")).strip().lower() if headers is not None else ""
+    return {
+        "https": urlparse(url).scheme.lower() == "https",
+        "hsts": present("Strict-Transport-Security"),
+        "csp": present("Content-Security-Policy"),
+        "x_content_type_options": present("X-Content-Type-Options"),
+        "referrer_policy": present("Referrer-Policy"),
+        "frame_options": present("X-Frame-Options"),
+        "permissions_policy": present("Permissions-Policy"),
+        "cache_control": present("Cache-Control"),
+        "cors_allow_origin": allow_origin or None,
+        "cors_allow_credentials": allow_credentials == "true",
+        "cors_vary_origin": "origin" in {part.strip() for part in vary.split(",") if part.strip()},
+        "cookies": _cookie_metadata(headers),
+        "cookie_values_recorded": False,
+    }
+
+
 def _emit(payload: dict) -> None:
     sys.stdout.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
     sys.stdout.flush()
@@ -143,6 +208,8 @@ def crawl(start_url: str, *, max_pages: int, max_depth: int, timeout: int) -> in
                         "depth": depth,
                         "bytes": len(raw),
                         "truncated": truncated,
+                        "redirected": final_url != url,
+                        "security": _security_posture(response.headers, final_url),
                     }
                 )
                 successful += 1
