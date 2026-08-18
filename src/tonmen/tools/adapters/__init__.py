@@ -1,3 +1,4 @@
+from .api_intel import ApiIntelAdapter
 from .crawler import CrawlerAdapter
 from .dns_intel import DnsIntelAdapter
 from .httpx import HttpxAdapter
@@ -11,11 +12,13 @@ def register_builtin_adapters(registry) -> None:
     registry.register(DnsIntelAdapter())
     registry.register(HttpxAdapter())
     registry.register(TlsIntelAdapter())
+    registry.register(ApiIntelAdapter())
     registry.register(CrawlerAdapter())
     registry.register(NucleiAdapter())
 
 
 __all__ = [
+    "ApiIntelAdapter",
     "CrawlerAdapter",
     "DnsIntelAdapter",
     "HttpxAdapter",
