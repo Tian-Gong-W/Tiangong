@@ -117,6 +117,80 @@ def _parse_httpx(evidence: EvidenceRecord) -> list[IntelligenceFact]:
     return facts
 
 
+def _crawler_security_findings(evidence: EvidenceRecord, item: dict, url: str) -> list[IntelligenceFact]:
+    """Create conservative entry-page posture findings without retaining secret values."""
+    security = item.get("security")
+    if not isinstance(security, dict) or item.get("depth") != 0:
+        return []
+
+    facts: list[IntelligenceFact] = []
+
+    def add(title: str, severity: Severity, issue: str, **data) -> None:
+        facts.append(
+            IntelligenceFact.create(
+                kind=FactKind.FINDING,
+                source="crawler",
+                target=url,
+                title=title,
+                evidence_id=evidence.id,
+                confidence=0.95,
+                severity=severity,
+                data={"issue": issue, "passive": True, **data},
+            )
+        )
+
+    is_https = bool(security.get("https"))
+    if is_https and security.get("hsts") is False:
+        add(
+            "HSTS header not observed on HTTPS entry page",
+            Severity.LOW,
+            "hsts_missing",
+        )
+
+    if security.get("csp") is False:
+        add(
+            "Content-Security-Policy header not observed on entry page",
+            Severity.INFO,
+            "csp_missing",
+        )
+
+    cookies = security.get("cookies")
+    if isinstance(cookies, list):
+        for cookie in cookies[:64]:
+            if not isinstance(cookie, dict):
+                continue
+            name = str(cookie.get("name") or "cookie")[:128]
+            missing: list[str] = []
+            if is_https and cookie.get("secure") is False:
+                missing.append("Secure")
+            if cookie.get("httponly") is False:
+                missing.append("HttpOnly")
+            if cookie.get("samesite") in {None, ""}:
+                missing.append("SameSite")
+            if missing:
+                add(
+                    f"Cookie policy gap: {name} missing {', '.join(missing)}",
+                    Severity.LOW,
+                    "cookie_policy",
+                    cookie_name=name,
+                    missing_flags=missing,
+                    cookie_value_recorded=False,
+                )
+
+    allow_origin = security.get("cors_allow_origin")
+    if allow_origin == "*":
+        credentials = bool(security.get("cors_allow_credentials"))
+        add(
+            "CORS wildcard origin response observed" + (" with credentials flag" if credentials else ""),
+            Severity.LOW if credentials else Severity.INFO,
+            "cors_wildcard",
+            allow_origin="*",
+            allow_credentials=credentials,
+        )
+
+    return facts
+
+
 def _parse_crawler(evidence: EvidenceRecord) -> list[IntelligenceFact]:
     facts: list[IntelligenceFact] = []
     for line in _nonempty_lines(evidence.stdout):
@@ -136,6 +210,7 @@ def _parse_crawler(evidence: EvidenceRecord) -> list[IntelligenceFact]:
             label += f" [{status}]"
         if title:
             label += f" {title}"
+        security = item.get("security") if isinstance(item.get("security"), dict) else None
         facts.append(
             IntelligenceFact.create(
                 kind=FactKind.WEB,
@@ -151,9 +226,12 @@ def _parse_crawler(evidence: EvidenceRecord) -> list[IntelligenceFact]:
                     "depth": item.get("depth"),
                     "bytes": item.get("bytes"),
                     "truncated": bool(item.get("truncated", False)),
+                    "redirected": bool(item.get("redirected", False)),
+                    "security": security,
                 },
             )
         )
+        facts.extend(_crawler_security_findings(evidence, item, url))
     return facts
 
 
