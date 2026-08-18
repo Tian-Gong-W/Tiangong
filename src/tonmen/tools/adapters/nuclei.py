@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from tonmen.tools.base import RiskLevel, ToolAdapter, ToolReadiness, ToolRequest, ToolSpec
+from tonmen.tools.base import CapabilityPlanningSpec, RiskLevel, ToolAdapter, ToolReadiness, ToolRequest, ToolSpec
 from tonmen.tools.validation import reject_unknown_parameters, validate_web_target
 
 _ALLOWED_SEVERITIES = {"info", "low", "medium", "high", "critical"}
@@ -30,6 +30,18 @@ class NucleiAdapter(ToolAdapter):
         description="Template-based vulnerability validation with bounded parameters",
         risk=RiskLevel.VALIDATION,
         capabilities=("vulnerability.validate", "finding.generate"),
+        planning=CapabilityPlanningSpec(
+            target_kinds=("host", "web"),
+            requires_profile=("has_web_surface",),
+            requires_capabilities=("endpoint.discover",),
+            basis_fact_kinds=("intelligence.web", "intelligence.finding"),
+            resolves_unknowns=("validation_coverage",),
+            default_parameters={"severity": ("medium", "high", "critical"), "rate_limit": 10, "timeout": 10},
+            rationale="Use bounded template validation only after endpoint coverage exists; explicit human approval remains mandatory.",
+            information_gain="evidence-backed validation findings and severity evidence",
+            information_gain_score=0.72,
+            cost_score=0.58,
+        ),
     )
 
     def readiness(self) -> ToolReadiness:
