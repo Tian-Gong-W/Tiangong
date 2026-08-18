@@ -23,11 +23,7 @@ def _target_for_mode(target: str, mode: str) -> str:
 
 
 class MissionPlanner:
-    """Build governed candidate plans or minimal adaptive seeds. It never executes tools.
-
-    Selection semantics are declared by registered ToolSpecs and discovered through the
-    CapabilityCatalog. This class does not encode a fixed scanner/tool sequence.
-    """
+    """Build governed candidate plans or minimal adaptive seeds. It never executes tools."""
 
     def __init__(self, runtime: TonmenRuntime) -> None:
         self.runtime = runtime
@@ -45,7 +41,6 @@ class MissionPlanner:
         parameters: dict | None = None,
         rationale: str | None = None,
     ) -> MissionStep:
-        """Materialize one typed governed step from declarative registry metadata."""
         self._require_scope(target)
         try:
             adapter = self.runtime.registry.get(tool)
@@ -73,11 +68,6 @@ class MissionPlanner:
         )
 
     def seed(self, target: str) -> MissionPlan:
-        """Select the smallest declared seed for the target kind.
-
-        Seed eligibility is declarative (`planning.seed_for`) rather than a hard-coded
-        tool name. Later capabilities are not committed until evidence justifies them.
-        """
         self._require_scope(target)
         candidates = self.catalog.seed_tools(target)
         if not candidates:
@@ -90,11 +80,16 @@ class MissionPlanner:
                 failures.append(f"{tool}: {exc}")
         raise MissionPlanningDenied("no governed seed capability could be materialized: " + "; ".join(failures))
 
-    def plan(self, target: str) -> MissionPlan:
-        """Return a dry-run capability envelope, not an execution sequence."""
+    def plan(self, target: str, *, include_adaptive_only: bool = False) -> MissionPlan:
+        """Return a dry-run capability envelope, never an execution order.
+
+        The default keeps the historical baseline envelope stable for callers that still
+        exercise it directly. Operator preview may request the full adaptive pool, while
+        MissionLoop always starts from `seed()` and uses live Catalog ranking.
+        """
         self._require_scope(target)
         steps: list[MissionStep] = []
-        for tool in self.catalog.envelope_tools(target):
+        for tool in self.catalog.envelope_tools(target, include_adaptive_only=include_adaptive_only):
             try:
                 step = self.build_step(tool, target)
             except (MissionPlanningDenied, ValueError):
