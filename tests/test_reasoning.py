@@ -11,13 +11,21 @@ from tonmen.missions import MissionRunState, StepExecutionState
 from tonmen.reasoning import MissionReasoner, ReasoningAction
 
 
+def _tool_name(argv) -> str:
+    if argv and argv[0] in {"nmap", "httpx", "nuclei"}:
+        return argv[0]
+    if len(argv) >= 3 and argv[1:3] == ["-m", "tonmen.tools.runners.crawler"]:
+        return "crawler"
+    return str(argv[0]) if argv else "unknown"
+
+
 def _runtime(tmp_path, outputs):
     runtime = TonmenRuntime.sentinel(TonmenConfig(workspace=tmp_path, allowed_targets=("localhost",)))
     calls: list[list[str]] = []
 
     def fake_runner(argv, **kwargs):
         calls.append(list(argv))
-        return subprocess.CompletedProcess(argv, 0, stdout=outputs.get(argv[0], ""), stderr="")
+        return subprocess.CompletedProcess(argv, 0, stdout=outputs.get(_tool_name(argv), ""), stderr="")
 
     runtime.executor._runner = fake_runner
     runtime.jobs = JobManager(runtime.executor)
@@ -32,6 +40,7 @@ PORT   STATE SERVICE VERSION
 80/tcp open  http    nginx 1.24.0
 """,
         "httpx": "https://localhost [200] [Welcome] [nginx]\n",
+        "crawler": '{"type":"page","url":"https://localhost/","status":200,"title":"Welcome","content_type":"text/html","depth":0,"bytes":120,"truncated":false}\n{"type":"summary","visited":1,"successful":1}\n',
         "nuclei": json.dumps(
             {
                 "template-id": "demo-check",
@@ -56,7 +65,7 @@ def test_reasoner_requests_human_approval_from_evidence_backed_web_surface(tmp_p
     assert decision.requires_human is True
     assert decision.next_step_id == plan.steps[-1].id
     assert decision.basis_fact_ids
-    assert len(calls) == 2
+    assert [_tool_name(call) for call in calls] == ["nmap", "httpx", "crawler"]
     assert not runtime.approvals._grants
 
 
@@ -66,6 +75,7 @@ def test_reasoner_can_stop_risk_by_skipping_unjustified_validation(tmp_path):
         {
             "nmap": "Nmap scan report for localhost\nHost is up.\n",
             "httpx": "unparseable output\n",
+            "crawler": '{"type":"summary","visited":1,"successful":0}\n',
         },
     )
     plan = MissionPlanner(runtime).plan("localhost")
@@ -74,7 +84,7 @@ def test_reasoner_can_stop_risk_by_skipping_unjustified_validation(tmp_path):
 
     assert run.state is MissionRunState.SUCCEEDED
     assert run.steps[-1].state is StepExecutionState.SKIPPED
-    assert [call[0] for call in calls] == ["nmap", "httpx"]
+    assert [_tool_name(call) for call in calls] == ["nmap", "httpx", "crawler"]
     decisions = [node for node in run.graph.nodes.values() if node.kind.startswith("reasoning.")]
     assert any(node.kind == "reasoning.skip" for node in decisions)
     assert any(node.kind == "reasoning.complete" for node in decisions)
@@ -95,7 +105,7 @@ def test_high_finding_becomes_review_decision_not_auto_escalation(tmp_path):
     assert decision.action is ReasoningAction.REVIEW
     assert decision.requires_human is True
     assert decision.basis_fact_ids
-    assert [call[0] for call in calls] == ["nmap", "httpx", "nuclei"]
+    assert [_tool_name(call) for call in calls] == ["nmap", "httpx", "crawler", "nuclei"]
     assert any(node.kind == "reasoning.review" for node in run.graph.nodes.values())
 
 
