@@ -6,7 +6,7 @@ import sys
 from collections import deque
 from html.parser import HTMLParser
 from urllib.error import HTTPError, URLError
-from urllib.parse import urldefrag, urljoin, urlparse
+from urllib.parse import ParseResult, urldefrag, urljoin, urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 _MAX_RESPONSE_BYTES = 1_048_576
@@ -45,27 +45,46 @@ class _LinkParser(HTMLParser):
             self._title_parts.append(data)
 
 
+def _origin_key(parsed: ParseResult) -> tuple[str, str, int]:
+    scheme = parsed.scheme.lower()
+    host = (parsed.hostname or "").lower()
+    if scheme not in {"http", "https"} or not host:
+        raise ValueError("URL must use HTTP(S) and contain a hostname")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("URL contains an invalid port") from exc
+    if port is None:
+        port = 443 if scheme == "https" else 80
+    return scheme, host, int(port)
+
+
 class _SameOriginRedirects(HTTPRedirectHandler):
-    def __init__(self, origin_host: str) -> None:
+    def __init__(self, origin: tuple[str, str, int]) -> None:
         super().__init__()
-        self.origin_host = origin_host.lower()
+        self.origin = origin
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         resolved = urljoin(req.full_url, newurl)
         parsed = urlparse(resolved)
-        if parsed.scheme.lower() not in {"http", "https"} or (parsed.hostname or "").lower() != self.origin_host:
+        try:
+            same_origin = _origin_key(parsed) == self.origin
+        except ValueError:
+            same_origin = False
+        if not same_origin or parsed.username or parsed.password:
             raise HTTPError(req.full_url, 470, "cross-origin redirect blocked by TONMEN crawler", headers, fp)
         return super().redirect_request(req, fp, code, msg, headers, resolved)
 
 
-def _normalize(url: str, origin_host: str) -> str | None:
+def _normalize(url: str, origin: tuple[str, str, int]) -> str | None:
     value, _ = urldefrag(url)
     parsed = urlparse(value)
-    if parsed.scheme.lower() not in {"http", "https"}:
-        return None
-    if (parsed.hostname or "").lower() != origin_host.lower():
-        return None
     if parsed.username or parsed.password:
+        return None
+    try:
+        if _origin_key(parsed) != origin:
+            return None
+    except ValueError:
         return None
     return parsed.geturl()
 
@@ -77,14 +96,15 @@ def _emit(payload: dict) -> None:
 
 def crawl(start_url: str, *, max_pages: int, max_depth: int, timeout: int) -> int:
     parsed_start = urlparse(start_url if "://" in start_url else f"https://{start_url}")
-    if parsed_start.scheme.lower() not in {"http", "https"} or not parsed_start.hostname:
-        raise ValueError("crawler target must be an HTTP(S) URL or hostname")
     if parsed_start.username or parsed_start.password:
         raise ValueError("crawler target must not contain credentials")
+    try:
+        origin = _origin_key(parsed_start)
+    except ValueError as exc:
+        raise ValueError("crawler target must be an HTTP(S) URL or hostname") from exc
 
-    origin_host = parsed_start.hostname.lower()
     normalized_start = parsed_start.geturl()
-    opener = build_opener(_SameOriginRedirects(origin_host))
+    opener = build_opener(_SameOriginRedirects(origin))
     queue = deque([(normalized_start, 0)])
     queued = {normalized_start}
     visited: set[str] = set()
@@ -98,7 +118,7 @@ def crawl(start_url: str, *, max_pages: int, max_depth: int, timeout: int) -> in
         request = Request(url, headers={"User-Agent": _USER_AGENT, "Accept": "text/html,application/xhtml+xml,*/*;q=0.2"})
         try:
             with opener.open(request, timeout=timeout) as response:
-                final_url = _normalize(response.geturl(), origin_host)
+                final_url = _normalize(response.geturl(), origin)
                 if final_url is None:
                     _emit({"type": "blocked", "url": url, "reason": "cross_origin_response"})
                     continue
@@ -129,7 +149,7 @@ def crawl(start_url: str, *, max_pages: int, max_depth: int, timeout: int) -> in
                 if depth >= max_depth or not text:
                     continue
                 for href in parser.links:
-                    candidate = _normalize(urljoin(final_url, href), origin_host)
+                    candidate = _normalize(urljoin(final_url, href), origin)
                     if candidate is None or candidate in visited or candidate in queued:
                         continue
                     queued.add(candidate)
