@@ -22,7 +22,7 @@ from tonmen.missions import MissionRunState, StepExecutionState
 from tonmen.policy import validate_scope_rule
 from tonmen.reasoning import MissionReasoner
 from tonmen.reports import ReportStore
-from tonmen.tools.base import RiskLevel
+from tonmen.tools.base import RiskLevel, ToolRequest
 
 _LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 _APP_ROUTES = {"/", "/missions", "/scope", "/guard", "/tools", "/intelligence", "/reasoner", "/loop", "/chronicle", "/approval", "/settings"}
@@ -312,6 +312,57 @@ class DashboardState:
                 })
             return {"count": len(tools), "ready": sum(1 for tool in tools if tool["available"]), "tools": tools}
 
+    def preview_plan(self, target: str) -> dict[str, Any]:
+        """Return the exact governed plan the backend would use, without executing it."""
+        value = target.strip()
+        if not value:
+            raise ValueError("target is required")
+        with self._lock:
+            plan = MissionPlanner(self.runtime).plan(value)
+            steps: list[dict[str, Any]] = []
+            for step in plan.steps:
+                adapter = self.runtime.registry.get(step.tool)
+                request = ToolRequest(tool=step.tool, target=step.target, parameters=step.parameters)
+                adapter.validate(request)
+                policy = self.runtime.policy.evaluate(adapter.spec, request)
+                readiness = adapter.readiness()
+                steps.append(
+                    {
+                        "id": step.id,
+                        "tool": step.tool,
+                        "target": step.target,
+                        "parameters": dict(step.parameters),
+                        "argv": list(adapter.build_argv(request)),
+                        "category": adapter.spec.category,
+                        "description": adapter.spec.description,
+                        "capabilities": list(adapter.spec.capabilities),
+                        "risk": int(step.risk),
+                        "risk_name": adapter.spec.risk.name.lower(),
+                        "requires_approval": step.requires_approval,
+                        "state": step.state.value,
+                        "rationale": step.rationale,
+                        "policy": {"decision": policy.decision.value, "reason": policy.reason},
+                        "readiness": asdict(readiness),
+                    }
+                )
+            autonomous = [step for step in steps if not step["requires_approval"]]
+            approval = next((step for step in steps if step["requires_approval"]), None)
+            can_start = all(bool(step["readiness"]["ready"]) for step in autonomous)
+            return {
+                "plan_id": plan.id,
+                "target": plan.target,
+                "planner": "MissionPlanner",
+                "mode": "deterministic-governed",
+                "executes": False,
+                "can_start": can_start,
+                "autonomy": {
+                    "automatic_steps": len(autonomous),
+                    "approval_steps": sum(1 for step in steps if step["requires_approval"]),
+                    "next_approval_tool": approval["tool"] if approval else None,
+                },
+                "steps": steps,
+            }
+
     def audit(self, limit: int = 200) -> dict[str, Any]:
         with self._lock:
             bounded = max(1, min(int(limit), 500)); path = self.config.workspace / "audit.jsonl"
@@ -405,7 +456,7 @@ class TonmenDashboardServer(ThreadingHTTPServer):
 class TonmenDashboardHandler(BaseHTTPRequestHandler):
     server: TonmenDashboardServer
     def log_message(self, fmt: str, *args) -> None:
-        if args and str(args[1]).startswith(("4", "5")): super().log_message(fmt, *args)
+        if args and str(args[1]).startswith(("4", "5")): super().loglog_message(fmt, *args)
 
     def _security_headers(self) -> None:
         self.send_header("X-Content-Type-Options", "nosniff"); self.send_header("X-Frame-Options", "DENY")
@@ -457,6 +508,9 @@ class TonmenDashboardHandler(BaseHTTPRequestHandler):
             if path == "/api/status": self._json(200, self.server.state.status()); return
             if path == "/api/scope": self._json(200, self.server.state.scope()); return
             if path == "/api/tools": self._json(200, self.server.state.tools()); return
+            if path == "/api/plans/preview":
+                query = parse_qs(parsed.query); target = unquote(query.get("target", [""])[0]).strip()
+                self._json(200, self.server.state.preview_plan(target)); return
             if path == "/api/guard": self._json(200, self.server.state.guard()); return
             if path == "/api/audit":
                 query = parse_qs(parsed.query); limit = int(query.get("limit", ["200"])[0])
@@ -477,7 +531,7 @@ class TonmenDashboardHandler(BaseHTTPRequestHandler):
                 self._json(200, self.server.state.mission(unquote(path.split("/")[3]))); return
             self._error(404, "not found")
         except FileNotFoundError: self._error(404, "mission not found")
-        except (ValueError, OSError, json.JSONDecodeError) as exc: self._error(400, str(exc))
+        except (MissionPlanningDenied, MissionRunDenied, ValueError, OSError, json.JSONDecodeError) as exc: self._error(400, str(exc))
         except Exception as exc: self._error(500, f"dashboard error: {exc}")
 
     def do_POST(self) -> None:
