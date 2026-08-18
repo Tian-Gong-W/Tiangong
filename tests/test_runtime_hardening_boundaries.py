@@ -9,7 +9,7 @@ from tonmen.agents import MissionCoordinator, MissionPlanner
 from tonmen.core.config import TonmenConfig
 from tonmen.core.runtime import TonmenRuntime
 from tonmen.evidence import GraphNode
-from tonmen.execution import ToolExecutor
+from tonmen.execution import ExecutionDenied, ToolExecutor
 from tonmen.policy import PolicyEngine
 from tonmen.tools import ToolRegistry, ToolRequest
 from tonmen.tools.adapters import HttpxAdapter, NucleiAdapter
@@ -122,3 +122,15 @@ def test_web_targets_reject_credential_like_query_parameters(query):
 def test_web_targets_continue_to_allow_non_sensitive_single_query_parameter():
     value = "https://example.test/search?page=2"
     assert validate_web_target(value) == value
+
+
+def test_forge_runtime_enforces_configured_scope(tmp_path):
+    runtime = TonmenRuntime.forge(
+        TonmenConfig(workspace=tmp_path, allowed_targets=("localhost",))
+    )
+
+    assert runtime.scope is not None
+    assert runtime.scope.is_allowed("localhost") is True
+    assert runtime.scope.is_allowed("example.test") is False
+    with pytest.raises(ExecutionDenied, match="authorized scope"):
+        runtime.executor.execute(ToolRequest(tool="httpx", target="https://example.test"))
