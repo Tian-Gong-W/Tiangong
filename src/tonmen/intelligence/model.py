@@ -12,6 +12,7 @@ class FactKind(str, Enum):
     DNS = "dns"
     TLS = "tls"
     WEB = "web"
+    API = "api"
     FINDING = "finding"
 
 
