@@ -15,6 +15,11 @@ class AdaptiveParameterResolver:
     Central adaptation is tool-name agnostic. Semantic prerequisites come from
     ToolSpec.planning and profile-aware parameter tuning belongs to each ToolAdapter.
     Scope, risk, approval, tool identity and target remain immutable here.
+
+    Runtime plugin adapters are adapted and validated by CapabilityCatalog before a
+    dynamic step is committed. If this standalone/default resolver does not contain
+    that plugin adapter, it preserves those catalog-validated step parameters; the
+    real runtime adapter and Executor still perform final typed validation and Policy.
     """
 
     def __init__(self, registry: ToolRegistry | None = None) -> None:
@@ -40,6 +45,8 @@ class AdaptiveParameterResolver:
 
     def justify(self, plan: MissionPlan, run: MissionRun, step: MissionStep) -> tuple[bool, str]:
         profile = self.profile(plan, run)
+        if step.tool not in self.registry:
+            return True, "runtime plugin prerequisites were validated by CapabilityCatalog"
         adapter = self.registry.get(step.tool)
         planning = adapter.spec.planning
         if planning is None:
@@ -81,6 +88,8 @@ class AdaptiveParameterResolver:
 
     def resolve(self, plan: MissionPlan, run: MissionRun, step: MissionStep) -> dict[str, Any]:
         profile = self.profile(plan, run)
+        if step.tool not in self.registry:
+            return dict(step.parameters)
         adapter = self.registry.get(step.tool)
         request = ToolRequest(tool=step.tool, target=step.target, parameters=dict(step.parameters))
         resolved = dict(adapter.adapt_parameters(request, self._context(profile)))
