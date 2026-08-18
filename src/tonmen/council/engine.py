@@ -5,6 +5,7 @@ from uuid import uuid4
 from tonmen.adaptive import build_target_profile, desired_assessment_rounds, select_agent_roster
 from tonmen.evidence import GraphNode
 from tonmen.missions import MissionPlan, MissionRun, MissionRunState, StepExecutionState
+from tonmen.models import ModelRuntime, ModelRuntimeError
 
 
 _FOCI = (
@@ -25,8 +26,9 @@ class AssessmentCouncil:
     """Evidence-only adaptive subagent council.
 
     Council composition changes with the live target profile, but the governance
-    envelope is fixed: 7-10 rounds and 3-5 read-only subagents per round. Members never
-    execute tools, expand Scope, issue approvals, or mutate the mission plan.
+    envelope is fixed: 7-10 rounds and 3-5 read-only subagents per round. When a local
+    model runtime is configured, each selected role receives an independent structured
+    model review. Model output remains advisory and has no execution authority.
     """
 
     def __init__(
@@ -38,6 +40,7 @@ class AssessmentCouncil:
         max_rounds: int = 10,
         min_agents: int = 3,
         max_agents: int = 5,
+        model_runtime: ModelRuntime | None = None,
     ) -> None:
         if not 7 <= int(min_rounds) <= int(target_rounds) <= int(max_rounds) <= 10:
             raise ValueError("assessment rounds must stay within 7-10")
@@ -49,10 +52,15 @@ class AssessmentCouncil:
         self.max_rounds = int(max_rounds)
         self.min_agents = int(min_agents)
         self.max_agents = int(max_agents)
+        self.model_runtime = model_runtime or ModelRuntime()
 
     @staticmethod
     def _existing_rounds(run: MissionRun) -> int:
         return sum(1 for node in run.graph.nodes.values() if node.kind == "council.round")
+
+    @staticmethod
+    def _model_calls_used(run: MissionRun) -> int:
+        return sum(1 for node in run.graph.nodes.values() if node.kind == "model.call")
 
     @staticmethod
     def _fact_nodes(run: MissionRun):
@@ -71,6 +79,25 @@ class AssessmentCouncil:
         if run.state is MissionRunState.SUCCEEDED:
             return "finalize_report"
         return "continue_evidence_driven_plan"
+
+    @staticmethod
+    def _profile_payload(profile) -> dict[str, object]:
+        return {
+            "target_kind": profile.target_kind,
+            "complexity": profile.complexity,
+            "ports": list(profile.ports),
+            "services": list(profile.services),
+            "web_urls": list(profile.web_urls),
+            "technologies": list(profile.technologies),
+            "findings": list(profile.findings),
+            "severities": list(profile.severities),
+            "unknowns": list(profile.unknowns),
+            "hypotheses": [item.key for item in profile.hypotheses],
+        }
+
+    @staticmethod
+    def _allowed_capabilities(plan: MissionPlan) -> tuple[str, ...]:
+        return tuple(dict.fromkeys(step.tool for step in plan.steps))
 
     def _summary(self, role: str, plan: MissionPlan, run: MissionRun, focus: str) -> tuple[str, tuple[str, ...], tuple[str, ...]]:
         evidence_ids = tuple(item.id for item in run.evidence)
@@ -134,6 +161,54 @@ class AssessmentCouncil:
             )
         return summary, evidence_ids, fact_ids
 
+    def _model_review(self, plan: MissionPlan, run: MissionRun, *, role: str, focus: str):
+        if not self.model_runtime.enabled:
+            return None, None
+        profile = build_target_profile(plan, run)
+        calls_before = self._model_calls_used(run)
+        try:
+            review = self.model_runtime.review(
+                role=role,
+                focus=focus,
+                target_profile=self._profile_payload(profile),
+                allowed_capabilities=self._allowed_capabilities(plan),
+                calls_already_used=calls_before,
+            )
+        except ModelRuntimeError as exc:
+            return None, str(exc)
+        return review, None
+
+    def _record_model_call(self, run: MissionRun, *, agent_id: str, review, error: str | None) -> str:
+        call_id = uuid4().hex
+        status = "success" if review is not None else "fallback"
+        metadata = {
+            "provider": self.model_runtime.config.provider,
+            "model": self.model_runtime.config.model,
+            "status": status,
+            "error": error,
+            "execution_authority": False,
+            "report_only": True,
+        }
+        if review is not None:
+            metadata.update(
+                {
+                    "prompt_tokens": review.prompt_tokens,
+                    "output_tokens": review.output_tokens,
+                    "confidence": review.confidence,
+                    "recommended_capabilities": list(review.recommended_capabilities),
+                }
+            )
+        run.graph.add_node(
+            GraphNode(
+                id=call_id,
+                kind="model.call",
+                label=f"{self.model_runtime.config.provider}:{self.model_runtime.config.model}:{status}",
+                metadata=metadata,
+            )
+        )
+        run.graph.link(call_id, "supports_subagent", agent_id)
+        return call_id
+
     def _desired_rounds(self, plan: MissionPlan, run: MissionRun) -> int:
         return desired_assessment_rounds(
             build_target_profile(plan, run),
@@ -179,6 +254,10 @@ class AssessmentCouncil:
                     "roles": [item.role for item in roster],
                     "session_id": session_id,
                     "decision_id": decision_id,
+                    "agent_mode": "model" if self.model_runtime.enabled else "deterministic",
+                    "model_provider": self.model_runtime.config.provider,
+                    "model_name": self.model_runtime.config.model,
+                    "model_call_budget": self.model_runtime.config.max_calls,
                     "target_profile": {
                         "kind": profile.target_kind,
                         "complexity": profile.complexity,
@@ -198,28 +277,52 @@ class AssessmentCouncil:
         action = self._recommended_action(run)
         for assignment in roster:
             role = assignment.role
-            summary, evidence_ids, fact_ids = self._summary(role, plan, run, assignment.focus)
+            deterministic_summary, evidence_ids, fact_ids = self._summary(role, plan, run, assignment.focus)
+            model_review, model_error = self._model_review(
+                plan,
+                run,
+                role=role,
+                focus=assignment.focus,
+            )
+            summary = model_review.summary if model_review is not None else deterministic_summary
             agent_id = uuid4().hex
+            metadata = {
+                "role": role,
+                "round": round_number,
+                "focus": assignment.focus,
+                "phase": phase,
+                "summary": summary,
+                "deterministic_summary": deterministic_summary,
+                "recommended_action": action,
+                "evidence_ids": list(evidence_ids),
+                "fact_ids": list(fact_ids),
+                "execution_authority": False,
+                "report_only": True,
+                "agent_mode": "model" if model_review is not None else "deterministic",
+            }
+            if model_review is not None:
+                metadata.update(
+                    {
+                        "model_observations": list(model_review.observations),
+                        "model_risks": list(model_review.risks),
+                        "model_next_questions": list(model_review.next_questions),
+                        "model_recommended_capabilities": list(model_review.recommended_capabilities),
+                        "model_confidence": model_review.confidence,
+                    }
+                )
+            if model_error:
+                metadata["model_error"] = model_error
             run.graph.add_node(
                 GraphNode(
                     id=agent_id,
                     kind="council.subagent",
                     label=f"{role}: {summary}",
-                    metadata={
-                        "role": role,
-                        "round": round_number,
-                        "focus": assignment.focus,
-                        "phase": phase,
-                        "summary": summary,
-                        "recommended_action": action,
-                        "evidence_ids": list(evidence_ids),
-                        "fact_ids": list(fact_ids),
-                        "execution_authority": False,
-                        "report_only": True,
-                    },
+                    metadata=metadata,
                 )
             )
             run.graph.link(round_id, "contains_subagent", agent_id)
+            if self.model_runtime.enabled:
+                self._record_model_call(run, agent_id=agent_id, review=model_review, error=model_error)
             for evidence_id in evidence_ids[-8:]:
                 if evidence_id in run.graph.nodes:
                     run.graph.link(evidence_id, "reviewed_by", agent_id)
