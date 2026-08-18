@@ -68,6 +68,33 @@ This is intentionally rejection rather than logging redaction: TONMEN's current 
 
 Ordinary non-sensitive query parameters remain valid within existing URL validation rules.
 
+## Authenticated Audit trail
+
+New `audit.jsonl` records form an **HMAC-SHA256 chain**. The HMAC key is generated locally, stored separately from the JSONL and restricted to mode `0600` where the platform permits it.
+
+Before append, TONMEN verifies the existing authenticated chain. A corrupted or unverifiable chain is not extended.
+
+Legacy JSONL records remain compatible: the entire legacy prefix is deterministically folded into the `prev_hash` anchor of the first authenticated event. Once that event exists, later mutation of the legacy prefix breaks verification.
+
+This protects against silent modification of the audit file without the separate integrity key. It is not a hardware-rooted signature and should not be described as protection against an attacker who can also obtain/replace both the audit file and its private key.
+
+## Authenticated Chronicle snapshots
+
+New mission snapshots under `missions/` are authenticated with **HMAC-SHA256** using a separate local `0600` Chronicle key. The HMAC covers the complete serialized Plan, Run, Evidence records, observations and Evidence Graph.
+
+- `load()` rejects an authenticated snapshot whose HMAC is invalid or whose key is missing;
+- `list()` omits invalid authenticated snapshots rather than presenting them as normal mission history;
+- schema-1 snapshots without an integrity block remain readable for migration and are upgraded on their next save;
+- snapshot writes remain atomic and private.
+
+As with Audit, the integrity key is local software state, not an external/HSM trust anchor.
+
+## Local Console control boundary
+
+The Console binds only to loopback. Mutating requests require a per-server random CSRF token and same-Origin/Host validation. Responses also use restrictive CSP, `X-Frame-Options: DENY`, `nosniff`, and `Referrer-Policy: no-referrer`.
+
+TONMEN does not currently implement a multi-user remote login service; the Console is intentionally a local operator surface rather than a network management plane.
+
 ## REPORT_ONLY remains mandatory
 
 `MissionLoopPolicy(report_only=True)` cannot be disabled. Payload execution, credential capture, session takeover, persistence and destructive end-stage actions remain outside the autonomous execution path.
