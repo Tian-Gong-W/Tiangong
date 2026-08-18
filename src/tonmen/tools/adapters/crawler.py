@@ -10,9 +10,16 @@ class CrawlerAdapter(ToolAdapter):
     spec = ToolSpec(
         name="crawler",
         category="web.discovery",
-        description="Same-origin bounded HTML discovery crawler",
+        description="Same-origin bounded HTML discovery and passive Web/session posture observation",
         risk=RiskLevel.DISCOVERY,
-        capabilities=("http.crawl", "endpoint.discover", "page.metadata"),
+        capabilities=(
+            "http.crawl",
+            "endpoint.discover",
+            "page.metadata",
+            "security_headers.observe",
+            "session_cookie.observe",
+            "cors.observe",
+        ),
     )
 
     def readiness(self) -> ToolReadiness:
@@ -20,7 +27,7 @@ class CrawlerAdapter(ToolAdapter):
             True,
             "ready",
             f"built-in Python crawler ready: {sys.executable}",
-            metadata={"python": sys.executable, "same_origin": True},
+            metadata={"python": sys.executable, "same_origin": True, "passive_session_posture": True},
         )
 
     def validate(self, request: ToolRequest) -> None:
