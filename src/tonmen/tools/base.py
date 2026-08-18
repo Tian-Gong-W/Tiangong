@@ -61,6 +61,11 @@ class ToolSpec:
     risk: RiskLevel
     capabilities: tuple[str, ...] = ()
     planning: CapabilityPlanningSpec | None = None
+    execution_timeout_seconds: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.execution_timeout_seconds is not None and not 1 <= int(self.execution_timeout_seconds) <= 3600:
+            raise ValueError("tool execution_timeout_seconds must be between 1 and 3600")
 
 
 @dataclass(frozen=True, slots=True)
