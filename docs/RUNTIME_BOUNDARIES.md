@@ -16,12 +16,34 @@ Tool execution remains:
 ToolRequest
   -> registered ToolAdapter.validate()
   -> Scope / Policy
-  -> Approval when required
+  -> non-consuming Approval validation when required
+  -> declared local readiness / binary-identity preflight
+  -> consume one-shot Approval immediately before execution
   -> ToolAdapter.build_argv()
   -> shell=False Executor
 ```
 
 Arbitrary shell execution remains disabled.
+
+## External binary identity is part of readiness
+
+A filename match is not sufficient readiness for an external CLI whose name may collide with another package.
+
+`httpx` is the first explicit identity-enforced adapter because the Python `httpx` package can install a CLI with the same executable name as ProjectDiscovery HTTPx. TONMEN now scans PATH candidates in order and probes the CLI contract it actually depends on (`-silent`, `-status-code`, `-tech-detect`, `-timeout`).
+
+If an incompatible `httpx` shadows a later compatible ProjectDiscovery binary, Doctor/readiness records the rejected candidate and selects the later compatible executable. Real local execution uses the **verified absolute path** rather than resolving the name through PATH a second time.
+
+If no compatible candidate exists, readiness fails with `wrong_binary_identity` instead of showing a false green state.
+
+Injected/fake runners remain independent of host-installed external tools for deterministic tests.
+
+## Approval validation versus consumption
+
+Approval grants remain single-use and tool+target bound.
+
+TONMEN first validates the grant without consuming it. Declared readiness/identity checks then run. Only after preflight succeeds is the grant consumed immediately before execution.
+
+This prevents an environment/preflight failure from silently burning a valid grant while preserving the invariant that an actual higher-risk execution attempt consumes a fresh approval.
 
 ## Bounded process output
 
@@ -38,17 +60,42 @@ When a stream exceeds the cap:
 
 The same bound applies to injected/test runners and timeout evidence.
 
-## Mission wall-clock budget
+## Typed process timeout + Mission wall-clock budget
 
-MissionLoop still checks its monotonic iteration budget, and Coordinator additionally derives the remaining global wall-clock budget from `MissionRun.started_at` plus the latest `loop.session.max_duration_seconds`.
+Discovery-oriented tools continue to use the generic Executor timeout unless their adapter declares a bounded `ToolSpec.execution_timeout_seconds`.
 
-The remaining value is passed to Executor as a timeout ceiling. Executor always uses the minimum of:
+Approval-gated Nuclei validation currently declares a **600 second** typed process budget because a bounded medium/high/critical template set can legitimately exceed the generic 120 second discovery-oriented default.
 
-- configured command timeout;
-- remaining mission wall-clock budget;
-- any narrower typed request-context timeout.
+MissionLoop separately maintains a global wall-clock ceiling. Coordinator derives the remaining global budget from `MissionRun.started_at` plus the latest `loop.session.max_duration_seconds` and passes that value to Executor.
 
-Approval waits therefore do not silently reset the mission-wide wall-clock boundary.
+The effective process timeout is therefore:
+
+```text
+min(
+  adapter typed execution timeout OR generic executor timeout,
+  remaining mission wall-clock budget
+)
+```
+
+The default MissionLoop duration is **900 seconds** and remains configurable/bounded to at most 3600 seconds.
+
+Approval waits do not silently reset the mission-wide wall-clock boundary.
+
+### Approval-gated validation timeout recovery
+
+A timeout from an approval-gated validation step is **not** converted into success and is **not** allowed to terminate the entire Mission immediately.
+
+TONMEN instead:
+
+1. persists timeout Evidence (`exit_code=124`);
+2. returns the Step to `WAITING_APPROVAL`;
+3. records `retry_requires_fresh_approval=true`;
+4. keeps the Mission at `WAITING_APPROVAL`;
+5. requires a newly issued approval grant before another attempt.
+
+The consumed grant is never reused and TONMEN never auto-retries a higher-risk validation action.
+
+Discovery timeout behavior remains separate: bounded discovery timeouts may degrade a Step while preserving partial Evidence.
 
 ## Nuclei template binding
 
