@@ -30,6 +30,8 @@ def validate_web_target(target: str | None) -> str:
     parsed = urlparse(target if "://" in target else f"https://{target}")
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ValueError("target must be an HTTP(S) URL or hostname")
+    if parsed.username or parsed.password:
+        raise ValueError("target must not contain credentials")
     if any(ch in target for ch in [";", "|", "&", "`", "$", "\n", "\r"]):
         raise ValueError("target contains forbidden shell metacharacters")
     return target
