@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
-from tonmen.capabilities import CapabilityCandidate, CapabilityCatalog
+from tonmen.adaptive import build_target_profile
 from tonmen.ai import AIProviderError
+from tonmen.capabilities import CapabilityCandidate, CapabilityCatalog
 from tonmen.core.runtime import TonmenRuntime
 from tonmen.evidence import GraphNode
 from tonmen.missions import MissionPlan, MissionRun, MissionRunState, MissionStep
@@ -156,7 +157,7 @@ class AdaptiveMissionPlanner:
             parameters=candidate.parameters,
             rationale=candidate.rationale,
         )
-        profile = self.catalog.runtime and __import__("tonmen.adaptive", fromlist=["build_target_profile"]).build_target_profile(plan, run)
+        profile = build_target_profile(plan, run)
         return PlanExpansion(
             step=step,
             rationale=candidate.rationale,
