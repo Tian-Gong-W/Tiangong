@@ -9,13 +9,15 @@ from tonmen.missions import StepState
 from tonmen.observations import Observation
 
 
-def test_planner_builds_governed_three_step_plan(tmp_path):
+def test_planner_builds_governed_four_step_plan(tmp_path):
     runtime = TonmenRuntime.sentinel(TonmenConfig(workspace=tmp_path, allowed_targets=("localhost",)))
     plan = MissionPlanner(runtime).plan("https://localhost")
-    assert [step.tool for step in plan.steps] == ["nmap", "httpx", "nuclei"]
+    assert [step.tool for step in plan.steps] == ["nmap", "httpx", "crawler", "nuclei"]
     assert plan.steps[0].target == "localhost"
-    assert plan.steps[2].state is StepState.WAITING_APPROVAL
-    assert plan.steps[2].requires_approval is True
+    assert plan.steps[2].state is StepState.PLANNED
+    assert plan.steps[2].parameters["max_pages"] == 25
+    assert plan.steps[3].state is StepState.WAITING_APPROVAL
+    assert plan.steps[3].requires_approval is True
 
 
 def test_planner_rejects_out_of_scope_target(tmp_path):
@@ -34,6 +36,7 @@ def test_planner_does_not_execute_tools(tmp_path):
 def test_render_plan_surfaces_approval_boundary(tmp_path):
     runtime = TonmenRuntime.sentinel(TonmenConfig(workspace=tmp_path, allowed_targets=("localhost",)))
     text = render_plan(MissionPlanner(runtime).plan("localhost"))
+    assert "crawler" in text
     assert "nuclei" in text
     assert "需審批" in text
 
