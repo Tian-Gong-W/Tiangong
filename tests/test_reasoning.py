@@ -84,7 +84,8 @@ def test_reasoner_can_stop_risk_by_skipping_unjustified_validation(tmp_path):
 
     assert run.state is MissionRunState.SUCCEEDED
     assert run.steps[-1].state is StepExecutionState.SKIPPED
-    assert [_tool_name(call) for call in calls] == ["nmap", "httpx", "crawler"]
+    assert run.steps[2].state is StepExecutionState.SKIPPED
+    assert [_tool_name(call) for call in calls] == ["nmap", "httpx"]
     decisions = [node for node in run.graph.nodes.values() if node.kind.startswith("reasoning.")]
     assert any(node.kind == "reasoning.skip" for node in decisions)
     assert any(node.kind == "reasoning.complete" for node in decisions)
