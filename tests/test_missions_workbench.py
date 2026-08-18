@@ -78,3 +78,30 @@ def test_missions_workbench_exposes_evidence_backed_decision_trace():
     assert "/api/missions/start" not in script
     assert "/approve" not in script
     assert "/resume" not in script
+
+
+def test_decision_trace_exposes_round_to_round_delta_without_new_authority():
+    script = resources.files("tonmen.dashboard.static").joinpath("history-delete.js").read_text(encoding="utf-8")
+
+    assert "Delta View · 每轮变化" in script
+    assert "New facts" in script
+    assert "Unknowns closed" in script
+    assert "Unknowns opened" in script
+    assert "Hypotheses +" in script
+    assert "Hypotheses −" in script
+    assert "Agents +" in script
+    assert "Agents −" in script
+    assert "roster_changed=" in script
+    assert "为什么换 Agent" in script
+    assert 'edge.relation === "contains_subagent"' in script
+    assert "fact_ids" in script
+    assert "target_profile" in script
+    assert "roles" in script
+
+    # Delta view is derived only from persisted mission detail and runtime events.
+    assert 'fetch(`/api/missions/${encodeURIComponent(runId)}`' in script
+    assert '"intelligence.created"' in script
+    assert '"council.round"' in script
+    assert "/api/missions/start" not in script
+    assert "/approve" not in script
+    assert "/resume" not in script
