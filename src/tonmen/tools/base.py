@@ -37,6 +37,7 @@ class CapabilityPlanningSpec:
     information_gain: str = ""
     information_gain_score: float = 0.5
     cost_score: float = 0.5
+    include_in_baseline_envelope: bool = True
 
     def __post_init__(self) -> None:
         allowed_kinds = {"host", "web"}
@@ -93,7 +94,6 @@ class ToolAdapter(ABC):
     spec: ToolSpec
 
     def readiness(self) -> ToolReadiness:
-        """Describe whether the local adapter dependency can execute now."""
         path = shutil.which(self.spec.name)
         if path:
             return ToolReadiness(True, "ready", f"binary ready: {path}", metadata={"path": path})
@@ -105,11 +105,6 @@ class ToolAdapter(ABC):
         )
 
     def adapt_parameters(self, request: ToolRequest, context: Mapping[str, Any]) -> Mapping[str, Any]:
-        """Return bounded profile-aware parameters for this typed adapter.
-
-        The default implementation is a no-op after validation. Tool-specific cost and
-        coverage adaptation belongs here rather than in the central planner/reasoner.
-        """
         self.validate(request)
         return dict(request.parameters)
 
