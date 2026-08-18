@@ -117,6 +117,46 @@ def _parse_httpx(evidence: EvidenceRecord) -> list[IntelligenceFact]:
     return facts
 
 
+def _parse_crawler(evidence: EvidenceRecord) -> list[IntelligenceFact]:
+    facts: list[IntelligenceFact] = []
+    for line in _nonempty_lines(evidence.stdout):
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(item, dict) or item.get("type") != "page":
+            continue
+        url = item.get("url")
+        if not isinstance(url, str) or not url:
+            continue
+        status = item.get("status")
+        title = item.get("title")
+        label = url
+        if isinstance(status, int):
+            label += f" [{status}]"
+        if title:
+            label += f" {title}"
+        facts.append(
+            IntelligenceFact.create(
+                kind=FactKind.WEB,
+                source="crawler",
+                target=url,
+                title=label,
+                evidence_id=evidence.id,
+                data={
+                    "url": url,
+                    "status_code": status,
+                    "title": title,
+                    "content_type": item.get("content_type"),
+                    "depth": item.get("depth"),
+                    "bytes": item.get("bytes"),
+                    "truncated": bool(item.get("truncated", False)),
+                },
+            )
+        )
+    return facts
+
+
 def _parse_nuclei(evidence: EvidenceRecord) -> list[IntelligenceFact]:
     facts: list[IntelligenceFact] = []
     for line in _nonempty_lines(evidence.stdout):
@@ -157,6 +197,8 @@ def parse_evidence(evidence: EvidenceRecord) -> list[IntelligenceFact]:
         return _parse_nmap(evidence)
     if tool == "httpx":
         return _parse_httpx(evidence)
+    if tool == "crawler":
+        return _parse_crawler(evidence)
     if tool == "nuclei":
         return _parse_nuclei(evidence)
     return []
