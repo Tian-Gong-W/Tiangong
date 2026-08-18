@@ -14,3 +14,18 @@ allowed_targets = ["127.0.0.1", "::1", "localhost"]
 
 # Deny rules override allow rules.
 denied_targets = []
+
+[ai]
+# Optional local evidence-analysis advisor. TONMEN works normally with this disabled.
+# No cloud API key is required or stored. The base URL must stay on HTTP loopback.
+# Cloud-tagged Ollama models are rejected by local-only mode.
+enabled = false
+provider = "none"
+model = ""
+base_url = "http://127.0.0.1:11434"
+timeout_seconds = 20
+
+# Example after installing a local Ollama model yourself:
+# enabled = true
+# provider = "ollama"
+# model = "qwen3:8b"
