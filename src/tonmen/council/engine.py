@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+from tonmen.adaptive import build_target_profile, desired_assessment_rounds, select_agent_roster
 from tonmen.evidence import GraphNode
 from tonmen.missions import MissionPlan, MissionRun, MissionRunState, StepExecutionState
 
@@ -11,7 +12,7 @@ _FOCI = (
     "network_surface",
     "web_surface",
     "evidence_integrity",
-    "vulnerability_validation",
+    "validation_coverage",
     "attribution_review",
     "risk_and_impact",
     "remediation",
@@ -19,30 +20,35 @@ _FOCI = (
     "final_synthesis",
 )
 
-_ROLES = (
-    "surface_mapper",
-    "evidence_verifier",
-    "vulnerability_analyst",
-    "governance_reviewer",
-    "remediation_editor",
-)
-
 
 class AssessmentCouncil:
-    """Evidence-only subagent council.
+    """Evidence-only adaptive subagent council.
 
-    Council members never execute tools, expand Scope, issue approvals, or mutate the
-    mission plan. They only inspect already-recorded plan/run/evidence graph state and
-    add review provenance nodes to the graph.
+    Council composition changes with the live target profile, but the governance
+    envelope is fixed: 7-10 rounds and 3-5 read-only subagents per round. Members never
+    execute tools, expand Scope, issue approvals, or mutate the mission plan.
     """
 
-    def __init__(self, *, target_rounds: int = 8, agents_per_round: int = 4) -> None:
-        if not 7 <= int(target_rounds) <= 10:
-            raise ValueError("assessment_rounds must be between 7 and 10")
-        if not 3 <= int(agents_per_round) <= 5:
-            raise ValueError("subagents_per_round must be between 3 and 5")
+    def __init__(
+        self,
+        *,
+        target_rounds: int = 8,
+        agents_per_round: int = 4,
+        min_rounds: int = 7,
+        max_rounds: int = 10,
+        min_agents: int = 3,
+        max_agents: int = 5,
+    ) -> None:
+        if not 7 <= int(min_rounds) <= int(target_rounds) <= int(max_rounds) <= 10:
+            raise ValueError("assessment rounds must stay within 7-10")
+        if not 3 <= int(min_agents) <= int(agents_per_round) <= int(max_agents) <= 5:
+            raise ValueError("subagents per round must stay within 3-5")
         self.target_rounds = int(target_rounds)
         self.agents_per_round = int(agents_per_round)
+        self.min_rounds = int(min_rounds)
+        self.max_rounds = int(max_rounds)
+        self.min_agents = int(min_agents)
+        self.max_agents = int(max_agents)
 
     @staticmethod
     def _existing_rounds(run: MissionRun) -> int:
@@ -64,22 +70,34 @@ class AssessmentCouncil:
             return "review_failure_evidence"
         if run.state is MissionRunState.SUCCEEDED:
             return "finalize_report"
-        return "continue_governed_plan"
+        return "continue_evidence_driven_plan"
 
     def _summary(self, role: str, plan: MissionPlan, run: MissionRun, focus: str) -> tuple[str, tuple[str, ...], tuple[str, ...]]:
         evidence_ids = tuple(item.id for item in run.evidence)
         facts = self._fact_nodes(run)
         fact_ids = tuple(node.id for node in facts)
         findings = self._finding_nodes(run)
+        profile = build_target_profile(plan, run)
         failed = [step for step in run.steps if step.state in {StepExecutionState.FAILED, StepExecutionState.DENIED}]
         degraded = [step for step in run.steps if step.state is StepExecutionState.DEGRADED]
         waiting = [step for step in run.steps if step.state is StepExecutionState.WAITING_APPROVAL]
         completed = [step for step in run.steps if step.state is StepExecutionState.SUCCEEDED]
 
-        if role == "surface_mapper":
+        if role == "network_surface_mapper":
             summary = (
-                f"{focus}: target {plan.target}; {len(completed)}/{len(run.steps)} steps completed; "
-                f"{len(facts)} evidence-backed facts and {len(run.evidence)} evidence records available."
+                f"{focus}: observed ports={','.join(str(port) for port in profile.ports) or 'none'}; "
+                f"services={','.join(profile.services) or 'none'}; unknowns={','.join(profile.unknowns) or 'none'}."
+            )
+        elif role == "web_surface_analyst":
+            summary = (
+                f"{focus}: {len(profile.web_urls)} evidence-backed web locations, "
+                f"technologies={','.join(profile.technologies) or 'unknown'}; profile complexity={profile.complexity}."
+            )
+        elif role == "api_analyst":
+            api_hypothesis = next((item for item in profile.hypotheses if item.key == "api_surface"), None)
+            summary = (
+                f"{focus}: API-oriented evidence hypothesis confidence="
+                f"{api_hypothesis.confidence if api_hypothesis else 0.0:.2f}; keep conclusions evidence-linked."
             )
         elif role == "evidence_verifier":
             nonzero = sum(1 for item in run.evidence if item.exit_code != 0)
@@ -91,7 +109,12 @@ class AssessmentCouncil:
             severities = [str(node.metadata.get("severity", "info")) for node in findings]
             summary = (
                 f"{focus}: {len(findings)} finding facts currently supported; severities="
-                f"{','.join(severities) if severities else 'none'}; template matches remain distinct from root-cause attribution."
+                f"{','.join(severities) if severities else 'none'}; validation evidence remains distinct from root-cause attribution."
+            )
+        elif role == "impact_analyst":
+            summary = (
+                f"{focus}: {profile.severe_findings} high/critical finding(s); assess prerequisites, impact and residual risk "
+                "without performing any final active action."
             )
         elif role == "governance_reviewer":
             approval_steps = sum(1 for step in plan.steps if step.requires_approval)
@@ -99,12 +122,25 @@ class AssessmentCouncil:
                 f"{focus}: {approval_steps} planned approval-gated steps, {len(waiting)} currently waiting; "
                 "Scope/Policy/Approval remain the only execution authority."
             )
-        else:
+        elif role == "remediation_editor":
             summary = (
                 f"{focus}: remediation synthesis based on {len(findings)} findings, {len(failed)} failed/denied steps, "
                 f"and mission state {run.state.value}; recommendations must remain evidence-linked."
             )
+        else:
+            summary = (
+                f"{focus}: target {plan.target}; {len(completed)}/{len(run.steps)} steps completed; "
+                f"{len(facts)} evidence-backed facts and {len(run.evidence)} evidence records available."
+            )
         return summary, evidence_ids, fact_ids
+
+    def _desired_rounds(self, plan: MissionPlan, run: MissionRun) -> int:
+        return desired_assessment_rounds(
+            build_target_profile(plan, run),
+            minimum=self.min_rounds,
+            preferred=self.target_rounds,
+            maximum=self.max_rounds,
+        )
 
     def record_round(
         self,
@@ -116,10 +152,19 @@ class AssessmentCouncil:
         decision_id: str | None = None,
     ) -> str | None:
         current = self._existing_rounds(run)
-        if current >= self.target_rounds:
+        desired_rounds = self._desired_rounds(plan, run)
+        if current >= desired_rounds:
             return None
         round_number = current + 1
-        focus = _FOCI[round_number - 1]
+        focus = _FOCI[min(round_number - 1, len(_FOCI) - 1)]
+        profile = build_target_profile(plan, run)
+        roster = select_agent_roster(
+            plan,
+            run,
+            min_agents=self.min_agents,
+            preferred_agents=self.agents_per_round,
+            max_agents=self.max_agents,
+        )
         round_id = uuid4().hex
         run.graph.add_node(
             GraphNode(
@@ -130,9 +175,17 @@ class AssessmentCouncil:
                     "round": round_number,
                     "focus": focus,
                     "phase": phase,
-                    "agents": self.agents_per_round,
+                    "agents": len(roster),
+                    "roles": [item.role for item in roster],
                     "session_id": session_id,
                     "decision_id": decision_id,
+                    "target_profile": {
+                        "kind": profile.target_kind,
+                        "complexity": profile.complexity,
+                        "unknowns": list(profile.unknowns),
+                        "hypotheses": [item.key for item in profile.hypotheses],
+                    },
+                    "desired_rounds": desired_rounds,
                 },
             )
         )
@@ -142,11 +195,10 @@ class AssessmentCouncil:
         if decision_id and decision_id in run.graph.nodes:
             run.graph.link(decision_id, "reviewed_by", round_id)
 
-        start = (round_number - 1) % len(_ROLES)
-        roles = tuple(_ROLES[(start + index) % len(_ROLES)] for index in range(self.agents_per_round))
         action = self._recommended_action(run)
-        for role in roles:
-            summary, evidence_ids, fact_ids = self._summary(role, plan, run, focus)
+        for assignment in roster:
+            role = assignment.role
+            summary, evidence_ids, fact_ids = self._summary(role, plan, run, assignment.focus)
             agent_id = uuid4().hex
             run.graph.add_node(
                 GraphNode(
@@ -156,13 +208,14 @@ class AssessmentCouncil:
                     metadata={
                         "role": role,
                         "round": round_number,
-                        "focus": focus,
+                        "focus": assignment.focus,
                         "phase": phase,
                         "summary": summary,
                         "recommended_action": action,
                         "evidence_ids": list(evidence_ids),
                         "fact_ids": list(fact_ids),
                         "execution_authority": False,
+                        "report_only": True,
                     },
                 )
             )
@@ -176,15 +229,11 @@ class AssessmentCouncil:
         return round_id
 
     def complete_terminal_review(self, plan: MissionPlan, run: MissionRun, *, session_id: str) -> int:
-        """Fill remaining review rounds only after a terminal mission state.
-
-        This satisfies the 7-10 round assessment contract without repeating network
-        or validation commands after the mission has already reached a terminal state.
-        """
+        """Fill the remaining evidence-review rounds only after terminal execution."""
         if run.state not in {MissionRunState.SUCCEEDED, MissionRunState.FAILED, MissionRunState.DENIED}:
             return 0
         added = 0
-        while self._existing_rounds(run) < self.target_rounds:
+        while self._existing_rounds(run) < self._desired_rounds(plan, run):
             if self.record_round(plan, run, session_id=session_id, phase="post_execution") is None:
                 break
             added += 1
