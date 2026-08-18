@@ -15,8 +15,17 @@ def resolve(host: str) -> int:
     try:
         rows = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
     except socket.gaierror as exc:
-        _emit({"type": "dns_error", "host": host, "error": str(exc)[:400]})
-        return 2
+        _emit(
+            {
+                "type": "dns",
+                "host": host,
+                "record_type": "STATUS",
+                "resolved": False,
+                "error": str(exc)[:400],
+            }
+        )
+        _emit({"type": "summary", "host": host, "addresses": 0, "resolved": False})
+        return 0
 
     for row in rows:
         address = row[4][0]
@@ -42,6 +51,7 @@ def resolve(host: str) -> int:
                 "address": address,
                 "canonical_name": canonical if canonical and canonical != host else None,
                 "reverse_name": reverse,
+                "resolved": True,
             }
         )
 
@@ -51,9 +61,10 @@ def resolve(host: str) -> int:
             "host": host,
             "addresses": len(addresses),
             "canonical_name": canonical if canonical and canonical != host else None,
+            "resolved": bool(addresses),
         }
     )
-    return 0 if addresses else 1
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
