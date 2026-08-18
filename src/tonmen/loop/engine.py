@@ -4,7 +4,7 @@ from time import monotonic
 from typing import Callable, Mapping
 from uuid import uuid4
 
-from tonmen.agents import MissionCoordinator
+from tonmen.agents import AdaptiveMissionPlanner, MissionCoordinator
 from tonmen.core.runtime import TonmenRuntime
 from tonmen.council import AssessmentCouncil
 from tonmen.evidence import GraphNode
@@ -15,7 +15,7 @@ from .model import LoopStopReason, MissionLoopPolicy, MissionLoopResult
 
 
 class MissionLoop:
-    """Bounded observe → reason → act loop over existing governed mission steps only."""
+    """Bounded observe → reason → replan → act loop over governed capabilities only."""
 
     def __init__(
         self,
@@ -27,6 +27,7 @@ class MissionLoop:
         self.runtime = runtime
         self.policy = policy or MissionLoopPolicy()
         self.coordinator = MissionCoordinator(runtime)
+        self.strategy = AdaptiveMissionPlanner(runtime)
         self.reasoner = MissionReasoner()
         self.council = AssessmentCouncil(
             target_rounds=self.policy.assessment_rounds,
@@ -115,6 +116,7 @@ class MissionLoop:
                     "report_only": self.policy.report_only,
                     "assessment_round_bounds": [7, 10],
                     "subagent_bounds": [3, 5],
+                    "evidence_driven_replanning": True,
                 },
             )
         )
@@ -130,6 +132,7 @@ class MissionLoop:
             assessment_rounds=self.policy.assessment_rounds,
             subagents_per_round=self.policy.subagents_per_round,
             report_only=self.policy.report_only,
+            evidence_driven_replanning=True,
         )
 
     def _record_iteration(
@@ -311,6 +314,7 @@ class MissionLoop:
             executions=executions,
             session_id=session_id,
             last_decision=decision,
+            plan=plan,
         )
 
     def _drive(
@@ -369,6 +373,11 @@ class MissionLoop:
                 for before_job, after_job in zip(jobs_before, jobs_after, strict=True)
                 if before_job != after_job and after_job is not None
             )
+
+            proposal = self.strategy.propose(plan, run)
+            if proposal is not None:
+                plan = self.strategy.apply(plan, run, proposal)
+                self._checkpoint(plan, run)
 
             decision = self.reasoner.decide(plan, run)
             last_decision = decision
