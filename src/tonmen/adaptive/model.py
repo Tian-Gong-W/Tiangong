@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import ipaddress
 from dataclasses import dataclass
 from typing import Iterable
 from urllib.parse import urlparse
 
 from tonmen.missions import MissionPlan, MissionRun
+
+_COMMON_TLS_PORTS = {443, 8443, 9443, 465, 993, 995}
+_TLS_SERVICE_MARKERS = ("https", "tls", "ssl", "imaps", "pop3s", "smtps")
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +25,9 @@ class TargetProfile:
     target_kind: str
     ports: tuple[int, ...]
     services: tuple[str, ...]
+    dns_addresses: tuple[str, ...]
+    tls_versions: tuple[str, ...]
+    certificate_sans: tuple[str, ...]
     web_urls: tuple[str, ...]
     technologies: tuple[str, ...]
     findings: tuple[str, ...]
@@ -35,14 +42,30 @@ class TargetProfile:
 
     @property
     def web_probe_warranted(self) -> bool:
-        """True when HTTP probing is justified without treating missing evidence as denial.
-
-        Explicit Web targets and observed HTTP services are positive signals. For a host
-        with no parsed service facts yet, one bounded HTTP probe remains justified because
-        absence of service evidence is uncertainty, not contradictory evidence. Once
-        explicit non-HTTP services are observed, the generic Web branch can close.
-        """
+        """Allow one bounded HTTP probe when Web evidence is positive or still unknown."""
         return self.has_web_surface or not self.services
+
+    @property
+    def dns_resolution_needed(self) -> bool:
+        parsed = urlparse(self.target if "://" in self.target else f"scheme://{self.target}")
+        host = parsed.hostname or ""
+        if not host:
+            return False
+        try:
+            ipaddress.ip_address(host)
+            return False
+        except ValueError:
+            return not self.dns_addresses
+
+    @property
+    def tls_probe_warranted(self) -> bool:
+        parsed = urlparse(self.target if "://" in self.target else f"scheme://{self.target}")
+        if parsed.scheme == "https":
+            return True
+        if any(port in _COMMON_TLS_PORTS for port in self.ports):
+            return True
+        lowered = tuple(service.lower() for service in self.services)
+        return any(any(marker in service for marker in _TLS_SERVICE_MARKERS) for service in lowered)
 
     @property
     def severe_findings(self) -> int:
@@ -66,11 +89,16 @@ def build_target_profile(plan: MissionPlan, run: MissionRun) -> TargetProfile:
 
     ports: list[int] = []
     services: list[str] = []
+    dns_addresses: list[str] = []
+    tls_versions: list[str] = []
+    certificate_sans: list[str] = []
     web_urls: list[str] = []
     technologies: list[str] = []
     findings: list[str] = []
     severities: list[str] = []
     service_fact_ids: list[str] = []
+    dns_fact_ids: list[str] = []
+    tls_fact_ids: list[str] = []
     web_fact_ids: list[str] = []
     finding_fact_ids: list[str] = []
     endpoint_coverage_observed = False
@@ -92,6 +120,28 @@ def build_target_profile(plan: MissionPlan, run: MissionRun) -> TargetProfile:
                 port = 0
             if 1 <= port <= 65535:
                 ports.append(port)
+
+        elif node.kind == "intelligence.dns":
+            dns_fact_ids.append(node.id)
+            address = str(data.get("address") or "").strip()
+            if address:
+                dns_addresses.append(address)
+
+        elif node.kind == "intelligence.tls":
+            tls_fact_ids.append(node.id)
+            version = str(data.get("version") or "").strip()
+            if version:
+                tls_versions.append(version)
+            sans = data.get("sans", ())
+            if isinstance(sans, (list, tuple)):
+                certificate_sans.extend(str(value).strip() for value in sans if str(value).strip())
+            raw_port = data.get("port")
+            try:
+                tls_port = int(raw_port)
+            except (TypeError, ValueError):
+                tls_port = 0
+            if 1 <= tls_port <= 65535:
+                ports.append(tls_port)
 
         elif node.kind == "intelligence.web":
             web_fact_ids.append(node.id)
@@ -116,9 +166,30 @@ def build_target_profile(plan: MissionPlan, run: MissionRun) -> TargetProfile:
     has_http_service = any("http" in service for service in services)
     has_web = explicit_web or bool(web_urls) or has_http_service
 
+    provisional = TargetProfile(
+        target=plan.target,
+        target_kind=kind,
+        ports=tuple(sorted(set(ports))),
+        services=_unique(services),
+        dns_addresses=_unique(dns_addresses),
+        tls_versions=_unique(tls_versions),
+        certificate_sans=_unique(certificate_sans),
+        web_urls=_unique(web_urls),
+        technologies=_unique(technologies),
+        findings=_unique(findings),
+        severities=_unique(severities),
+        unknowns=(),
+        hypotheses=(),
+        complexity=1,
+    )
+
     unknowns: list[str] = []
     if not service_fact_ids and not explicit_web:
         unknowns.append("network_surface")
+    if provisional.dns_resolution_needed:
+        unknowns.append("dns_identity")
+    if provisional.tls_probe_warranted and not tls_fact_ids:
+        unknowns.append("tls_posture")
     if has_web and not web_fact_ids:
         unknowns.append("web_reachability_and_technology")
     if web_fact_ids:
@@ -131,6 +202,16 @@ def build_target_profile(plan: MissionPlan, run: MissionRun) -> TargetProfile:
         unknowns.append("remediation_confidence")
 
     hypotheses: list[Hypothesis] = []
+    if provisional.tls_probe_warranted:
+        basis = tuple((tls_fact_ids + service_fact_ids + web_fact_ids)[:16])
+        hypotheses.append(
+            Hypothesis(
+                "tls_surface",
+                "Target evidence supports a bounded TLS/certificate identity review.",
+                0.9 if tls_fact_ids else 0.65,
+                basis,
+            )
+        )
     if has_web:
         basis = tuple((web_fact_ids + service_fact_ids)[:16])
         hypotheses.append(Hypothesis("web_surface", "The target exposes an HTTP-capable surface worth deeper evidence-driven analysis.", 0.9 if web_fact_ids else 0.65, basis))
@@ -143,6 +224,8 @@ def build_target_profile(plan: MissionPlan, run: MissionRun) -> TargetProfile:
     complexity = 1
     complexity += min(2, len(set(ports)) // 3)
     complexity += 1 if has_web else 0
+    complexity += 1 if len(set(dns_addresses)) > 1 else 0
+    complexity += 1 if tls_fact_ids else 0
     complexity += 1 if len(set(web_urls)) >= 5 else 0
     complexity += 1 if finding_fact_ids else 0
     complexity += 1 if any(s in {"high", "critical"} for s in severities) else 0
@@ -153,6 +236,9 @@ def build_target_profile(plan: MissionPlan, run: MissionRun) -> TargetProfile:
         target_kind=kind,
         ports=tuple(sorted(set(ports))),
         services=_unique(services),
+        dns_addresses=_unique(dns_addresses),
+        tls_versions=_unique(tls_versions),
+        certificate_sans=_unique(certificate_sans),
         web_urls=_unique(web_urls),
         technologies=_unique(technologies),
         findings=_unique(findings),
