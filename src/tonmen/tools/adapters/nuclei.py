@@ -86,6 +86,16 @@ class NucleiAdapter(ToolAdapter):
         if not isinstance(timeout, int) or not 1 <= timeout <= 30:
             raise ValueError("timeout must be an integer from 1 to 30")
 
+    def adapt_parameters(self, request: ToolRequest, context):
+        complexity = max(1, min(5, int(context.get("complexity", 1))))
+        parameters = dict(request.parameters)
+        parameters["rate_limit"] = 6 if complexity >= 4 else 10
+        parameters["timeout"] = max(5, min(20, 6 + complexity * 2))
+        parameters.setdefault("severity", ("medium", "high", "critical"))
+        resolved = ToolRequest(tool=request.tool, target=request.target, parameters=parameters, context=request.context)
+        self.validate(resolved)
+        return parameters
+
     def build_argv(self, request: ToolRequest) -> tuple[str, ...]:
         self.validate(request)
         severity = request.parameters.get("severity", ("medium", "high", "critical"))
