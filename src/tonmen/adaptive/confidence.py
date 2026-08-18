@@ -129,6 +129,8 @@ def assess_evidence_confidence(plan: MissionPlan, run: MissionRun) -> EvidenceCo
     conflicting merely because multiple A/AAAA records exist; comparable DNS posture is
     resolution status. TLS version/fingerprint differences are recorded as observation
     conflicts, which may represent rotation, load balancing, negotiation or real change.
+    API confidence is presence-oriented: bounded static endpoint/hint evidence supports
+    an API-surface claim, while a clean negative inspection remains non-contradictory.
     """
     if run.plan_id != plan.id:
         raise ValueError("mission run does not belong to this plan")
@@ -193,6 +195,19 @@ def assess_evidence_confidence(plan: MissionPlan, run: MissionRun) -> EvidenceCo
             lowered = f"{node.label} {data}".lower()
             if any(token in lowered for token in ("graphql", "/api", "swagger", "openapi")):
                 api_support.append(node)
+
+        elif node.kind == "intelligence.api":
+            kind = str(data.get("kind") or "").strip().lower()
+            if kind in {"endpoint", "hint"} and bool(data.get("observed", True)):
+                api_support.append(node)
+            elif kind == "summary":
+                try:
+                    endpoint_count = int(data.get("endpoint_count") or 0)
+                except (TypeError, ValueError):
+                    endpoint_count = 0
+                hints = data.get("hints", ())
+                if endpoint_count > 0 or (isinstance(hints, (list, tuple)) and any(str(item).strip() for item in hints)):
+                    api_support.append(node)
 
         elif node.kind == "intelligence.finding":
             finding_support.append(node)
