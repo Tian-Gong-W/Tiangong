@@ -4,7 +4,7 @@ from tonmen.agents import MissionCoordinator
 from tonmen.core.config import TonmenConfig
 from tonmen.core.runtime import TonmenRuntime
 from tonmen.missions import MissionPlan, MissionStep, MissionRunState, StepExecutionState
-from tonmen.tools import RiskLevel, ToolReadiness
+from tonmen.tools import RiskLevel, ToolReadiness, ToolRequest
 from tonmen.tools.adapters.nuclei import NucleiAdapter
 
 
@@ -77,4 +77,7 @@ def test_approved_validation_stays_waiting_when_preflight_is_blocked(monkeypatch
     assert resumed.steps[0].job_id is None
     assert resumed.steps[0].metadata["preflight"]["code"] == "missing_templates"
     assert "templates are missing" in (resumed.steps[0].error or "")
-    assert runtime.approvals._grants == {}
+    assert runtime.approvals.validate(
+        grant.token,
+        ToolRequest(tool=step.tool, target=step.target),
+    ) == grant
