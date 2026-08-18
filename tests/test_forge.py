@@ -7,14 +7,14 @@ from tonmen.execution import ExecutionDenied, ToolExecutor
 from tonmen.jobs import JobManager, JobStatus
 from tonmen.policy import Decision, PolicyEngine
 from tonmen.tools import ToolRegistry, ToolRequest
-from tonmen.tools.adapters import CrawlerAdapter, HttpxAdapter, NmapAdapter, NucleiAdapter, register_builtin_adapters
+from tonmen.tools.adapters import ApiIntelAdapter, CrawlerAdapter, HttpxAdapter, NmapAdapter, NucleiAdapter, register_builtin_adapters
 
 
-def test_forge_registers_six_builtin_adapters():
+def test_forge_registers_seven_builtin_adapters():
     runtime = TonmenRuntime.forge()
-    assert len(runtime.registry) == 6
+    assert len(runtime.registry) == 7
     assert {adapter.spec.name for adapter in runtime.registry} == {
-        "nmap", "dns-intel", "httpx", "tls-intel", "crawler", "nuclei"
+        "nmap", "dns-intel", "httpx", "tls-intel", "api-intel", "crawler", "nuclei"
     }
 
 
@@ -38,6 +38,28 @@ def test_crawler_builds_bounded_internal_runner_argv():
     assert adapter.readiness().ready is True
 
 
+def test_api_intel_builds_bounded_internal_runner_argv():
+    adapter = ApiIntelAdapter()
+    request = ToolRequest(
+        tool="api-intel",
+        target="https://example.com",
+        parameters={"url": "https://example.com/app", "max_scripts": 8, "max_bytes": 131072, "timeout": 7},
+    )
+    argv = adapter.build_argv(request)
+    assert argv[1:4] == ("-m", "tonmen.tools.runners.api_intel", "--url")
+    assert "https://example.com/app" in argv
+    assert "--max-scripts" in argv and "8" in argv
+    assert "--max-bytes" in argv and "131072" in argv
+    assert adapter.readiness().ready is True
+
+
+def test_api_intel_rejects_cross_host_entry_url():
+    with pytest.raises(ValueError, match="target hostname"):
+        ApiIntelAdapter().build_argv(
+            ToolRequest(tool="api-intel", target="https://example.com", parameters={"url": "https://other.example/api"})
+        )
+
+
 def test_crawler_rejects_unbounded_parameters():
     with pytest.raises(ValueError, match="max_pages"):
         CrawlerAdapter().build_argv(
@@ -58,7 +80,7 @@ def test_httpx_rejects_shell_metacharacters_in_target():
 
 
 def test_web_adapters_reject_credentials_in_target():
-    for adapter in (HttpxAdapter(), CrawlerAdapter(), NucleiAdapter()):
+    for adapter in (HttpxAdapter(), ApiIntelAdapter(), CrawlerAdapter(), NucleiAdapter()):
         with pytest.raises(ValueError, match="credentials"):
             adapter.build_argv(ToolRequest(tool=adapter.spec.name, target="https://user:secret@example.com/private"))
 
