@@ -54,6 +54,17 @@ def validate_local_ai_base_url(value: str) -> str:
     return text
 
 
+def validate_local_ai_model(value: str) -> str:
+    """Keep the no-key/local mode from selecting an Ollama cloud-tagged model."""
+    model = str(value).strip()
+    if not model:
+        return ""
+    lowered = model.lower()
+    if "cloud" in lowered:
+        raise ValueError("local AI model must not use an Ollama cloud model/tag")
+    return model
+
+
 @dataclass(frozen=True, slots=True)
 class TonmenConfig:
     """Runtime configuration with deny-by-default external scope."""
@@ -117,7 +128,7 @@ class TonmenConfig:
         ai_provider = str(ai.get("provider", "none")).strip().lower() or "none"
         if ai_provider not in _AI_PROVIDERS:
             raise ValueError("ai.provider must be one of: none, ollama")
-        ai_model = str(ai.get("model", "")).strip()
+        ai_model = validate_local_ai_model(ai.get("model", ""))
         ai_base_url = validate_local_ai_base_url(str(ai.get("base_url", DEFAULT_AI_BASE_URL)))
         ai_timeout = int(ai.get("timeout_seconds", 20))
         if not 1 <= ai_timeout <= 120:
@@ -182,9 +193,10 @@ class TonmenConfig:
                 "",
                 "[ai]",
                 "# Optional local advisory model. No API key is required or stored.",
+                "# Cloud-tagged Ollama models are rejected in local-only mode.",
                 f"enabled = {'true' if self.ai_enabled else 'false'}",
                 f"provider = {json.dumps(self.ai_provider, ensure_ascii=False)}",
-                f"model = {json.dumps(self.ai_model, ensure_ascii=False)}",
+                f"model = {json.dumps(validate_local_ai_model(self.ai_model), ensure_ascii=False)}",
                 f"base_url = {json.dumps(validate_local_ai_base_url(self.ai_base_url), ensure_ascii=False)}",
                 f"timeout_seconds = {self.ai_timeout_seconds}",
                 "",
