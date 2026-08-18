@@ -90,8 +90,11 @@ class ToolExecutor:
                 evidence_id=evidence_id,
             )
 
-    def _effective_timeout(self, request: ToolRequest) -> float:
-        timeout = float(self.timeout_seconds)
+    def _effective_timeout(self, request: ToolRequest, adapter) -> float:
+        # A typed ToolSpec may request a wider process budget than the generic
+        # discovery-oriented executor default. Mission remaining time still wins.
+        typed = adapter.spec.execution_timeout_seconds
+        timeout = float(typed if typed is not None else self.timeout_seconds)
         raw = request.context.get("execution_timeout_seconds")
         if raw is None:
             return timeout
@@ -195,6 +198,33 @@ class ToolExecutor:
             self._audit(request, "deny", decision.reason)
             self._emit("tool.denied", request, reason=decision.reason)
             raise ExecutionDenied(decision.reason)
+
+        build_request = request
+        if self.uses_local_subprocess:
+            readiness = adapter.readiness()
+            if not readiness.ready:
+                message = f"tool preflight blocked: {readiness.detail}"
+                self._audit(request, "deny", message)
+                self._emit(
+                    "tool.preflight_blocked",
+                    request,
+                    code=readiness.code,
+                    detail=readiness.detail,
+                    remediation=readiness.remediation,
+                )
+                raise ExecutionDenied(message)
+            verified_path = readiness.metadata.get("path") or readiness.metadata.get("binary")
+            if verified_path:
+                context = dict(request.context)
+                context["_verified_binary_path"] = str(verified_path)
+                build_request = ToolRequest(
+                    tool=request.tool,
+                    target=request.target,
+                    parameters=request.parameters,
+                    context=context,
+                )
+
+        # Readiness/identity is checked before consuming a one-shot approval token.
         if decision.decision is Decision.REQUIRE_APPROVAL:
             grant = self.approvals.consume(approval_token, request) if approval_token and self.approvals else None
             if grant is None:
@@ -203,11 +233,11 @@ class ToolExecutor:
                 self._emit("tool.approval_required", request, reason=message)
                 raise ExecutionDenied(message)
 
-        argv = tuple(str(value) for value in adapter.build_argv(request))
+        argv = tuple(str(value) for value in adapter.build_argv(build_request))
         if not argv or any(not value for value in argv):
             raise ValueError("adapter produced invalid argv")
 
-        effective_timeout = self._effective_timeout(request)
+        effective_timeout = self._effective_timeout(request, adapter)
         started = datetime.now(timezone.utc)
         self._emit(
             "tool.started",
