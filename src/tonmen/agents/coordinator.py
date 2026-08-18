@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Mapping
 
+from tonmen.adaptive import AdaptiveParameterResolver
 from tonmen.core.runtime import TonmenRuntime
 from tonmen.evidence import GraphNode
 from tonmen.intelligence import parse_evidence, summarize_facts
@@ -25,6 +26,7 @@ class MissionCoordinator:
             raise ValueError("MissionCoordinator requires the Sentinel runtime")
         self.runtime = runtime
         self.reasoner = MissionReasoner()
+        self.parameter_resolver = AdaptiveParameterResolver()
 
     def _emit(self, event_type: str, run: MissionRun, **data: object) -> None:
         if self.runtime.events is not None:
@@ -171,15 +173,42 @@ class MissionCoordinator:
             if not self._preflight_step(step, execution, mission_run, token):
                 return mission_run
 
+            resolved_parameters = self.parameter_resolver.resolve(plan, mission_run, step)
+            profile = self.parameter_resolver.profile(plan, mission_run)
+            execution.metadata["planned_parameters"] = dict(step.parameters)
+            execution.metadata["resolved_parameters"] = dict(resolved_parameters)
+            execution.metadata["adaptive_profile"] = {
+                "kind": profile.target_kind,
+                "complexity": profile.complexity,
+                "unknowns": list(profile.unknowns),
+                "hypotheses": [item.key for item in profile.hypotheses],
+            }
+
             request = ToolRequest(
                 tool=step.tool,
                 target=step.target,
-                parameters=step.parameters,
-                context={"mission_id": mission_run.id, "plan_id": mission_run.plan_id, "step_id": step.id},
+                parameters=resolved_parameters,
+                context={
+                    "mission_id": mission_run.id,
+                    "plan_id": mission_run.plan_id,
+                    "step_id": step.id,
+                    "adaptive": True,
+                    "profile_complexity": profile.complexity,
+                },
             )
             execution.state = StepExecutionState.RUNNING
             execution.error = None
-            self._emit("step.started", mission_run, step_id=step.id, tool=step.tool, step_target=step.target, risk=step.risk)
+            self._emit(
+                "step.started",
+                mission_run,
+                step_id=step.id,
+                tool=step.tool,
+                step_target=step.target,
+                risk=step.risk,
+                parameters=dict(resolved_parameters),
+                profile_complexity=profile.complexity,
+                profile_unknowns=list(profile.unknowns),
+            )
             job = self.runtime.jobs.submit(request, approval_token=token)
             execution.job_id = job.id
 
