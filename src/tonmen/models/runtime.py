@@ -4,13 +4,23 @@ import json
 from dataclasses import dataclass
 from typing import Any, Mapping
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 from .config import ModelRuntimeConfig
 
 
 class ModelRuntimeError(RuntimeError):
     pass
+
+
+class _NoRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _open_local(request: Request, *, timeout: int):
+    opener = build_opener(ProxyHandler({}), _NoRedirectHandler())
+    return opener.open(request, timeout=timeout)
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,11 +82,15 @@ class ModelRuntime:
     def enabled(self) -> bool:
         return self.config.enabled
 
+    @property
+    def provider(self) -> str:
+        return self.config.provider.strip().lower()
+
     def status(self) -> ModelRuntimeStatus:
         if not self.enabled:
             return ModelRuntimeStatus(False, True, "none", "", "deterministic mode; no model configured")
-        if self.config.provider != "ollama":
-            return ModelRuntimeStatus(True, False, self.config.provider, self.config.model, "unsupported provider")
+        if self.provider != "ollama":
+            return ModelRuntimeStatus(True, False, self.provider, self.config.model, "unsupported provider")
         try:
             payload = self._request_json("GET", "/tags")
         except ModelRuntimeError as exc:
@@ -106,8 +120,8 @@ class ModelRuntime:
             return None
         if calls_already_used >= self.config.max_calls:
             raise ModelRuntimeError("model call budget exhausted")
-        if self.config.provider != "ollama":
-            raise ModelRuntimeError(f"unsupported model provider: {self.config.provider}")
+        if self.provider != "ollama":
+            raise ModelRuntimeError(f"unsupported model provider: {self.provider}")
 
         profile = _bounded_profile(target_profile)
         capability_catalog = tuple(dict.fromkeys(str(item) for item in allowed_capabilities if item))[:32]
@@ -164,7 +178,7 @@ class ModelRuntime:
         body = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
         request = Request(url, data=body, method=method, headers={"Content-Type": "application/json"})
         try:
-            with urlopen(request, timeout=self.config.timeout_seconds) as response:
+            with _open_local(request, timeout=self.config.timeout_seconds) as response:
                 raw = response.read(2_000_000)
         except HTTPError as exc:
             raise ModelRuntimeError(f"ollama HTTP error: {exc.code}") from exc
