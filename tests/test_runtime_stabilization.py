@@ -21,6 +21,7 @@ def test_web_planner_uses_fast_nmap_without_service_version_detection(tmp_path):
     plan = MissionPlanner(runtime).plan("https://localhost")
     nmap_step = plan.steps[0]
 
+    assert [step.tool for step in plan.steps] == ["nmap", "httpx", "crawler", "nuclei"]
     assert nmap_step.tool == "nmap"
     assert nmap_step.parameters["service_detection"] is False
     argv = runtime.registry.get("nmap").build_argv(
@@ -28,6 +29,8 @@ def test_web_planner_uses_fast_nmap_without_service_version_detection(tmp_path):
     )
     assert argv == ("nmap", "-sT", "-p", "80,443", "localhost")
     assert "-sV" not in argv
+    crawler_step = plan.steps[2]
+    assert crawler_step.parameters == {"max_pages": 25, "max_depth": 2, "timeout": 10}
 
 
 def test_executor_turns_timeout_into_partial_evidence():
@@ -79,6 +82,13 @@ def _timeout_then_web_runtime(tmp_path):
                 stdout="https://localhost [200] [Welcome] [nginx]\n",
                 stderr="",
             )
+        if len(argv) >= 3 and argv[1:3] == ["-m", "tonmen.tools.runners.crawler"]:
+            return subprocess.CompletedProcess(
+                argv,
+                0,
+                stdout='{"type":"page","url":"https://localhost/","status":200,"title":"Welcome","depth":0,"content_type":"text/html","bytes":42,"truncated":false}\n{"type":"summary","visited":1,"successful":1}\n',
+                stderr="",
+            )
         raise AssertionError("approval-gated nuclei must not execute automatically")
 
     runtime.executor._runner = fake_runner
@@ -97,14 +107,19 @@ def test_discovery_timeout_degrades_and_httpx_still_runs(tmp_path):
     assert [step.state for step in result.run.steps] == [
         StepExecutionState.DEGRADED,
         StepExecutionState.SUCCEEDED,
+        StepExecutionState.SUCCEEDED,
         StepExecutionState.WAITING_APPROVAL,
     ]
-    assert [call[0] for call in calls] == ["nmap", "httpx"]
+    assert calls[0][0] == "nmap"
+    assert calls[1][0] == "httpx"
+    assert calls[2][1:3] == ["-m", "tonmen.tools.runners.crawler"]
     assert "-sV" not in calls[0]
     assert result.run.steps[0].metadata["timed_out"] is True
     assert result.run.steps[0].metadata["degraded_reason"] == "discovery_timeout"
     assert result.run.evidence[0].exit_code == 124
-    assert any(node.kind == "intelligence.web" for node in result.run.graph.nodes.values())
+    web_nodes = [node for node in result.run.graph.nodes.values() if node.kind == "intelligence.web"]
+    assert len(web_nodes) >= 2
+    assert any(node.metadata.get("source") == "crawler" for node in web_nodes)
 
 
 def test_degraded_timeout_survives_chronicle_and_console_payload(tmp_path):
