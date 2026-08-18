@@ -55,6 +55,18 @@ class CrawlerAdapter(ToolAdapter):
         if not isinstance(timeout, int) or not 1 <= timeout <= 30:
             raise ValueError("timeout must be an integer from 1 to 30")
 
+    def adapt_parameters(self, request: ToolRequest, context):
+        complexity = max(1, min(5, int(context.get("complexity", 1))))
+        observed_pages = max(1, int(context.get("web_url_count", 0)))
+        adaptive_pages = 12 + complexity * 8 + min(24, observed_pages * 2)
+        parameters = dict(request.parameters)
+        parameters["max_pages"] = max(12, min(60, adaptive_pages))
+        parameters["max_depth"] = max(1, min(4, 1 + complexity // 2))
+        parameters["timeout"] = max(5, min(20, 6 + complexity * 2))
+        resolved = ToolRequest(tool=request.tool, target=request.target, parameters=parameters, context=request.context)
+        self.validate(resolved)
+        return parameters
+
     def build_argv(self, request: ToolRequest) -> tuple[str, ...]:
         self.validate(request)
         return (
