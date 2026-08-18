@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 
+from tonmen.adaptive import AdaptiveParameterResolver
 from tonmen.agents import AdaptiveMissionPlanner, MissionPlanner
 from tonmen.capabilities import CapabilityCatalog
 from tonmen.core.config import TonmenConfig
@@ -36,6 +37,16 @@ class _SemanticAdapter(ToolAdapter):
     def build_argv(self, request: ToolRequest):
         self.validate(request)
         return (self.spec.name, str(request.target))
+
+
+class _AdaptiveSemanticAdapter(_SemanticAdapter):
+    def adapt_parameters(self, request: ToolRequest, context):
+        return {"budget": int(context["complexity"])}
+
+    def validate(self, request: ToolRequest) -> None:
+        super().validate(request)
+        if request.parameters and set(request.parameters) != {"budget"}:
+            raise ValueError("unexpected test parameter")
 
 
 def _runtime(tmp_path):
@@ -145,3 +156,28 @@ def test_ranked_candidate_exposes_selection_and_rejection_reasons(tmp_path):
     assert queued.eligible is False
     assert "already queued" in " ".join(queued.reasons)
     assert selected.audit_payload()["execution_authority"] is False
+
+
+def test_parameter_resolver_dispatches_to_custom_adapter_without_tool_name_branch(tmp_path):
+    runtime = _runtime(tmp_path)
+    runtime.registry.register(_AdaptiveSemanticAdapter("adaptive-custom", ("custom.observe",)))
+    step = MissionStep.create(
+        tool="adaptive-custom",
+        target="localhost",
+        parameters={},
+        risk=int(RiskLevel.PASSIVE),
+        requires_approval=False,
+        rationale="custom parameter adaptation",
+    )
+    plan = MissionPlan.create("localhost", [step])
+    run = MissionRun.create(plan)
+    resolver = AdaptiveParameterResolver(runtime.registry)
+
+    resolved = resolver.resolve(plan, run, step)
+
+    assert resolved == {"budget": 1}
+    justify_source = inspect.getsource(AdaptiveParameterResolver.justify)
+    resolve_source = inspect.getsource(AdaptiveParameterResolver.resolve)
+    for name in ("nmap", "httpx", "crawler", "nuclei"):
+        assert f'"{name}"' not in justify_source
+        assert f'"{name}"' not in resolve_source
