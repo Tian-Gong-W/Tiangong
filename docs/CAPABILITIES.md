@@ -7,8 +7,8 @@ TONMEN separates **analysis** from **execution authority**. New capabilities may
 The Console is organized around six operator tasks:
 
 1. **Start mission** — choose an explicitly authorized target and bounded execution budget.
-2. **Generate test plan** — preview candidate capabilities, seed parameters, risk and approval boundaries before execution.
-3. **Live execution** — inspect the actual tool, resolved parameters, argv, stdout, stderr, exit code and lifecycle events.
+2. **Generate test plan** — preview the committed seed plus the governed capability pool, risk and approval boundaries before execution.
+3. **Live execution** — inspect the actual tool, resolved parameters, argv, stdout, stderr, exit code, replanning rationale and lifecycle events.
 4. **Data / Evidence** — inspect evidence-backed Host, Service, Web and Finding facts.
 5. **Approval** — handle only steps that require explicit human authorization.
 6. **Records / Delete** — inspect reports/history and remove terminal mission records.
@@ -17,18 +17,48 @@ Internal architecture modules remain available under the Console's Advanced sect
 
 ## Adaptive mission contract
 
-A mission is no longer treated as a blind fixed scanner sequence. The initial plan is a set of governed candidate capabilities. Before each candidate runs, TONMEN rebuilds a live **Target Profile** from recorded evidence and decides whether that branch is still justified.
+An autonomous mission does **not** commit a fixed `nmap -> httpx -> crawler -> nuclei` sequence.
+
+The Mission Loop begins with the smallest target-appropriate seed:
+
+- an explicit HTTP(S) target starts with HTTP metadata discovery (`httpx`);
+- a host/IP target starts with a minimal network observation (`nmap`).
+
+After that seed executes, TONMEN rebuilds a live **Target Profile** from recorded evidence and may append one new governed capability. The next step becomes part of the mission only when the evidence justifies it. A non-Web host can therefore stop after network discovery, while a confirmed Web surface can grow into HTTP observation, bounded crawling and eventually an approval-gated validation proposal.
+
+Every appended step creates a `planning.revision` graph node containing:
+
+- the proposed capability and target;
+- risk and approval requirement;
+- the evidence/fact IDs supporting the revision;
+- the planner rationale;
+- expected information gain;
+- currently unresolved profile questions;
+- `execution_authority = false`.
+
+A planning revision cannot itself run a command. The new step must still pass Scope, Policy, readiness, typed adapter validation and the normal Executor path.
+
+### Candidate envelope vs committed plan
+
+`MissionPlanner.plan()` remains a dry-run view of the bounded capability envelope an operator may inspect. `MissionPlanner.seed()` is the committed start of an adaptive mission. The Console plan preview exposes both clearly:
+
+- **Seed** — committed first step, including its typed argv preview.
+- **Candidate capability pool** — possible later capabilities; these are not yet committed and their future argv is not presented as final because evidence may change bounded parameters.
+
+The actual plan stored in Chronicle grows immutably: each revision keeps the same plan identity and appends a unique step. Previous steps cannot be silently rewritten or reordered.
+
+## Target Profile and bounded adaptation
 
 The profile tracks:
 
 - observed ports and services;
-- web locations and technologies;
+- Web locations and technologies;
 - evidence-backed findings and severity;
 - unresolved questions (`unknowns`);
 - evidence-linked hypotheses;
 - a bounded complexity score used only to control analysis cost.
 
-Evidence can therefore change both **whether a candidate capability runs** and its bounded parameters. For example, an absent web surface can suppress crawling/validation, while a richer confirmed web surface can raise crawler coverage within fixed page/depth limits.
+Evidence can therefore change **whether another capability is added** and its bounded parameters. For example, an absent Web surface ends the Web branch, while a richer confirmed Web surface can raise crawler coverage within fixed page/depth limits.
 
 ### Cost and autonomy envelope
 
@@ -38,7 +68,8 @@ The adaptive layer may change strategy, but it cannot change governance ceilings
 - subagents per round: **3-5**, selected dynamically from the live Target Profile;
 - model/tool loops remain bounded by configured iteration, execution and wall-clock limits;
 - Scope, Policy, Approval and typed adapter validation are immutable execution boundaries;
-- no agent may create raw shell execution authority.
+- no agent may create raw shell execution authority;
+- duplicate plan-step identities are rejected and completed history is append-only within a plan revision.
 
 A sparse target can converge near the lower bound. A complex target with high-confidence evidence can use more review rounds and up to five specialist subagents, but never exceed the fixed envelope.
 
@@ -60,7 +91,8 @@ The final product may still describe evidence, prerequisites, risk, impact, reme
 | Intelligence | deterministic parsing of scanner/crawler evidence | Active | Evidence-linked facts only |
 | Target profile | ports/services/web/findings/unknowns/hypotheses | Active | Rebuilt only from recorded mission evidence |
 | Adaptive parameters | tool budgets derived from current profile | Active | Adapter limits remain authoritative |
-| Adaptive branch gate | skip unjustified candidate capabilities | Active | Cannot add Scope or bypass Policy |
+| Adaptive plan growth | append one justified capability after new evidence | Active | `planning.revision`; no execution authority |
+| Adaptive branch gate | suppress unjustified capabilities | Active | Cannot add Scope or bypass Policy |
 | Assessment council | dynamic 3-5 evidence-review roles, 7-10 rounds | Active | Read-only; no execution authority |
 | Reasoning | evidence-driven next-action policy | Active | Cannot expand Scope or self-approve |
 
@@ -101,7 +133,7 @@ Authorized Target
     ↓
 Scope / Policy
     ↓
-Candidate Capabilities
+Minimal target-aware Seed
     ↓
 Execute one bounded observation
     ↓
@@ -111,11 +143,14 @@ Target Profile
     ↓
 Unknowns + Hypotheses
     ↓
-Adaptive Reasoner
-    ├─ Skip unjustified branch
-    ├─ Continue with changed bounded parameters
-    ├─ Request approval for validation
-    └─ Stop and synthesize report
+Adaptive Planner + Reasoner
+    ├─ no evidence for another branch -> stop
+    ├─ append one governed capability -> planning.revision
+    ├─ change bounded parameters -> typed adapter validation
+    └─ request approval for validation
+    ↓
+Execute next justified capability
+    ↺ rebuild profile and replan
     ↓
 Dynamic 3-5 Agent Council
     ↓
@@ -124,4 +159,4 @@ Dynamic 3-5 Agent Council
 REPORT ONLY
 ```
 
-Future adapters should be added one capability at a time with explicit parameter bounds, readiness checks, test fixtures and evidence parsers. The Mission Loop must never synthesize free-form shell commands or add unrestricted execution authority at runtime.
+Future adapters should be added one capability at a time with explicit parameter bounds, readiness checks, test fixtures and evidence parsers. The Mission Loop must never synthesize free-form shell commands, expand Scope or add unrestricted execution authority at runtime.
