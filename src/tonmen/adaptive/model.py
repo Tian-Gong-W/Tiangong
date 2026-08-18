@@ -31,7 +31,18 @@ class TargetProfile:
 
     @property
     def has_web_surface(self) -> bool:
-        return bool(self.web_urls) or any("http" in service for service in self.services)
+        return self.target_kind == "web" or bool(self.web_urls) or any("http" in service for service in self.services)
+
+    @property
+    def web_probe_warranted(self) -> bool:
+        """True when HTTP probing is justified without treating missing evidence as denial.
+
+        Explicit Web targets and observed HTTP services are positive signals. For a host
+        with no parsed service facts yet, one bounded HTTP probe remains justified because
+        absence of service evidence is uncertainty, not contradictory evidence. Once
+        explicit non-HTTP services are observed, the generic Web branch can close.
+        """
+        return self.has_web_surface or not self.services
 
     @property
     def severe_findings(self) -> int:
