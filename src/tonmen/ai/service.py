@@ -125,7 +125,11 @@ class LocalAIService:
                 "dns_addresses": list(profile.dns_addresses[:16]),
                 "tls_versions": list(profile.tls_versions[:8]),
                 "certificate_sans": list(profile.certificate_sans[:32]),
-                "technologies": list(profile.technologies),
+                "web_urls": list(profile.web_urls[:32]),
+                "technologies": list(profile.technologies[:32]),
+                "api_endpoints": list(profile.api_endpoints[:32]),
+                "api_hints": list(profile.api_hints[:16]),
+                "api_inspected": profile.api_inspected,
                 "unknowns": list(profile.unknowns),
                 "hypotheses": [
                     {
