@@ -67,6 +67,67 @@ def _confidence_markdown(payload: dict) -> str:
     return "\n".join(lines)
 
 
+def _ai_payload(run: MissionRun) -> list[dict]:
+    return [
+        {
+            "id": node.id,
+            "kind": node.kind,
+            "label": node.label,
+            "metadata": dict(node.metadata),
+        }
+        for node in run.graph.nodes.values()
+        if node.kind in {"ai.advisory", "ai.advisory_error"}
+    ]
+
+
+def _ai_markdown(items: list[dict]) -> str:
+    lines = [
+        "## Local AI Advisory",
+        "",
+        "- Optional local analysis only; deterministic TONMEN remains authoritative.",
+        "- API key required by TONMEN: no",
+        "- Execution authority: none",
+        "",
+    ]
+    if not items:
+        lines.extend(["No local AI advisory was recorded for this mission.", ""])
+        return "\n".join(lines)
+    for index, item in enumerate(items, start=1):
+        metadata = item.get("metadata", {})
+        if item.get("kind") == "ai.advisory_error":
+            lines.extend(
+                [
+                    f"### Advisory {index}: deterministic fallback",
+                    "",
+                    f"- Provider/model: `{metadata.get('provider', '—')}` / `{metadata.get('model', '—')}`",
+                    f"- Error: {metadata.get('error') or item.get('label') or '—'}",
+                    f"- Fallback: `{metadata.get('fallback', 'deterministic')}`",
+                    f"- Local only: `{metadata.get('local_only', True)}`",
+                    f"- Execution authority: `{metadata.get('execution_authority', False)}`",
+                    "",
+                ]
+            )
+            continue
+        hypotheses = metadata.get("hypotheses", [])
+        lines.extend(
+            [
+                f"### Advisory {index}: {metadata.get('provider', 'local')} / {metadata.get('model', '—')}",
+                "",
+                f"- Summary: {metadata.get('summary') or item.get('label') or '—'}",
+                f"- Focus: `{', '.join(metadata.get('focus', [])) or '—'}`",
+                f"- Basis Facts: `{', '.join(metadata.get('basis_fact_ids', [])) or '—'}`",
+                f"- Challenge decision: `{metadata.get('challenge_decision', False)}`",
+                f"- Challenge reason: {metadata.get('challenge_reason') or '—'}",
+                f"- Hypotheses: `{len(hypotheses)}`",
+                f"- Local only: `{metadata.get('local_only', True)}`",
+                f"- API key required: `{metadata.get('api_key_required', False)}`",
+                f"- Execution authority: `{metadata.get('execution_authority', False)}`",
+                "",
+            ]
+        )
+    return "\n".join(lines)
+
+
 class ReportStore:
     def __init__(self, workspace: Path) -> None:
         self.root = Path(workspace) / "reports"
@@ -114,15 +175,26 @@ class ReportStore:
         self._ensure_root()
         report = build_report(plan, run)
         confidence = _confidence_payload(plan, run)
+        ai_advisories = _ai_payload(run)
         report["evidence_confidence"] = confidence
+        report["ai_advisories"] = ai_advisories
         report.setdefault("summary", {})["supported_claims"] = confidence["supported"]
         report["summary"]["conflicted_claims"] = confidence["conflicted"]
         report["summary"]["unresolved_claims"] = confidence["unresolved"]
+        report["summary"]["ai_advisories"] = sum(1 for item in ai_advisories if item["kind"] == "ai.advisory")
+        report["summary"]["ai_advisory_errors"] = sum(1 for item in ai_advisories if item["kind"] == "ai.advisory_error")
         self._atomic_write(
             self._path(run.id, "json"),
             json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
         )
-        markdown = render_markdown(report).rstrip() + "\n\n" + _confidence_markdown(confidence).rstrip() + "\n"
+        markdown = (
+            render_markdown(report).rstrip()
+            + "\n\n"
+            + _confidence_markdown(confidence).rstrip()
+            + "\n\n"
+            + _ai_markdown(ai_advisories).rstrip()
+            + "\n"
+        )
         self._atomic_write(self._path(run.id, "md"), markdown)
         return report
 
