@@ -81,9 +81,9 @@ def test_dashboard_detail_apis_expose_tools_guard_and_settings(tmp_path):
     state = DashboardState(config)
 
     tools = state.tools()
-    assert tools["count"] == 6
+    assert tools["count"] == 7
     assert {tool["name"] for tool in tools["tools"]} == {
-        "nmap", "dns-intel", "httpx", "tls-intel", "crawler", "nuclei"
+        "nmap", "dns-intel", "httpx", "tls-intel", "api-intel", "crawler", "nuclei"
     }
     assert all("risk" in tool and "capabilities" in tool for tool in tools["tools"])
     crawler = next(tool for tool in tools["tools"] if tool["name"] == "crawler")
@@ -91,8 +91,11 @@ def test_dashboard_detail_apis_expose_tools_guard_and_settings(tmp_path):
     assert "endpoint.discover" in crawler["capabilities"]
     dns = next(tool for tool in tools["tools"] if tool["name"] == "dns-intel")
     tls = next(tool for tool in tools["tools"] if tool["name"] == "tls-intel")
+    api = next(tool for tool in tools["tools"] if tool["name"] == "api-intel")
     assert "dns.resolve" in dns["capabilities"]
     assert "certificate.inspect" in tls["capabilities"]
+    assert "javascript.endpoint.extract" in api["capabilities"]
+    assert api["risk_name"] == "discovery"
 
     guard = state.guard()
     assert guard["mode"] == "deny-by-default"
