@@ -27,9 +27,9 @@ BANNER = """\
 
 def _add_loop_budget_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-iterations", type=int, default=8)
-    parser.add_argument("--max-executions", type=int, default=3)
+    parser.add_argument("--max-executions", type=int, default=6)
     parser.add_argument("--max-repeat-decisions", type=int, default=2)
-    parser.add_argument("--max-duration", type=int, default=300, dest="max_duration_seconds")
+    parser.add_argument("--max-duration", type=int, default=900, dest="max_duration_seconds")
 
 
 def _loop_policy(args) -> MissionLoopPolicy:
