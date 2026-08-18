@@ -42,8 +42,11 @@ class TonmenRuntime:
 
     @classmethod
     def forge(cls, config: TonmenConfig | None = None, *, events: EventBus | None = None) -> "TonmenRuntime":
+        """Build the lightweight runtime without weakening Target Scope semantics."""
         runtime = cls.genesis(config, events=events)
         register_builtin_adapters(runtime.registry)
+        runtime.scope = TargetScope(runtime.config.allowed_targets, runtime.config.denied_targets)
+        runtime.policy = PolicyEngine(runtime.scope)
         runtime.executor = ToolExecutor(
             runtime.registry,
             runtime.policy,
