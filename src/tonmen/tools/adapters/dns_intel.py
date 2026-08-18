@@ -24,6 +24,7 @@ class DnsIntelAdapter(ToolAdapter):
             information_gain="A/AAAA address identity, canonical hostname and bounded reverse identity evidence",
             information_gain_score=0.56,
             cost_score=0.08,
+            include_in_baseline_envelope=False,
         ),
     )
 
