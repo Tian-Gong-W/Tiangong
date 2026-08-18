@@ -273,3 +273,145 @@
   });
   installTrace();
 })();
+
+(() => {
+  "use strict";
+
+  const esc = value => String(value ?? "").replace(/[&<>"']/g, ch => ({
+    "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
+  }[ch]));
+  const short = value => String(value || "").slice(0, 8);
+  let refreshing = false;
+
+  function selectedRun() {
+    return new URLSearchParams(location.search).get("run") || document.querySelector("#module-page-root .module-table tr.selected[data-select-run]")?.dataset.selectRun || null;
+  }
+
+  function asSet(values) {
+    return new Set((values || []).filter(Boolean).map(value => String(value)));
+  }
+
+  function difference(left, right) {
+    return [...left].filter(value => !right.has(value));
+  }
+
+  function roundAgents(detail, roundNode, nodes) {
+    const edges = (detail.graph?.edges || []).filter(edge => edge.source === roundNode.id && edge.relation === "contains_subagent");
+    return edges.map(edge => nodes.get(edge.target)).filter(Boolean);
+  }
+
+  function roundFactIds(agents) {
+    const ids = new Set();
+    for (const agent of agents) for (const factId of agent.metadata?.fact_ids || []) ids.add(String(factId));
+    return ids;
+  }
+
+  function labels(ids, nodes) {
+    return ids.map(id => nodes.get(id)?.label || short(id));
+  }
+
+  function chipList(label, values, tone = "") {
+    if (!values.length) return "";
+    return `<div class="trace-basis"><span>${esc(label)}</span>${values.map(value => `<span class="trace-fact"${tone ? ` data-delta-tone="${tone}"` : ""}>${esc(value)}</span>`).join("")}</div>`;
+  }
+
+  function rosterReason(delta) {
+    const reasons = [];
+    if (delta.complexity > 0) reasons.push(`complexity +${delta.complexity}`);
+    if (delta.complexity < 0) reasons.push(`complexity ${delta.complexity}`);
+    if (delta.hypothesesAdded.length) reasons.push(`new hypothesis: ${delta.hypothesesAdded.join(", ")}`);
+    if (delta.unknownsClosed.length) reasons.push(`unknown closed: ${delta.unknownsClosed.join(", ")}`);
+    if (delta.unknownsOpened.length) reasons.push(`new unknown: ${delta.unknownsOpened.join(", ")}`);
+    if (delta.newFacts.length) reasons.push(`${delta.newFacts.length} new fact(s)`);
+    return reasons.join(" · ") || "profile stable; roster change is focus rotation within the bounded council";
+  }
+
+  function buildDeltas(detail) {
+    const nodes = new Map((detail.graph?.nodes || []).map(node => [node.id, node]));
+    const rounds = (detail.graph?.nodes || [])
+      .filter(node => node.kind === "council.round")
+      .slice()
+      .sort((a, b) => Number(a.metadata?.round || 0) - Number(b.metadata?.round || 0));
+    const deltas = [];
+    let previous = {
+      facts: new Set(), unknowns: new Set(), hypotheses: new Set(), roles: new Set(), complexity: 0,
+    };
+    for (const round of rounds) {
+      const agents = roundAgents(detail, round, nodes);
+      const profile = round.metadata?.target_profile || {};
+      const current = {
+        facts: roundFactIds(agents),
+        unknowns: asSet(profile.unknowns),
+        hypotheses: asSet(profile.hypotheses),
+        roles: asSet(round.metadata?.roles || agents.map(agent => agent.metadata?.role)),
+        complexity: Number(profile.complexity || 0),
+      };
+      const factIds = difference(current.facts, previous.facts);
+      deltas.push({
+        round: Number(round.metadata?.round || deltas.length + 1),
+        focus: round.metadata?.focus || round.label,
+        newFacts: labels(factIds, nodes),
+        unknownsClosed: difference(previous.unknowns, current.unknowns),
+        unknownsOpened: difference(current.unknowns, previous.unknowns),
+        hypothesesAdded: difference(current.hypotheses, previous.hypotheses),
+        hypothesesRemoved: difference(previous.hypotheses, current.hypotheses),
+        rolesAdded: difference(current.roles, previous.roles),
+        rolesRemoved: difference(previous.roles, current.roles),
+        complexity: current.complexity - previous.complexity,
+      });
+      previous = current;
+    }
+    return deltas;
+  }
+
+  function deltaCard(delta) {
+    const rosterChanged = delta.rolesAdded.length || delta.rolesRemoved.length;
+    const meaningful = delta.newFacts.length || delta.unknownsClosed.length || delta.unknownsOpened.length || delta.hypothesesAdded.length || delta.hypothesesRemoved.length || delta.complexity !== 0 || rosterChanged;
+    return `<article class="trace-card" style="margin-top:7px"><div class="trace-head"><strong>R${esc(delta.round)} Delta · ${esc(delta.focus)}</strong><span>${meaningful ? "profile changed" : "no material profile delta"}</span></div>
+      ${chipList("New facts", delta.newFacts, "new")}
+      ${chipList("Unknowns closed", delta.unknownsClosed, "closed")}
+      ${chipList("Unknowns opened", delta.unknownsOpened, "opened")}
+      ${chipList("Hypotheses +", delta.hypothesesAdded, "hyp-plus")}
+      ${chipList("Hypotheses −", delta.hypothesesRemoved, "hyp-minus")}
+      ${chipList("Agents +", delta.rolesAdded, "agent-plus")}
+      ${chipList("Agents −", delta.rolesRemoved, "agent-minus")}
+      <div class="trace-meta"><span>complexity Δ ${delta.complexity > 0 ? "+" : ""}${esc(delta.complexity)}</span><span>roster_changed=${rosterChanged ? "yes" : "no"}</span></div>
+      ${rosterChanged ? `<div class="trace-callout"><b>为什么换 Agent</b><span>${esc(rosterReason(delta))}</span></div>` : ""}
+    </article>`;
+  }
+
+  async function refreshDelta() {
+    if (refreshing || location.pathname !== "/missions") return;
+    const shell = document.querySelector("#module-page-root .decision-trace-shell");
+    const runId = selectedRun();
+    if (!shell || !runId) return;
+    if (shell.querySelector(`[data-delta-run="${runId}"]`)) return;
+    refreshing = true;
+    try {
+      const response = await fetch(`/api/missions/${encodeURIComponent(runId)}`, {cache:"no-store", headers:{"Accept":"application/json"}});
+      if (!response.ok) return;
+      const detail = await response.json();
+      if (selectedRun() !== runId || !document.contains(shell)) return;
+      const deltas = buildDeltas(detail);
+      const view = document.createElement("section");
+      view.dataset.deltaRun = runId;
+      view.className = "trace-delta-view";
+      view.innerHTML = `<div class="trace-title" style="margin-top:10px"><div><strong>Delta View · 每轮变化</strong><span>新增 Facts、关闭/新增 Unknowns、Hypothesis 与 Agent 阵容变化</span></div><div class="trace-legend"><span>${deltas.length} rounds</span><span>read only</span></div></div>${deltas.map(deltaCard).join("") || `<div class="trace-card" style="margin-top:7px"><span class="trace-muted">尚无 Council round delta。</span></div>`}`;
+      const profile = shell.querySelector(".trace-profile");
+      (profile || shell.querySelector(".trace-title"))?.insertAdjacentElement("afterend", view);
+    } finally {
+      refreshing = false;
+    }
+  }
+
+  const root = document.getElementById("module-page-root");
+  if (root) new MutationObserver(() => queueMicrotask(refreshDelta)).observe(root, {childList:true, subtree:true});
+  window.addEventListener("popstate", () => setTimeout(refreshDelta, 0));
+  window.addEventListener("tonmen:runtime-event", event => {
+    if (["intelligence.created", "plan.revised", "council.round", "reasoning.decided", "loop.stopped"].includes(event.detail?.type || "")) {
+      document.querySelector(".trace-delta-view")?.remove();
+      setTimeout(refreshDelta, 100);
+    }
+  });
+  refreshDelta();
+})();
