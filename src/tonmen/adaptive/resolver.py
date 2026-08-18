@@ -76,6 +76,10 @@ class AdaptiveParameterResolver:
         return {
             "target_kind": profile.target_kind,
             "complexity": profile.complexity,
+            "ports": tuple(profile.ports),
+            "services": tuple(profile.services),
+            "dns_addresses": tuple(profile.dns_addresses),
+            "tls_versions": tuple(profile.tls_versions),
             "port_count": len(profile.ports),
             "service_count": len(profile.services),
             "web_url_count": len(profile.web_urls),
