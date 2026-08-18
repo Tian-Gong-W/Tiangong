@@ -34,6 +34,15 @@ class HttpxAdapter(ToolAdapter):
         if not isinstance(timeout, int) or not 1 <= timeout <= 60:
             raise ValueError("timeout must be an integer from 1 to 60")
 
+    def adapt_parameters(self, request: ToolRequest, context):
+        complexity = max(1, min(5, int(context.get("complexity", 1))))
+        parameters = dict(request.parameters)
+        parameters["timeout"] = max(5, min(20, 6 + complexity * 2))
+        parameters["follow_redirects"] = False
+        resolved = ToolRequest(tool=request.tool, target=request.target, parameters=parameters, context=request.context)
+        self.validate(resolved)
+        return parameters
+
     def build_argv(self, request: ToolRequest) -> tuple[str, ...]:
         self.validate(request)
         argv: list[str] = [
