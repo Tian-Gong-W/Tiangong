@@ -73,6 +73,7 @@ def build_target_profile(plan: MissionPlan, run: MissionRun) -> TargetProfile:
     service_fact_ids: list[str] = []
     web_fact_ids: list[str] = []
     finding_fact_ids: list[str] = []
+    endpoint_coverage_observed = False
 
     for node in run.graph.nodes.values():
         data = node.metadata.get("data", {})
@@ -97,6 +98,8 @@ def build_target_profile(plan: MissionPlan, run: MissionRun) -> TargetProfile:
             url = str(data.get("url") or node.metadata.get("target") or "").strip()
             if url:
                 web_urls.append(url)
+            if data.get("depth") is not None:
+                endpoint_coverage_observed = True
             tech = data.get("technologies") or data.get("technology") or data.get("tech")
             if isinstance(tech, str):
                 technologies.extend(part.strip().lower() for part in tech.replace("[", "").replace("]", "").split(","))
@@ -119,8 +122,7 @@ def build_target_profile(plan: MissionPlan, run: MissionRun) -> TargetProfile:
     if has_web and not web_fact_ids:
         unknowns.append("web_reachability_and_technology")
     if web_fact_ids:
-        crawler_executed = any(step.tool == "crawler" and step.evidence_id for step in run.steps)
-        if not crawler_executed:
+        if not endpoint_coverage_observed:
             unknowns.append("same_origin_endpoint_coverage")
         if not finding_fact_ids:
             unknowns.append("validation_coverage")
