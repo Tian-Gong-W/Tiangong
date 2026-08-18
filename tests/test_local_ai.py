@@ -152,9 +152,12 @@ def test_ollama_status_and_advisory_are_no_key_structured_and_fact_bounded():
     assert chat["payload"]["stream"] is False
     assert isinstance(chat["payload"]["format"], dict)
     assert chat["payload"]["options"]["temperature"] == 0
-    prompt = chat["payload"]["messages"][0]["content"]
-    assert "NO execution authority" in prompt
-    assert "raw\nargv" not in prompt
+    system_prompt = chat["payload"]["messages"][0]["content"]
+    user_context = chat["payload"]["messages"][1]["content"]
+    assert "NO execution authority" in system_prompt
+    assert "argv" not in user_context
+    assert "stdout" not in user_context
+    assert "stderr" not in user_context
 
 
 def _run_with_evidence(tmp_path):
