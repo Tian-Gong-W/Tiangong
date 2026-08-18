@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 from uuid import uuid4
 
-from tonmen.adaptive import build_target_profile
+from tonmen.capabilities import CapabilityCandidate, CapabilityCatalog
 from tonmen.ai import AIProviderError
 from tonmen.core.runtime import TonmenRuntime
 from tonmen.evidence import GraphNode
-from tonmen.missions import MissionPlan, MissionRun, MissionRunState, MissionStep, StepExecutionState
+from tonmen.missions import MissionPlan, MissionRun, MissionRunState, MissionStep
 
 from .planner import MissionPlanner
 
@@ -21,41 +22,27 @@ class PlanExpansion:
     expected_information_gain: str
     basis_fact_ids: tuple[str, ...]
     profile_unknowns: tuple[str, ...]
+    deterministic_score: float = 0.0
+    score_reasons: tuple[str, ...] = ()
+    candidate_rankings: tuple[dict[str, Any], ...] = ()
 
 
 class AdaptiveMissionPlanner:
-    """Grow a mission one governed capability at a time from recorded evidence.
+    """Grow a mission one governed semantic capability at a time from evidence.
 
-    The deterministic planner selects only tools already registered in TONMEN and
-    delegates typed parameter validation, Scope and Policy checks to
-    MissionPlanner.build_step(). Optional local AI may add evidence-analysis advisory
-    nodes, but those nodes never choose tools, mutate the plan, expand Scope, issue
-    approval, or bypass REPORT_ONLY.
+    Registered ToolSpecs declare their prerequisites, information gain and planning
+    cost. CapabilityCatalog ranks those declarations against the current mission state.
+    This planner therefore has no fixed tool chain. Optional local AI remains advisory
+    only and cannot mutate ranking authority, Scope, Approval or REPORT_ONLY.
     """
 
     def __init__(self, runtime: TonmenRuntime) -> None:
         self.runtime = runtime
         self.base = MissionPlanner(runtime)
+        self.catalog = CapabilityCatalog(runtime)
 
     def seed(self, target: str) -> MissionPlan:
         return self.base.seed(target)
-
-    @staticmethod
-    def _queued_tools(plan: MissionPlan) -> set[str]:
-        return {step.tool for step in plan.steps}
-
-    @staticmethod
-    def _completed_tools(run: MissionRun) -> set[str]:
-        return {
-            step.tool
-            for step in run.steps
-            if step.state in {StepExecutionState.SUCCEEDED, StepExecutionState.DEGRADED, StepExecutionState.SKIPPED}
-        }
-
-    @staticmethod
-    def _fact_ids(run: MissionRun, *kinds: str) -> tuple[str, ...]:
-        wanted = set(kinds)
-        return tuple(node.id for node in run.graph.nodes.values() if node.kind in wanted)[:16]
 
     @staticmethod
     def _ai_snapshot(run: MissionRun) -> tuple[str, ...]:
@@ -162,24 +149,23 @@ class AdaptiveMissionPlanner:
                 local_only=True,
             )
 
-    def _build(
-        self,
-        plan: MissionPlan,
-        run: MissionRun,
-        tool: str,
-        *,
-        rationale: str,
-        expected_information_gain: str,
-        basis_fact_ids: tuple[str, ...],
-    ) -> PlanExpansion:
-        profile = build_target_profile(plan, run)
-        step = self.base.build_step(tool, plan.target, rationale=rationale)
+    def _build(self, plan: MissionPlan, run: MissionRun, candidate: CapabilityCandidate, rankings) -> PlanExpansion:
+        step = self.base.build_step(
+            candidate.tool,
+            plan.target,
+            parameters=candidate.parameters,
+            rationale=candidate.rationale,
+        )
+        profile = self.catalog.runtime and __import__("tonmen.adaptive", fromlist=["build_target_profile"]).build_target_profile(plan, run)
         return PlanExpansion(
             step=step,
-            rationale=rationale,
-            expected_information_gain=expected_information_gain,
-            basis_fact_ids=basis_fact_ids,
-            profile_unknowns=profile.unknowns,
+            rationale=candidate.rationale,
+            expected_information_gain=candidate.expected_information_gain,
+            basis_fact_ids=candidate.basis_fact_ids,
+            profile_unknowns=tuple(profile.unknowns),
+            deterministic_score=candidate.score,
+            score_reasons=candidate.reasons,
+            candidate_rankings=tuple(item.audit_payload() for item in rankings[:8]),
         )
 
     def propose(self, plan: MissionPlan, run: MissionRun) -> PlanExpansion | None:
@@ -189,52 +175,14 @@ class AdaptiveMissionPlanner:
             return None
 
         self._record_local_ai_advisory(plan, run)
-        profile = build_target_profile(plan, run)
-        queued = self._queued_tools(plan)
-        completed = self._completed_tools(run)
-
-        # Host/IP seeds first establish whether a Web-capable service actually exists.
-        # An explicit HTTP(S) target skips this branch and begins at httpx.
-        if "nmap" in completed and "httpx" not in queued and profile.has_web_surface:
-            basis = self._fact_ids(run, "intelligence.service")
-            return self._build(
-                plan,
-                run,
-                "httpx",
-                rationale="Network evidence exposes an HTTP-capable service; resolve the live Web surface next.",
-                expected_information_gain="HTTP reachability, status, title and technology evidence",
-                basis_fact_ids=basis,
-            )
-
-        if "httpx" in completed and "crawler" not in queued and profile.has_web_surface:
-            basis = self._fact_ids(run, "intelligence.web", "intelligence.service")
-            return self._build(
-                plan,
-                run,
-                "crawler",
-                rationale="HTTP evidence confirms a Web surface; add bounded same-origin endpoint coverage.",
-                expected_information_gain="same-origin pages, routes and page metadata",
-                basis_fact_ids=basis,
-            )
-
-        if "crawler" in completed and "nuclei" not in queued and profile.has_web_surface:
-            basis = self._fact_ids(run, "intelligence.web")
-            return self._build(
-                plan,
-                run,
-                "nuclei",
-                rationale=(
-                    "Evidence-backed Web coverage is available; propose bounded template validation as the next "
-                    "capability, still behind explicit human approval."
-                ),
-                expected_information_gain="evidence-backed vulnerability validation findings",
-                basis_fact_ids=basis,
-            )
-
-        return None
+        rankings = self.catalog.rank(plan, run)
+        candidate = next((item for item in rankings if item.eligible), None)
+        if candidate is None:
+            return None
+        return self._build(plan, run, candidate, rankings)
 
     def apply(self, plan: MissionPlan, run: MissionRun, proposal: PlanExpansion) -> MissionPlan:
-        """Append a proposal to both immutable plan history and mutable run state."""
+        """Append a proposal to immutable plan history and mutable run state."""
         revised = plan.extend([proposal.step])
         execution = run.append_planned_step(proposal.step)
 
@@ -268,6 +216,10 @@ class AdaptiveMissionPlanner:
                     "expected_information_gain": proposal.expected_information_gain,
                     "basis_fact_ids": list(proposal.basis_fact_ids),
                     "profile_unknowns": list(proposal.profile_unknowns),
+                    "deterministic_score": proposal.deterministic_score,
+                    "score_reasons": list(proposal.score_reasons),
+                    "candidate_rankings": list(proposal.candidate_rankings),
+                    "selection_engine": "capability_catalog",
                     "execution_authority": False,
                 },
             )
@@ -282,6 +234,8 @@ class AdaptiveMissionPlanner:
         execution.metadata["plan_rationale"] = proposal.rationale
         execution.metadata["expected_information_gain"] = proposal.expected_information_gain
         execution.metadata["basis_fact_ids"] = list(proposal.basis_fact_ids)
+        execution.metadata["deterministic_score"] = proposal.deterministic_score
+        execution.metadata["selection_engine"] = "capability_catalog"
 
         if self.runtime.events is not None:
             self.runtime.events.publish(
@@ -297,6 +251,9 @@ class AdaptiveMissionPlanner:
                 requires_approval=proposal.step.requires_approval,
                 rationale=proposal.rationale,
                 expected_information_gain=proposal.expected_information_gain,
+                deterministic_score=proposal.deterministic_score,
+                score_reasons=list(proposal.score_reasons),
+                selection_engine="capability_catalog",
                 basis_fact_ids=list(proposal.basis_fact_ids),
             )
         return revised
