@@ -20,7 +20,7 @@ def test_why_graph_traces_dynamic_tool_back_to_evidence_and_judgment():
     assert 'edge.relation === "supports_plan_revision"' in js
     assert 'edge.relation === "adds_step"' in js
     assert 'node.kind === "planning.revision"' in js
-    assert 'node.kind !== "council.round"' in js
+    assert 'round.kind !== "council.round"' in js
     assert "detail.reasoning" in js
     assert "expected_information_gain" in js
     assert "execution_authority" in js
