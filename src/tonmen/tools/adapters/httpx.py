@@ -76,11 +76,11 @@ class HttpxAdapter(ToolAdapter):
 
     def build_argv(self, request: ToolRequest) -> tuple[str, ...]:
         self.validate(request)
-        resolution = resolve_projectdiscovery_httpx()
-        if not resolution.ready or not resolution.path:
-            raise RuntimeError(resolution.detail)
+        # Production ToolExecutor injects an identity-verified absolute path for local
+        # subprocess execution. Standalone/injected-runner tests keep the logical name.
+        binary = str(request.context.get("_verified_binary_path") or "httpx")
         argv: list[str] = [
-            resolution.path,
+            binary,
             "-u", str(request.target),
             "-silent",
             "-status-code",
