@@ -341,3 +341,50 @@
     document.getElementById("mission-select")?.addEventListener("change", refreshHub);
   }
 })();
+
+(() => {
+  "use strict";
+
+  if ((location.pathname.replace(/\/+$/, "") || "/") !== "/") return;
+
+  function currentRunId() {
+    const selected = document.getElementById("mission-select")?.value;
+    if (selected) return selected;
+    for (const link of document.querySelectorAll("#operator-next a[href*='?run=']")) {
+      try {
+        const run = new URL(link.href, location.origin).searchParams.get("run");
+        if (run) return run;
+      } catch (_) {}
+    }
+    return "";
+  }
+
+  function installTraceLink() {
+    const next = document.getElementById("operator-next");
+    const runId = currentRunId();
+    if (!next || !runId) return;
+    let link = next.querySelector("[data-open-decision-trace]");
+    if (!link) {
+      link = document.createElement("a");
+      link.dataset.openDecisionTrace = "";
+      link.textContent = "查看 Decision Trace / Delta →";
+      next.appendChild(link);
+    }
+    link.dataset.openDecisionTrace = runId;
+    link.href = `/missions?run=${encodeURIComponent(runId)}`;
+  }
+
+  document.addEventListener("click", event => {
+    const link = event.target.closest?.("[data-open-decision-trace]");
+    if (!link) return;
+    const runId = link.dataset.openDecisionTrace || currentRunId();
+    if (runId) sessionStorage.setItem("tonmen.trace.activeRun", runId);
+  });
+
+  const next = document.getElementById("operator-next");
+  if (next) new MutationObserver(() => queueMicrotask(installTraceLink)).observe(next, {childList:true, subtree:true});
+  const root = document.getElementById("operator-hub") || document.body;
+  new MutationObserver(() => queueMicrotask(installTraceLink)).observe(root, {childList:true, subtree:true});
+  document.getElementById("mission-select")?.addEventListener("change", () => setTimeout(installTraceLink, 0));
+  installTraceLink();
+})();
