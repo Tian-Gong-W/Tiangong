@@ -230,3 +230,93 @@
     if (list) list.innerHTML = `<div class="artifact-empty error">读取失败：${esc(error.message || error)}</div>`;
   });
 })();
+
+(() => {
+  "use strict";
+
+  const path = location.pathname.replace(/\/+$/, "") || "/";
+  if (path !== "/missions") return;
+
+  const esc = value => String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+  const short = value => String(value || "").slice(0, 8);
+  let busy = false;
+
+  function selectedRun() {
+    return new URLSearchParams(location.search).get("run") || document.querySelector("#module-page-root tr.selected[data-select-run]")?.dataset.selectRun || null;
+  }
+
+  function latestCouncilRound(detail) {
+    return (detail.graph?.nodes || [])
+      .filter(node => node.kind === "council.round")
+      .slice()
+      .sort((a, b) => Number(a.metadata?.round || 0) - Number(b.metadata?.round || 0))
+      .at(-1) || null;
+  }
+
+  function conflictAnalyst(detail, round) {
+    if (!round) return null;
+    const nodes = new Map((detail.graph?.nodes || []).map(node => [node.id, node]));
+    const agents = (detail.graph?.edges || [])
+      .filter(edge => edge.source === round.id && edge.relation === "contains_subagent")
+      .map(edge => nodes.get(edge.target)).filter(Boolean);
+    return agents.find(node => node.metadata?.role === "conflict_analyst") || null;
+  }
+
+  function conflictFacts(detail, ids) {
+    const nodes = new Map((detail.graph?.nodes || []).map(node => [node.id, node]));
+    return (ids || []).map(id => nodes.get(id)).filter(Boolean);
+  }
+
+  function renderConfidence(detail) {
+    const round = latestCouncilRound(detail);
+    const posture = round?.metadata?.evidence_confidence || null;
+    if (!posture) {
+      return `<div class="confidence-empty">等待 Council 写入 Evidence Confidence。缺少证据不会自动视为反证。</div>`;
+    }
+    const analyst = conflictAnalyst(detail, round);
+    const facts = conflictFacts(detail, posture.conflict_fact_ids || []);
+    const keys = posture.conflict_keys || [];
+    return `
+      <div class="confidence-stats">
+        <div data-confidence="supported"><span>SUPPORTED</span><strong>${esc(posture.supported ?? 0)}</strong><small>同一断言当前无显式冲突</small></div>
+        <div data-confidence="conflicted"><span>CONFLICTED</span><strong>${esc(posture.conflicted ?? 0)}</strong><small>可比较 Fact 出现明确不同值</small></div>
+        <div data-confidence="unresolved"><span>UNRESOLVED</span><strong>${esc(posture.unresolved ?? 0)}</strong><small>证据不足；不等于反证</small></div>
+      </div>
+      ${keys.length ? `<div class="confidence-conflicts"><strong>Conflict subjects</strong>${keys.map(key => `<span>${esc(key)}</span>`).join("")}</div>` : `<div class="confidence-clear">当前没有显式 comparable-fact conflict。</div>`}
+      ${facts.length ? `<div class="confidence-facts"><strong>Conflict basis Facts</strong>${facts.map(node => `<span title="${esc(node.id)}">${esc(node.label)} · ${esc(short(node.id))}</span>`).join("")}</div>` : ""}
+      ${analyst ? `<div class="confidence-analyst"><strong>conflict_analyst · R${esc(round.metadata?.round ?? "?")}</strong><span>${esc(analyst.metadata?.summary || analyst.label)}</span><small>execution_authority=${analyst.metadata?.execution_authority === false ? "false" : "—"}</small></div>` : ""}`;
+  }
+
+  async function installConfidence() {
+    if (busy) return;
+    const shell = document.querySelector("#module-page-root .decision-trace-shell");
+    const runId = selectedRun();
+    if (!shell || !runId || shell.querySelector(`[data-confidence-run="${CSS.escape(runId)}"]`)) return;
+    busy = true;
+    try {
+      const response = await fetch(`/api/missions/${encodeURIComponent(runId)}`, {cache:"no-store", headers:{"Accept":"application/json"}});
+      if (!response.ok) return;
+      const detail = await response.json();
+      if (selectedRun() !== runId || !document.contains(shell)) return;
+      const view = document.createElement("section");
+      view.className = "evidence-confidence-view";
+      view.dataset.confidenceRun = runId;
+      view.innerHTML = `<div class="trace-title confidence-title"><div><strong>Evidence Confidence · 证据置信度 / 冲突</strong><span>Support / Conflict / Unresolved · absence of evidence ≠ contradictory evidence</span></div><div class="trace-legend"><span>read only</span><span>Python assessed</span></div></div>${renderConfidence(detail)}`;
+      const profile = shell.querySelector(".trace-profile");
+      (profile || shell.querySelector(".trace-title"))?.insertAdjacentElement("afterend", view);
+    } finally {
+      busy = false;
+    }
+  }
+
+  const root = document.getElementById("module-page-root");
+  if (root) new MutationObserver(() => queueMicrotask(installConfidence)).observe(root, {childList:true, subtree:true});
+  window.addEventListener("popstate", () => setTimeout(installConfidence, 0));
+  window.addEventListener("tonmen:runtime-event", event => {
+    if (["intelligence.created", "reasoning.decided", "council.round", "loop.stopped"].includes(event.detail?.type || "")) {
+      document.querySelector("#module-page-root .evidence-confidence-view")?.remove();
+      setTimeout(installConfidence, 120);
+    }
+  });
+  installConfidence();
+})();
