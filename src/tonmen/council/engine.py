@@ -24,10 +24,10 @@ _FOCI = (
 class AssessmentCouncil:
     """Evidence-only adaptive subagent council.
 
-    Council composition changes with the live target profile and explicit evidence
-    conflicts, but the governance envelope is fixed: 7-10 rounds and 3-5 read-only
-    subagents per round. Members never execute tools, expand Scope, issue approvals,
-    or mutate the mission plan.
+    Council composition changes with the live target profile, explicit evidence
+    conflicts and optional local AI advisory provenance, but the governance envelope
+    is fixed: 7-10 rounds and 3-5 read-only subagents per round. Members never execute
+    tools, expand Scope, issue approvals, or mutate the mission plan.
     """
 
     def __init__(
@@ -64,6 +64,11 @@ class AssessmentCouncil:
         return [node for node in run.graph.nodes.values() if node.kind == "intelligence.finding"]
 
     @staticmethod
+    def _latest_ai_advisory(run: MissionRun):
+        advisories = [node for node in run.graph.nodes.values() if node.kind == "ai.advisory"]
+        return advisories[-1] if advisories else None
+
+    @staticmethod
     def _recommended_action(run: MissionRun) -> str:
         if run.state is MissionRunState.WAITING_APPROVAL:
             return "await_human_approval"
@@ -93,6 +98,25 @@ class AssessmentCouncil:
                 "Absence of evidence is not treated as contradictory evidence."
             )
             fact_ids = confidence.conflict_fact_ids or fact_ids
+        elif role == "ai_advisory_reviewer":
+            advisory = self._latest_ai_advisory(run)
+            if advisory is None:
+                summary = f"{focus}: no local AI advisory is recorded; deterministic evidence analysis remains authoritative."
+                fact_ids = ()
+            else:
+                metadata = advisory.metadata
+                basis = tuple(
+                    fact_id
+                    for fact_id in metadata.get("basis_fact_ids", [])
+                    if fact_id in run.graph.nodes
+                )
+                hypotheses = metadata.get("hypotheses", [])
+                summary = (
+                    f"{focus}: local {metadata.get('provider', 'AI')}/{metadata.get('model', 'model')} advisory "
+                    f"has {len(hypotheses)} hypothesis item(s), challenge={bool(metadata.get('challenge_decision', False))}; "
+                    f"review Fact basis before accepting any analytical claim. execution_authority=false."
+                )
+                fact_ids = basis
         elif role == "network_surface_mapper":
             summary = (
                 f"{focus}: observed ports={','.join(str(port) for port in profile.ports) or 'none'}; "
@@ -173,6 +197,7 @@ class AssessmentCouncil:
         focus = _FOCI[min(round_number - 1, len(_FOCI) - 1)]
         profile = build_target_profile(plan, run)
         confidence = assess_evidence_confidence(plan, run)
+        ai_advisory = self._latest_ai_advisory(run)
         roster = select_agent_roster(
             plan,
             run,
@@ -207,6 +232,18 @@ class AssessmentCouncil:
                         "conflict_keys": [item.key for item in confidence.conflicted],
                         "conflict_fact_ids": list(confidence.conflict_fact_ids),
                     },
+                    "local_ai_advisory": (
+                        {
+                            "id": ai_advisory.id,
+                            "provider": ai_advisory.metadata.get("provider"),
+                            "model": ai_advisory.metadata.get("model"),
+                            "challenge_decision": bool(ai_advisory.metadata.get("challenge_decision", False)),
+                            "basis_fact_ids": list(ai_advisory.metadata.get("basis_fact_ids", [])),
+                            "execution_authority": False,
+                        }
+                        if ai_advisory is not None
+                        else None
+                    ),
                     "desired_rounds": desired_rounds,
                 },
             )
@@ -216,6 +253,8 @@ class AssessmentCouncil:
             run.graph.link(session_id, "contains_assessment_round", round_id)
         if decision_id and decision_id in run.graph.nodes:
             run.graph.link(decision_id, "reviewed_by", round_id)
+        if ai_advisory is not None:
+            run.graph.link(ai_advisory.id, "reviewed_in", round_id)
 
         action = self._recommended_action(run)
         for assignment in roster:
@@ -242,6 +281,8 @@ class AssessmentCouncil:
                 )
             )
             run.graph.link(round_id, "contains_subagent", agent_id)
+            if role == "ai_advisory_reviewer" and ai_advisory is not None:
+                run.graph.link(ai_advisory.id, "reviewed_by", agent_id)
             for evidence_id in evidence_ids[-8:]:
                 if evidence_id in run.graph.nodes:
                     run.graph.link(evidence_id, "reviewed_by", agent_id)
