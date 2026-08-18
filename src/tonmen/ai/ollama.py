@@ -10,7 +10,7 @@ from urllib.request import ProxyHandler, Request, build_opener
 
 from tonmen.core.config import validate_local_ai_base_url, validate_local_ai_model
 
-from .model import AIAdvisory, AIHypothesis, AIProviderError, AIProviderStatus
+from .model import AICapabilityPreference, AIAdvisory, AIHypothesis, AIProviderError, AIProviderStatus
 
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 
@@ -38,14 +38,31 @@ _ADVISORY_SCHEMA = {
         "challenge_decision": {"type": "boolean"},
         "challenge_reason": {"type": "string"},
         "basis_fact_ids": {"type": "array", "items": {"type": "string"}, "maxItems": 16},
+        "capability_preferences": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "tool": {"type": "string"},
+                    "preference": {"type": "number", "minimum": -1, "maximum": 1},
+                    "rationale": {"type": "string"},
+                    "basis_fact_ids": {"type": "array", "items": {"type": "string"}, "maxItems": 16},
+                },
+                "required": ["tool", "preference", "rationale", "basis_fact_ids"],
+            },
+        },
     },
     "required": ["summary", "focus", "hypotheses", "challenge_decision", "challenge_reason", "basis_fact_ids"],
 }
 
 _SYSTEM_PROMPT = """You are TONMEN's local evidence-analysis advisor.
 You have NO execution authority. Evaluate only the supplied target profile, evidence facts,
-confidence/conflict posture and deterministic decision. Do not create shell commands, raw
-argv, payloads, credentials, session-takeover steps, persistence, scope expansion or approval.
+confidence/conflict posture, deterministic decision and catalog candidates. Do not create shell
+commands, raw argv, parameters, payloads, credentials, session-takeover steps, persistence,
+scope expansion or approval. Capability preferences may name ONLY candidate tool identifiers
+already supplied by TONMEN and are advisory tie-break signals, never execution instructions.
 Return only the requested structured JSON. Keep claims tied to supplied fact IDs. A missing
 fact is uncertainty, not contradictory evidence. If you challenge the deterministic decision,
 explain the evidence conflict or analytical gap; do not propose an unauthorized action."""
@@ -156,7 +173,13 @@ class OllamaProvider:
             detail=f"local Ollama model ready: {self.model}",
         )
 
-    def advise(self, context: dict[str, Any], *, allowed_fact_ids: set[str]) -> AIAdvisory:
+    def advise(
+        self,
+        context: dict[str, Any],
+        *,
+        allowed_fact_ids: set[str],
+        allowed_candidate_tools: set[str] | None = None,
+    ) -> AIAdvisory:
         prompt = (
             "Review this governed assessment snapshot. Return structured evidence analysis only.\n\n"
             + json.dumps(context, ensure_ascii=False, sort_keys=True)
@@ -208,6 +231,31 @@ class OllamaProvider:
                     )
                 )
 
+        allowed_tools = set(allowed_candidate_tools or ())
+        preferences: list[AICapabilityPreference] = []
+        raw_preferences = payload.get("capability_preferences", [])
+        if allowed_tools and isinstance(raw_preferences, list):
+            seen_tools: set[str] = set()
+            for item in raw_preferences[:8]:
+                if not isinstance(item, dict):
+                    continue
+                tool = _clean_text(item.get("tool"), limit=128)
+                if tool not in allowed_tools or tool in seen_tools:
+                    continue
+                seen_tools.add(tool)
+                try:
+                    preference = float(item.get("preference", 0.0))
+                except (TypeError, ValueError):
+                    preference = 0.0
+                preferences.append(
+                    AICapabilityPreference(
+                        tool=tool,
+                        preference=max(-1.0, min(1.0, preference)),
+                        rationale=_clean_text(item.get("rationale"), limit=800),
+                        basis_fact_ids=fact_ids(item.get("basis_fact_ids")),
+                    )
+                )
+
         raw_focus = payload.get("focus", [])
         focus = tuple(
             _clean_text(item, limit=160)
@@ -216,6 +264,8 @@ class OllamaProvider:
         )
         basis = fact_ids(payload.get("basis_fact_ids"))
         for item in hypotheses:
+            basis += tuple(fact_id for fact_id in item.basis_fact_ids if fact_id not in basis)
+        for item in preferences:
             basis += tuple(fact_id for fact_id in item.basis_fact_ids if fact_id not in basis)
         basis = basis[:16]
 
@@ -230,4 +280,5 @@ class OllamaProvider:
             basis_fact_ids=basis,
             execution_authority=False,
             local_only=True,
+            capability_preferences=tuple(preferences),
         )
