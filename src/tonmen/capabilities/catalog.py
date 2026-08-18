@@ -98,6 +98,21 @@ class CapabilityCatalog:
         return bool(getattr(profile, requirement, False))
 
     @staticmethod
+    def _profile_context(profile) -> dict[str, Any]:
+        return {
+            "target_kind": profile.target_kind,
+            "complexity": profile.complexity,
+            "port_count": len(profile.ports),
+            "service_count": len(profile.services),
+            "web_url_count": len(profile.web_urls),
+            "technology_count": len(profile.technologies),
+            "finding_count": len(profile.findings),
+            "severe_findings": profile.severe_findings,
+            "unknowns": tuple(profile.unknowns),
+            "hypotheses": tuple(item.key for item in profile.hypotheses),
+        }
+
+    @staticmethod
     def _target_for_mode(target: str, mode: str) -> str:
         if mode != "host":
             return target
@@ -135,7 +150,7 @@ class CapabilityCatalog:
         capability can appear here even when its live preconditions are not yet met;
         `rank()` is the authority for dynamic eligibility and selection.
         """
-        _ = target_kind(target)  # validate/normalize the target classification path
+        _ = target_kind(target)
         return tuple(
             adapter.spec.name
             for adapter in self.runtime.registry
@@ -204,6 +219,11 @@ class CapabilityCatalog:
         request = ToolRequest(tool=spec.name, target=step_target, parameters=parameters)
         requires_approval = False
         try:
+            # Candidate parameters are adapted by the adapter from bounded profile
+            # context before they become part of a dynamic MissionStep. This uses the
+            # actual runtime registry, including plugin adapters.
+            parameters = dict(adapter.adapt_parameters(request, self._profile_context(profile)))
+            request = ToolRequest(tool=spec.name, target=step_target, parameters=parameters)
             adapter.validate(request)
             policy = self.runtime.policy.evaluate(spec, request)
             requires_approval = policy.decision is Decision.REQUIRE_APPROVAL
