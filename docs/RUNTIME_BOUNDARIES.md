@@ -29,7 +29,7 @@ Arbitrary shell execution remains disabled.
 
 A filename match is not sufficient readiness for an external CLI whose name may collide with another package.
 
-`httpx` is the first explicit identity-enforced adapter because the Python `httpx` package can install a CLI with the same executable name as ProjectDiscovery HTTPx. TONMEN now scans PATH candidates in order and probes the CLI contract it actually depends on (`-silent`, `-status-code`, `-tech-detect`, `-timeout`).
+`httpx` is the first explicit identity-enforced adapter because the Python `httpx` package can install a CLI with the same executable name as ProjectDiscovery HTTPx. TONMEN scans PATH candidates in order and probes the CLI contract it actually depends on (`-silent`, `-status-code`, `-tech-detect`, `-timeout`).
 
 If an incompatible `httpx` shadows a later compatible ProjectDiscovery binary, Doctor/readiness records the rejected candidate and selects the later compatible executable. Real local execution uses the **verified absolute path** rather than resolving the name through PATH a second time.
 
@@ -64,7 +64,7 @@ The same bound applies to injected/test runners and timeout evidence.
 
 Discovery-oriented tools continue to use the generic Executor timeout unless their adapter declares a bounded `ToolSpec.execution_timeout_seconds`.
 
-Approval-gated Nuclei validation currently declares a **600 second** typed process budget because a bounded medium/high/critical template set can legitimately exceed the generic 120 second discovery-oriented default.
+Approval-gated Nuclei validation declares a **600 second** typed process budget because a bounded medium/high/critical template set can legitimately exceed the generic 120 second discovery-oriented default.
 
 MissionLoop separately maintains a global wall-clock ceiling. Coordinator derives the remaining global budget from `MissionRun.started_at` plus the latest `loop.session.max_duration_seconds` and passes that value to Executor.
 
@@ -136,11 +136,29 @@ New mission snapshots under `missions/` are authenticated with **HMAC-SHA256** u
 
 As with Audit, the integrity key is local software state, not an external/HSM trust anchor.
 
+## Authenticated Report bundles
+
+New Mission Report pairs (`reports/<run>.json` and `reports/<run>.md`) are covered by a per-run integrity manifest authenticated with **HMAC-SHA256** and a separate local `0600` Report key.
+
+The manifest authenticates the exact SHA-256 digest of both persisted files. Reads of an authenticated bundle fail closed when:
+
+- the JSON report bytes change;
+- the Markdown report bytes change;
+- the manifest changes;
+- either report file disappears;
+- the Report HMAC key is missing or invalid.
+
+Legacy JSON/Markdown report pairs without a manifest remain readable for migration and are upgraded on their next save. Deleting a report also deletes its integrity sidecar.
+
+The Report key is local software state like the Audit/Chronicle keys; this is tamper detection inside the local trust boundary, not an external signature service.
+
 ## Local Console control boundary
 
 The Console binds only to loopback. Mutating requests require a per-server random CSRF token and same-Origin/Host validation. Responses also use restrictive CSP, `X-Frame-Options: DENY`, `nosniff`, and `Referrer-Policy: no-referrer`.
 
-TONMEN does not currently implement a multi-user remote login service; the Console is intentionally a local operator surface rather than a network management plane.
+In addition to the bind restriction, every GET/POST request now requires a syntactically valid loopback `Host` header (`localhost`, `127.0.0.1`, or `::1`, with an optional port). Non-loopback or malformed Host values are rejected with `421` before API routing or CSRF processing. This makes the local-control-plane assumption explicit and narrows Host-header / DNS-rebinding style entry paths.
+
+TONMEN does not implement a multi-user remote login service; the Console is intentionally a local operator surface rather than a network management plane.
 
 ## REPORT_ONLY remains mandatory
 
