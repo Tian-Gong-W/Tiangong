@@ -7,7 +7,9 @@ from pathlib import Path
 from uuid import uuid4
 
 from .inspector import ArtifactInspector
+from .linkage import inspect_linkage
 from .model import ArtifactReport
+from .structure import inspect_structure
 
 
 def _private_dir(path: Path) -> None:
@@ -83,6 +85,18 @@ class ArtifactStore:
 
         report_path = self.reports / f"{report.sha256}.json"
         payload = report.as_dict()
+        structure = inspect_structure(
+            data,
+            format=report.format,
+            bitness=report.bitness,
+            endianness=report.endianness,
+        )
+        linkage = inspect_linkage(
+            data,
+            format=report.format,
+            bitness=report.bitness,
+            endianness=report.endianness,
+        )
         payload.update(
             {
                 "artifact_id": report.sha256,
@@ -90,6 +104,8 @@ class ArtifactStore:
                 "report_path": str(report_path.relative_to(self.workspace)),
                 "content_addressed": True,
                 "execution_performed": False,
+                "structure": structure,
+                "linkage": linkage,
             }
         )
         encoded = (json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
@@ -133,6 +149,11 @@ class ArtifactStore:
                 _validate_sha256(digest)
             except ValueError:
                 continue
+            linkage = payload.get("linkage") if isinstance(payload.get("linkage"), dict) else {}
+            structure = payload.get("structure") if isinstance(payload.get("structure"), dict) else {}
+            imports = linkage.get("imports") if isinstance(linkage.get("imports"), list) else []
+            dependencies = linkage.get("dependencies") if isinstance(linkage.get("dependencies"), list) else []
+            sections = structure.get("sections") if isinstance(structure.get("sections"), list) else []
             entries.append(
                 {
                     "artifact_id": digest,
@@ -142,6 +163,9 @@ class ArtifactStore:
                     "bitness": payload.get("bitness"),
                     "size": payload.get("size"),
                     "inspected_at": payload.get("inspected_at"),
+                    "sections": int(structure.get("sections_parsed", len(sections)) or 0),
+                    "dependencies": len(dependencies),
+                    "imports": len(imports),
                     "execution_performed": False,
                 }
             )
