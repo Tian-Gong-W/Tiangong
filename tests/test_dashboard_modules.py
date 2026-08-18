@@ -22,6 +22,7 @@ def test_console_exposes_full_module_route_map():
         "/loop",
         "/chronicle",
         "/approval",
+        "/artifacts",
         "/settings",
     }
 
@@ -32,6 +33,8 @@ def test_module_workspace_assets_are_packaged_and_routed():
     css = static.joinpath("module-pages.css").read_text(encoding="utf-8")
     deck = static.joinpath("deck.js").read_text(encoding="utf-8")
     operator_css = static.joinpath("history-delete.css").read_text(encoding="utf-8")
+    artifacts_js = static.joinpath("artifacts.js").read_text(encoding="utf-8")
+    artifacts_css = static.joinpath("artifacts.css").read_text(encoding="utf-8")
 
     for route in (
         "/missions",
@@ -63,6 +66,15 @@ def test_module_workspace_assets_are_packaged_and_routed():
     assert "const plannedSteps" not in deck
     assert ".operator-hub" in operator_css
 
+    assert "/artifacts" in artifacts_js
+    assert "/api/artifacts/inspect" in artifacts_js
+    assert "STATIC ONLY" in artifacts_js
+    assert "EXECUTION OFF" in artifacts_js
+    assert "32 * 1024 * 1024" in artifacts_js
+    assert "X-TONMEN-FILENAME" in artifacts_js
+    assert "server" not in artifacts_js.lower() or "服务器路径" in artifacts_js
+    assert ".artifact-workbench" in artifacts_css
+
 
 def test_dashboard_detail_apis_expose_tools_guard_and_settings(tmp_path):
     config = TonmenConfig(workspace=tmp_path, config_path=tmp_path / "tonmen.toml")
@@ -86,6 +98,36 @@ def test_dashboard_detail_apis_expose_tools_guard_and_settings(tmp_path):
     assert settings["workspace"] == str(tmp_path)
     assert settings["console_loopback_only"] is True
     assert settings["allow_arbitrary_shell"] is False
+    assert settings["artifact_upload_max_bytes"] == 32 * 1024 * 1024
+    assert settings["artifact_execution_enabled"] is False
+
+
+def test_dashboard_artifact_lifecycle_is_byte_based_static_only(tmp_path):
+    config = TonmenConfig(workspace=tmp_path, config_path=tmp_path / "tonmen.toml")
+    state = DashboardState(config)
+
+    initial = state.artifacts()
+    assert initial["count"] == 0
+    assert initial["mode"] == "static-only"
+    assert initial["execution_performed"] is False
+
+    payload = state.inspect_artifact_bytes(b"MZ" + b"\x00" * 126, "demo.exe")
+    artifact_id = payload["artifact_id"]
+    assert payload["source_name"] == "demo.exe"
+    assert payload["execution_performed"] is False
+    assert payload["content_addressed"] is True
+
+    listed = state.artifacts()
+    assert listed["count"] == 1
+    assert listed["artifacts"][0]["artifact_id"] == artifact_id
+
+    detail = state.artifact(artifact_id)
+    assert detail["integrity_verified"] is True
+    assert detail["execution_performed"] is False
+
+    deleted = state.delete_artifact(artifact_id)
+    assert deleted == {"deleted": artifact_id, "remaining": 0}
+    assert state.artifacts()["count"] == 0
 
 
 def test_dashboard_plan_preview_exposes_seed_and_uncommitted_capability_pool(tmp_path):
