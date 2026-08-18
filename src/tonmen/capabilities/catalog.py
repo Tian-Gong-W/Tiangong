@@ -54,12 +54,7 @@ def target_kind(target: str) -> str:
 
 
 class CapabilityCatalog:
-    """Registry-backed capability discovery and deterministic candidate scoring.
-
-    Tool-specific prerequisites live on ToolSpec.planning. The catalog evaluates those
-    declarations against the live Target Profile, completed semantic capabilities,
-    readiness and Policy. It does not contain a fixed tool sequence and cannot execute.
-    """
+    """Registry-backed capability discovery and deterministic candidate scoring."""
 
     def __init__(self, runtime: TonmenRuntime) -> None:
         self.runtime = runtime
@@ -85,11 +80,7 @@ class CapabilityCatalog:
         if not kinds:
             return ()
         wanted = set(kinds)
-        return tuple(
-            node.id
-            for node in run.graph.nodes.values()
-            if node.kind in wanted
-        )[:16]
+        return tuple(node.id for node in run.graph.nodes.values() if node.kind in wanted)[:16]
 
     @staticmethod
     def _profile_requirement(profile, requirement: str) -> bool:
@@ -138,20 +129,17 @@ class CapabilityCatalog:
             planning = adapter.spec.planning
             if planning is None or kind not in planning.seed_for:
                 continue
-            score = (
-                float(planning.information_gain_score) * 100.0
-                - float(adapter.spec.risk) * 6.0
-                - float(planning.cost_score) * 20.0
-            )
+            score = float(planning.information_gain_score) * 100.0 - float(adapter.spec.risk) * 6.0 - float(planning.cost_score) * 20.0
             ranked.append((score, adapter.spec.name))
         return tuple(name for _, name in sorted(ranked, key=lambda item: (-item[0], item[1])))
 
-    def envelope_tools(self, target: str) -> tuple[str, ...]:
+    def envelope_tools(self, target: str, *, include_adaptive_only: bool = False) -> tuple[str, ...]:
         _ = target_kind(target)
         return tuple(
             adapter.spec.name
             for adapter in self.runtime.registry
             if adapter.spec.planning is not None
+            and (include_adaptive_only or adapter.spec.planning.include_in_baseline_envelope)
         )
 
     def evaluate(self, plan: MissionPlan, run: MissionRun, tool: str, *, require_ready: bool = True) -> CapabilityCandidate:
@@ -162,21 +150,11 @@ class CapabilityCatalog:
         planning = spec.planning
         if planning is None:
             return CapabilityCandidate(
-                tool=spec.name,
-                target=plan.target,
-                parameters={},
-                eligible=False,
-                score=-1000.0,
-                rationale=spec.description,
-                expected_information_gain="",
-                basis_fact_ids=(),
-                reasons=("no adaptive planning metadata",),
-                provides=tuple(spec.capabilities),
-                requires_capabilities=(),
-                resolves_unknowns=(),
-                risk=int(spec.risk),
-                requires_approval=False,
-                readiness_code="unknown",
+                tool=spec.name, target=plan.target, parameters={}, eligible=False, score=-1000.0,
+                rationale=spec.description, expected_information_gain="", basis_fact_ids=(),
+                reasons=("no adaptive planning metadata",), provides=tuple(spec.capabilities),
+                requires_capabilities=(), resolves_unknowns=(), risk=int(spec.risk),
+                requires_approval=False, readiness_code="unknown",
             )
 
         profile = build_target_profile(plan, run)
@@ -193,20 +171,12 @@ class CapabilityCatalog:
             eligible = False
             reasons.append(f"target kind {kind} is not supported")
 
-        missing_profile = tuple(
-            requirement
-            for requirement in planning.requires_profile
-            if not self._profile_requirement(profile, requirement)
-        )
+        missing_profile = tuple(requirement for requirement in planning.requires_profile if not self._profile_requirement(profile, requirement))
         if missing_profile:
             eligible = False
             reasons.append("profile prerequisites missing: " + ", ".join(missing_profile))
 
-        missing_capabilities = tuple(
-            requirement
-            for requirement in planning.requires_capabilities
-            if requirement not in completed
-        )
+        missing_capabilities = tuple(requirement for requirement in planning.requires_capabilities if requirement not in completed)
         if missing_capabilities:
             eligible = False
             reasons.append("semantic prerequisites missing: " + ", ".join(missing_capabilities))
@@ -257,29 +227,16 @@ class CapabilityCatalog:
         reasons.append(f"deterministic score={score:.3f}")
 
         return CapabilityCandidate(
-            tool=spec.name,
-            target=step_target,
-            parameters=parameters,
-            eligible=eligible,
-            score=score,
-            rationale=planning.rationale or spec.description,
-            expected_information_gain=planning.information_gain,
-            basis_fact_ids=self._basis_fact_ids(run, planning.basis_fact_kinds),
-            reasons=tuple(reasons),
-            provides=tuple(spec.capabilities),
-            requires_capabilities=tuple(planning.requires_capabilities),
-            resolves_unknowns=tuple(planning.resolves_unknowns),
-            risk=int(spec.risk),
-            requires_approval=requires_approval,
-            readiness_code=readiness_code,
+            tool=spec.name, target=step_target, parameters=parameters, eligible=eligible, score=score,
+            rationale=planning.rationale or spec.description, expected_information_gain=planning.information_gain,
+            basis_fact_ids=self._basis_fact_ids(run, planning.basis_fact_kinds), reasons=tuple(reasons),
+            provides=tuple(spec.capabilities), requires_capabilities=tuple(planning.requires_capabilities),
+            resolves_unknowns=tuple(planning.resolves_unknowns), risk=int(spec.risk),
+            requires_approval=requires_approval, readiness_code=readiness_code,
         )
 
     def rank(self, plan: MissionPlan, run: MissionRun, *, require_ready: bool = True) -> tuple[CapabilityCandidate, ...]:
-        candidates = [
-            self.evaluate(plan, run, adapter.spec.name, require_ready=require_ready)
-            for adapter in self.runtime.registry
-            if adapter.spec.planning is not None
-        ]
+        candidates = [self.evaluate(plan, run, adapter.spec.name, require_ready=require_ready) for adapter in self.runtime.registry if adapter.spec.planning is not None]
         candidates.sort(key=lambda item: (-int(item.eligible), -item.score, item.tool))
         return tuple(candidates)
 
