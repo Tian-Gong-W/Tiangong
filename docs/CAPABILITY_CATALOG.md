@@ -17,9 +17,10 @@ Every adaptively plannable `ToolAdapter` declares a `CapabilityPlanningSpec` on 
 - `resolves_unknowns` — Target Profile unknowns the capability is expected to reduce;
 - `default_parameters` — typed safe seed parameters;
 - `rationale` and `information_gain` — human-readable planning semantics;
-- `information_gain_score` and `cost_score` — bounded deterministic planning inputs.
+- `information_gain_score` and `cost_score` — bounded deterministic planning inputs;
+- `include_in_baseline_envelope` — whether the capability appears in the historical operator/dry-run baseline envelope. `False` keeps a capability adaptive-only without removing it from live Catalog ranking.
 
-The central Planner therefore does not need to know that a specific binary is named `httpx`, `crawler`, `nuclei`, or anything else. For example, a future adapter can satisfy a downstream prerequisite by providing `http.metadata` or `endpoint.discover` under a completely different tool name.
+The central Planner therefore does not need to know that a specific binary is named `httpx`, `crawler`, `nuclei`, or anything else. A future adapter can satisfy a downstream prerequisite by providing `http.metadata` or `endpoint.discover` under a completely different tool name.
 
 ## Deterministic eligibility
 
@@ -36,6 +37,18 @@ A candidate can be eligible only if all applicable conditions hold:
 7. readiness is satisfied for the current executor mode.
 
 A rejected candidate remains visible in ranking audit data with the reason it was rejected. Rejection is not silently converted into a lower-confidence execution proposal.
+
+### Frontier and lineage guards
+
+Adaptive extension happens only at a completed execution frontier. Pending, running, or approval-gated steps prevent the Catalog from appending a capability behind them.
+
+TONMEN also distinguishes a minimal autonomous seed lineage from a pre-built operator baseline envelope:
+
+- a one-step seed may begin adaptive extension after that step settles;
+- once extension begins, `planning.revision` provenance marks the mission as adaptive lineage;
+- a multi-step plan with no `planning.revision` is treated as a pre-built baseline/dry-run envelope and is not silently expanded after completion.
+
+This keeps approval position and persisted plan/run alignment stable while preserving evidence-driven growth for real seed-based missions.
 
 ## Deterministic score
 
@@ -54,53 +67,46 @@ information gain
 
 The exact score is an ordering signal, not execution authority. Policy and Approval remain separate hard boundaries.
 
-Every adaptive `planning.revision` records:
+Every adaptive `planning.revision` records selected capability, deterministic base score, score reasons, top candidate rankings (including rejected reasons), expected information gain, supporting Fact IDs, unresolved profile questions, selection engine, and `execution_authority=false`.
 
-- selected capability;
-- deterministic base score;
-- score reasons;
-- top candidate rankings, including rejected reasons;
-- expected information gain;
-- supporting Fact IDs;
-- unresolved profile questions;
-- selection engine;
-- `execution_authority=false`.
-
-## Seed and dry-run envelope
+## Seed, baseline envelope, and adaptive-only capabilities
 
 `MissionPlanner.seed()` chooses from adapters that declare `seed_for=<target kind>`.
 
-`MissionPlanner.plan()` is a **dry-run capability envelope**. It may display registered capabilities whose live prerequisites are not yet satisfied. That list is not an execution sequence. Runtime selection is performed only by `CapabilityCatalog.rank()` against the live Evidence Graph.
+`MissionPlanner.plan()` is a **dry-run baseline capability envelope**, not an execution sequence. Callers may explicitly request the full adaptive pool, but ordinary legacy/baseline execution does not silently gain extra network actions merely because the Registry grows.
+
+Current adaptive-only built-ins include:
+
+- `dns-intel` → `dns.resolve`, `address.discover`;
+- `tls-intel` → `tls.handshake`, `certificate.inspect`.
+
+They remain available to live `CapabilityCatalog.rank()` whenever Target Profile evidence justifies them.
+
+## DNS and TLS intelligence semantics
+
+The built-in DNS and TLS adapters use Python standard-library runners and require no external `dig` or `openssl` dependency.
+
+DNS intelligence is bounded to hostname identity evidence: A/AAAA addresses plus canonical/reverse names obtainable from the local resolver. It does not brute-force names or enumerate zones.
+
+TLS intelligence performs one bounded handshake against an evidence-selected/default port and records protocol version, cipher, certificate SHA-256 fingerprint, subject, issuer, SANs, serial and validity metadata. It does not attempt credential use, session takeover, exploitation or protocol downgrade attacks.
+
+Negative observations are evidence rather than mission crashes: an unresolved hostname or unavailable TLS handshake produces a structured DNS/TLS Fact so later planning can reason about the absence of that surface.
 
 ## Adapter-owned parameter adaptation
 
 Tool-specific cost/coverage tuning is not encoded in the central resolver.
 
-`AdaptiveParameterResolver` passes a bounded Target Profile context to `ToolAdapter.adapt_parameters()`. Each adapter can then vary only its own typed parameters within its validator limits. The central resolver re-validates the returned parameters before execution.
+`AdaptiveParameterResolver` passes a bounded Target Profile context to `ToolAdapter.adapt_parameters()`. Each adapter can then vary only its own typed parameters within its validator limits. The central resolver re-validates returned parameters before execution.
 
 This allows a new adapter to own its parameter strategy without adding another central `if tool == ...` branch.
 
 ## Optional Local AI tie-break
 
-Local AI cannot create candidates. It receives only bounded summaries of candidates already marked eligible by the deterministic catalog:
-
-- tool identifier;
-- deterministic score and reasons;
-- semantic outputs/prerequisites;
-- unknowns the capability may resolve;
-- risk;
-- approval requirement.
+Local AI cannot create candidates. It receives only bounded summaries of candidates already marked eligible by the deterministic catalog: tool identifier, deterministic score/reasons, semantic outputs/prerequisites, unknowns the capability may resolve, risk and approval requirement.
 
 It does **not** receive candidate argv or execution parameters.
 
-The model may return a `capability_preferences` list containing only:
-
-- an already-supplied tool identifier;
-- preference in `[-1, 1]`;
-- rationale;
-- existing Fact IDs.
-
-TONMEN filters unknown tool identifiers and unknown Fact IDs before the preference reaches planning.
+The model may return a `capability_preferences` list containing only an already-supplied tool identifier, preference in `[-1, 1]`, rationale and existing Fact IDs. TONMEN filters unknown tool identifiers and unknown Fact IDs before the preference reaches planning.
 
 ### Hard tie-break bounds
 
@@ -115,8 +121,6 @@ Deterministic ranking remains authoritative:
 When used, the revision records base score, AI preference, bounded adjustment, final score, whether the deterministic winner changed, and `selection_engine=capability_catalog+bounded_ai_tiebreak`.
 
 ## Governance invariant
-
-The planning path is:
 
 ```text
 Evidence Graph
