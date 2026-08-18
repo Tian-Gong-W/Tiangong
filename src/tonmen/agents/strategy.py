@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 from tonmen.adaptive import build_target_profile
+from tonmen.ai import AIProviderError
 from tonmen.core.runtime import TonmenRuntime
 from tonmen.evidence import GraphNode
 from tonmen.missions import MissionPlan, MissionRun, MissionRunState, MissionStep, StepExecutionState
@@ -25,9 +26,11 @@ class PlanExpansion:
 class AdaptiveMissionPlanner:
     """Grow a mission one governed capability at a time from recorded evidence.
 
-    The planner selects only tools already registered in TONMEN and delegates typed
-    parameter validation, Scope and Policy checks to MissionPlanner.build_step(). It
-    cannot create raw shell text, expand Scope, issue approval, or bypass REPORT_ONLY.
+    The deterministic planner selects only tools already registered in TONMEN and
+    delegates typed parameter validation, Scope and Policy checks to
+    MissionPlanner.build_step(). Optional local AI may add evidence-analysis advisory
+    nodes, but those nodes never choose tools, mutate the plan, expand Scope, issue
+    approval, or bypass REPORT_ONLY.
     """
 
     def __init__(self, runtime: TonmenRuntime) -> None:
@@ -53,6 +56,111 @@ class AdaptiveMissionPlanner:
     def _fact_ids(run: MissionRun, *kinds: str) -> tuple[str, ...]:
         wanted = set(kinds)
         return tuple(node.id for node in run.graph.nodes.values() if node.kind in wanted)[:16]
+
+    @staticmethod
+    def _ai_snapshot(run: MissionRun) -> tuple[str, ...]:
+        return tuple(item.id for item in run.evidence[-16:])
+
+    def _record_local_ai_advisory(self, plan: MissionPlan, run: MissionRun) -> None:
+        service = self.runtime.ai
+        if service is None or not service.enabled or not run.evidence:
+            return
+        evidence_ids = self._ai_snapshot(run)
+        if any(
+            node.kind in {"ai.advisory", "ai.advisory_error"}
+            and tuple(node.metadata.get("evidence_ids", ())) == evidence_ids
+            for node in run.graph.nodes.values()
+        ):
+            return
+
+        try:
+            advisory = service.advise(plan, run)
+        except (AIProviderError, ValueError, OSError) as exc:
+            node_id = uuid4().hex
+            run.graph.add_node(
+                GraphNode(
+                    id=node_id,
+                    kind="ai.advisory_error",
+                    label="local AI advisory unavailable; deterministic fallback retained",
+                    metadata={
+                        "provider": self.runtime.config.ai_provider,
+                        "model": self.runtime.config.ai_model,
+                        "error": str(exc)[:600],
+                        "evidence_ids": list(evidence_ids),
+                        "execution_authority": False,
+                        "local_only": True,
+                        "fallback": "deterministic",
+                    },
+                )
+            )
+            run.graph.link(run.id, "ai_fallback", node_id)
+            if self.runtime.events is not None:
+                self.runtime.events.publish(
+                    "ai.advisory_failed",
+                    mission_id=run.id,
+                    plan_id=run.plan_id,
+                    target=run.target,
+                    provider=self.runtime.config.ai_provider,
+                    model=self.runtime.config.ai_model,
+                    error=str(exc)[:600],
+                    deterministic_fallback=True,
+                )
+            return
+
+        if advisory is None:
+            return
+        node_id = uuid4().hex
+        hypotheses = [
+            {
+                "key": item.key,
+                "summary": item.summary,
+                "confidence": item.confidence,
+                "basis_fact_ids": list(item.basis_fact_ids),
+            }
+            for item in advisory.hypotheses
+        ]
+        run.graph.add_node(
+            GraphNode(
+                id=node_id,
+                kind="ai.advisory",
+                label=advisory.summary or "local AI evidence advisory",
+                metadata={
+                    "provider": advisory.provider,
+                    "model": advisory.model,
+                    "phase": "pre_reasoning_advisory",
+                    "summary": advisory.summary,
+                    "focus": list(advisory.focus),
+                    "hypotheses": hypotheses,
+                    "challenge_decision": advisory.challenge_decision,
+                    "challenge_reason": advisory.challenge_reason,
+                    "basis_fact_ids": list(advisory.basis_fact_ids),
+                    "evidence_ids": list(evidence_ids),
+                    "execution_authority": False,
+                    "local_only": advisory.local_only,
+                    "api_key_required": False,
+                },
+            )
+        )
+        run.graph.link(run.id, "advised_by", node_id)
+        for fact_id in advisory.basis_fact_ids:
+            if fact_id in run.graph.nodes:
+                run.graph.link(fact_id, "supports_ai_advisory", node_id)
+        if self.runtime.events is not None:
+            self.runtime.events.publish(
+                "ai.advisory",
+                mission_id=run.id,
+                plan_id=run.plan_id,
+                target=run.target,
+                advisory_id=node_id,
+                provider=advisory.provider,
+                model=advisory.model,
+                summary=advisory.summary,
+                focus=list(advisory.focus),
+                basis_fact_ids=list(advisory.basis_fact_ids),
+                challenge_decision=advisory.challenge_decision,
+                execution_authority=False,
+                local_only=True,
+            )
 
     def _build(
         self,
@@ -80,6 +188,7 @@ class AdaptiveMissionPlanner:
         if run.state in {MissionRunState.FAILED, MissionRunState.DENIED, MissionRunState.WAITING_APPROVAL}:
             return None
 
+        self._record_local_ai_advisory(plan, run)
         profile = build_target_profile(plan, run)
         queued = self._queued_tools(plan)
         completed = self._completed_tools(run)
