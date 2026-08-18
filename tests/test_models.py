@@ -5,6 +5,7 @@ import json
 import pytest
 
 from tonmen.council import AssessmentCouncil
+from tonmen.evidence import GraphNode
 from tonmen.missions import MissionPlan, MissionRun, MissionStep
 from tonmen.models import ModelAgentReview, ModelRuntime, ModelRuntimeConfig, ModelRuntimeError
 from tonmen.tools import RiskLevel
@@ -72,7 +73,9 @@ def _plan_and_run():
             ),
         ],
     )
-    return plan, MissionRun.create(plan)
+    run = MissionRun.create(plan)
+    run.graph.add_node(GraphNode(id=run.id, kind="mission", label=f"mission:{plan.target}", metadata={"plan_id": plan.id}))
+    return plan, run
 
 
 def test_model_config_defaults_to_no_model_and_rejects_remote_ollama():
