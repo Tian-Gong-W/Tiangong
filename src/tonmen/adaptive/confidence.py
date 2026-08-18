@@ -76,18 +76,9 @@ def _source(node: Any) -> str:
 
 def _weighted_claim(key: str, subject: str, groups: dict[str, list[Any]]) -> EvidenceClaim:
     if not groups:
-        return EvidenceClaim(
-            key=key,
-            subject=subject,
-            assertion=None,
-            state=ClaimState.UNRESOLVED,
-            confidence=0.0,
-        )
+        return EvidenceClaim(key=key, subject=subject, assertion=None, state=ClaimState.UNRESOLVED, confidence=0.0)
 
-    scores = {
-        value: sum(max(0.05, _confidence(node)) for node in nodes)
-        for value, nodes in groups.items()
-    }
+    scores = {value: sum(max(0.05, _confidence(node)) for node in nodes) for value, nodes in groups.items()}
     assertion = sorted(scores, key=lambda value: (-scores[value], value))[0]
     support = groups[assertion]
     conflict = [node for value, nodes in groups.items() if value != assertion for node in nodes]
@@ -114,13 +105,7 @@ def _weighted_claim(key: str, subject: str, groups: dict[str, list[Any]]) -> Evi
 def _semantic_claim(key: str, subject: str, assertion: str, nodes: Iterable[Any]) -> EvidenceClaim:
     items = list(nodes)
     if not items:
-        return EvidenceClaim(
-            key=key,
-            subject=subject,
-            assertion=None,
-            state=ClaimState.UNRESOLVED,
-            confidence=0.0,
-        )
+        return EvidenceClaim(key=key, subject=subject, assertion=None, state=ClaimState.UNRESOLVED, confidence=0.0)
     average = sum(_confidence(node) for node in items) / len(items)
     sources = tuple(dict.fromkeys(_source(node) for node in items))
     corroboration = min(1.0, 0.9 + max(0, len(sources) - 1) * 0.05)
@@ -139,10 +124,11 @@ def _semantic_claim(key: str, subject: str, assertion: str, nodes: Iterable[Any]
 def assess_evidence_confidence(plan: MissionPlan, run: MissionRun) -> EvidenceConfidence:
     """Build conservative support/conflict posture from already-recorded facts.
 
-    A conflict is recorded only when comparable facts assert different explicit values
-    for the same canonical subject (for example service identity on the same port,
-    HTTP status for the same URL, or severity for the same named finding). Absence of
-    evidence is never treated as contradictory evidence.
+    Conflicts require explicit comparable values for the same canonical subject. Missing
+    evidence is never a contradiction. DNS multi-address answers are not treated as
+    conflicting merely because multiple A/AAAA records exist; comparable DNS posture is
+    resolution status. TLS version/fingerprint differences are recorded as observation
+    conflicts, which may represent rotation, load balancing, negotiation or real change.
     """
     if run.plan_id != plan.id:
         raise ValueError("mission run does not belong to this plan")
@@ -154,6 +140,10 @@ def assess_evidence_confidence(plan: MissionPlan, run: MissionRun) -> EvidenceCo
     api_support = []
     finding_support = []
     service_groups: dict[tuple[str, int], dict[str, list[Any]]] = {}
+    dns_resolution_groups: dict[str, dict[str, list[Any]]] = {}
+    tls_reachability_groups: dict[tuple[str, int], dict[str, list[Any]]] = {}
+    tls_version_groups: dict[tuple[str, int], dict[str, list[Any]]] = {}
+    cert_fingerprint_groups: dict[tuple[str, int], dict[str, list[Any]]] = {}
     status_groups: dict[str, dict[str, list[Any]]] = {}
     severity_groups: dict[tuple[str, str], dict[str, list[Any]]] = {}
 
@@ -170,6 +160,29 @@ def assess_evidence_confidence(plan: MissionPlan, run: MissionRun) -> EvidenceCo
                 service_groups.setdefault((protocol, port), {}).setdefault(service, []).append(node)
                 if "http" in service:
                     web_support.append(node)
+
+        elif node.kind == "intelligence.dns":
+            host = str(data.get("host") or node.metadata.get("target") or "").strip().lower()
+            if host and isinstance(data.get("resolved"), bool):
+                value = "resolved" if data["resolved"] else "unresolved"
+                dns_resolution_groups.setdefault(host, {}).setdefault(value, []).append(node)
+
+        elif node.kind == "intelligence.tls":
+            host = str(data.get("host") or node.metadata.get("target") or "").strip().lower()
+            try:
+                port = int(data.get("port") or 443)
+            except (TypeError, ValueError):
+                port = 443
+            if host and 1 <= port <= 65535:
+                if isinstance(data.get("reachable"), bool):
+                    value = "reachable" if data["reachable"] else "unreachable"
+                    tls_reachability_groups.setdefault((host, port), {}).setdefault(value, []).append(node)
+                version = str(data.get("version") or "").strip()
+                if version:
+                    tls_version_groups.setdefault((host, port), {}).setdefault(version, []).append(node)
+                fingerprint = str(data.get("fingerprint_sha256") or "").strip().lower()
+                if fingerprint:
+                    cert_fingerprint_groups.setdefault((host, port), {}).setdefault(fingerprint, []).append(node)
 
         elif node.kind == "intelligence.web":
             web_support.append(node)
@@ -193,6 +206,14 @@ def assess_evidence_confidence(plan: MissionPlan, run: MissionRun) -> EvidenceCo
 
     for (protocol, port), groups in sorted(service_groups.items()):
         claims.append(_weighted_claim(f"service_identity:{protocol}:{port}", f"Service identity {port}/{protocol}", groups))
+    for host, groups in sorted(dns_resolution_groups.items()):
+        claims.append(_weighted_claim(f"dns_resolution:{host}", f"DNS resolution {host}", groups))
+    for (host, port), groups in sorted(tls_reachability_groups.items()):
+        claims.append(_weighted_claim(f"tls_reachability:{host}:{port}", f"TLS reachability {host}:{port}", groups))
+    for (host, port), groups in sorted(tls_version_groups.items()):
+        claims.append(_weighted_claim(f"tls_version:{host}:{port}", f"TLS negotiated version {host}:{port}", groups))
+    for (host, port), groups in sorted(cert_fingerprint_groups.items()):
+        claims.append(_weighted_claim(f"certificate_fingerprint:{host}:{port}", f"Certificate fingerprint {host}:{port}", groups))
     for url, groups in sorted(status_groups.items()):
         claims.append(_weighted_claim(f"web_status:{url}", f"HTTP status {url}", groups))
     for (target, label), groups in sorted(severity_groups.items()):
