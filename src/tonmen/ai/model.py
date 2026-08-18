@@ -28,6 +28,20 @@ class AIHypothesis:
 
 
 @dataclass(frozen=True, slots=True)
+class AICapabilityPreference:
+    """Read-only preference over a catalog candidate already supplied by TONMEN."""
+
+    tool: str
+    preference: float
+    rationale: str
+    basis_fact_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not -1.0 <= float(self.preference) <= 1.0:
+            raise ValueError("AI capability preference must be between -1 and 1")
+
+
+@dataclass(frozen=True, slots=True)
 class AIAdvisory:
     provider: str
     model: str
@@ -39,3 +53,4 @@ class AIAdvisory:
     basis_fact_ids: tuple[str, ...]
     execution_authority: bool = False
     local_only: bool = True
+    capability_preferences: tuple[AICapabilityPreference, ...] = ()
