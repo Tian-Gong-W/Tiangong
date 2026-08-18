@@ -104,6 +104,15 @@ class ToolAdapter(ABC):
             remediation=f"Install {self.spec.name} and make sure it is available in PATH.",
         )
 
+    def adapt_parameters(self, request: ToolRequest, context: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Return bounded profile-aware parameters for this typed adapter.
+
+        The default implementation is a no-op after validation. Tool-specific cost and
+        coverage adaptation belongs here rather than in the central planner/reasoner.
+        """
+        self.validate(request)
+        return dict(request.parameters)
+
     @abstractmethod
     def validate(self, request: ToolRequest) -> None:
         """Raise ValueError when a request is malformed or outside adapter semantics."""
