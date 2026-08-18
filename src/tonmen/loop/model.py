@@ -21,7 +21,7 @@ class LoopStopReason(str, Enum):
 @dataclass(frozen=True, slots=True)
 class MissionLoopPolicy:
     max_iterations: int = 8
-    max_executions: int = 3
+    max_executions: int = 6
     max_repeat_decisions: int = 2
     max_duration_seconds: int = 300
     assessment_rounds: int = 8
