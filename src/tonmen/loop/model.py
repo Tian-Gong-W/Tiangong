@@ -23,7 +23,7 @@ class MissionLoopPolicy:
     max_iterations: int = 8
     max_executions: int = 6
     max_repeat_decisions: int = 2
-    max_duration_seconds: int = 300
+    max_duration_seconds: int = 900
     assessment_rounds: int = 8
     subagents_per_round: int = 4
     report_only: bool = True
