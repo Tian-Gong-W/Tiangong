@@ -26,6 +26,7 @@ class MissionLoopPolicy:
     max_duration_seconds: int = 300
     assessment_rounds: int = 8
     subagents_per_round: int = 4
+    report_only: bool = True
 
     def __post_init__(self) -> None:
         if not 1 <= self.max_iterations <= 64:
@@ -40,6 +41,8 @@ class MissionLoopPolicy:
             raise ValueError("assessment_rounds must be between 7 and 10")
         if not 3 <= self.subagents_per_round <= 5:
             raise ValueError("subagents_per_round must be between 3 and 5")
+        if self.report_only is not True:
+            raise ValueError("report_only is a mandatory safety boundary and cannot be disabled")
 
 
 @dataclass(frozen=True, slots=True)
