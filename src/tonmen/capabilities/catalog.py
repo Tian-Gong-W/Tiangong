@@ -65,18 +65,25 @@ class CapabilityCatalog:
 
     @staticmethod
     def _frontier_complete(run: MissionRun) -> bool:
-        """A new capability may be appended only after the current frontier settles.
-
-        This prevents adaptive-only capabilities from being appended behind already
-        pending or approval-gated steps in a pre-built envelope. Seed-driven missions
-        naturally satisfy this after each single governed step completes.
-        """
         settled = {
             StepExecutionState.SUCCEEDED,
             StepExecutionState.DEGRADED,
             StepExecutionState.SKIPPED,
         }
         return all(execution.state in settled for execution in run.steps)
+
+    @staticmethod
+    def _adaptive_lineage_allows_extension(plan: MissionPlan, run: MissionRun) -> bool:
+        """Differentiate a minimal seed lineage from an operator baseline envelope.
+
+        Autonomous missions start from exactly one seed step. After the first adaptive
+        extension they carry `planning.revision` provenance. A multi-step plan with no
+        such revision is therefore a pre-built operator/dry-run envelope and must not
+        silently grow extra adaptive-only steps after it completes.
+        """
+        if len(plan.steps) <= 1:
+            return True
+        return any(node.kind == "planning.revision" for node in run.graph.nodes.values())
 
     def completed_capabilities(self, plan: MissionPlan, run: MissionRun) -> set[str]:
         planned = {step.id: step for step in plan.steps}
@@ -251,7 +258,7 @@ class CapabilityCatalog:
         )
 
     def rank(self, plan: MissionPlan, run: MissionRun, *, require_ready: bool = True) -> tuple[CapabilityCandidate, ...]:
-        if not self._frontier_complete(run):
+        if not self._frontier_complete(run) or not self._adaptive_lineage_allows_extension(plan, run):
             return ()
         candidates = [self.evaluate(plan, run, adapter.spec.name, require_ready=require_ready) for adapter in self.runtime.registry if adapter.spec.planning is not None]
         candidates.sort(key=lambda item: (-int(item.eligible), -item.score, item.tool))
