@@ -662,9 +662,9 @@ class TonmenDashboardHandler(BaseHTTPRequestHandler):
                 if not target: raise ValueError("target is required")
                 policy = MissionLoopPolicy(
                     max_iterations=int(data.get("max_iterations", 8)),
-                    max_executions=int(data.get("max_executions", 3)),
+                    max_executions=int(data.get("max_executions", 6)),
                     max_repeat_decisions=int(data.get("max_repeat_decisions", 2)),
-                    max_duration_seconds=int(data.get("max_duration_seconds", 300)),
+                    max_duration_seconds=int(data.get("max_duration_seconds", 900)),
                     assessment_rounds=int(data.get("assessment_rounds", 8)),
                     subagents_per_round=int(data.get("subagents_per_round", 4)),
                 )
