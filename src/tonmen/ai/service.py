@@ -59,15 +59,42 @@ class LocalAIService:
         ]
         return facts, fact_ids
 
+    @staticmethod
+    def _candidate_payload(candidates: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None) -> list[dict[str, Any]]:
+        safe: list[dict[str, Any]] = []
+        for item in list(candidates or ())[:8]:
+            if not isinstance(item, dict) or not item.get("tool"):
+                continue
+            safe.append(
+                {
+                    "tool": str(item.get("tool"))[:128],
+                    "deterministic_score": float(item.get("score", 0.0)),
+                    "reasons": [str(value)[:300] for value in list(item.get("reasons", ()))[:8]],
+                    "provides": [str(value)[:128] for value in list(item.get("provides", ()))[:16]],
+                    "requires_capabilities": [str(value)[:128] for value in list(item.get("requires_capabilities", ()))[:16]],
+                    "resolves_unknowns": [str(value)[:128] for value in list(item.get("resolves_unknowns", ()))[:16]],
+                    "risk": int(item.get("risk", 0)),
+                    "requires_approval": bool(item.get("requires_approval", False)),
+                    "eligible": bool(item.get("eligible", True)),
+                    "execution_authority": False,
+                }
+            )
+        return safe
+
     def _context(
         self,
         plan: MissionPlan,
         run: MissionRun,
         decision: ReasoningDecision | None,
-    ) -> tuple[dict[str, Any], set[str]]:
+        candidates: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None,
+    ) -> tuple[dict[str, Any], set[str], set[str]]:
         profile = build_target_profile(plan, run)
         confidence = assess_evidence_confidence(plan, run)
         facts, fact_ids = self._fact_payload(run)
+        candidate_payload = self._candidate_payload(candidates)
+        allowed_candidate_tools = {
+            item["tool"] for item in candidate_payload if item.get("eligible") is True
+        }
         decision_payload = None
         if decision is not None:
             decision_payload = {
@@ -85,6 +112,7 @@ class LocalAIService:
                 "approval_authority": False,
                 "arbitrary_shell": False,
                 "report_only": True,
+                "candidate_preferences_are_tiebreak_only": True,
             },
             "phase": "decision_review" if decision is not None else "pre_reasoning_advisory",
             "target": plan.target,
@@ -130,21 +158,28 @@ class LocalAIService:
                 }
                 for step, execution in zip(plan.steps, run.steps, strict=True)
             ],
+            "catalog_candidates": candidate_payload,
             "deterministic_decision": decision_payload,
             "facts": facts,
         }
-        return context, fact_ids
+        return context, fact_ids, allowed_candidate_tools
 
     def advise(
         self,
         plan: MissionPlan,
         run: MissionRun,
         decision: ReasoningDecision | None = None,
+        *,
+        candidates: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,
     ) -> AIAdvisory | None:
         if self.provider is None:
             return None
-        context, fact_ids = self._context(plan, run, decision)
-        advisory = self.provider.advise(context, allowed_fact_ids=fact_ids)
+        context, fact_ids, candidate_tools = self._context(plan, run, decision, candidates)
+        advisory = self.provider.advise(
+            context,
+            allowed_fact_ids=fact_ids,
+            allowed_candidate_tools=candidate_tools,
+        )
         if decision is None and (advisory.challenge_decision or advisory.challenge_reason):
             # A pre-reasoning snapshot has no deterministic decision to challenge.
             # Preserve the analysis while removing a misleading decision-review claim.
