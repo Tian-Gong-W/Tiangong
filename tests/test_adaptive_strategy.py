@@ -19,6 +19,8 @@ def _tool_name(argv) -> str:
         return "dns-intel"
     if len(argv) >= 3 and argv[1:3] == ["-m", "tonmen.tools.runners.tls_intel"]:
         return "tls-intel"
+    if len(argv) >= 3 and argv[1:3] == ["-m", "tonmen.tools.runners.api_intel"]:
+        return "api-intel"
     return str(argv[0]) if argv else "unknown"
 
 
@@ -51,6 +53,14 @@ def _runtime(tmp_path, *, web: bool = True):
                 '"cipher":"TLS_AES_256_GCM_SHA384","cipher_bits":256,"fingerprint_sha256":"demo",'
                 '"subject":"CN=localhost","issuer":"CN=Local CA","sans":["localhost"]}\n'
             ),
+            "api-intel": (
+                '{"type":"api","kind":"endpoint","endpoint":"/api/status",'
+                '"absolute_url":"https://localhost/api/status","source":"script",'
+                '"source_url":"https://localhost/app.js"}\n'
+                '{"type":"api_summary","url":"https://localhost","entry_reachable":true,'
+                '"scripts_discovered":1,"scripts_fetched":1,"endpoint_count":1,"hints":[],'
+                '"javascript_executed":false,"forms_submitted":false,"cross_origin_fetches":false}\n'
+            ),
             "crawler": (
                 '{"type":"page","url":"https://localhost/","status":200,"title":"Welcome",'
                 '"content_type":"text/html","depth":0,"bytes":120,"truncated":false}\n'
@@ -81,20 +91,22 @@ def test_adaptive_host_loop_grows_plan_from_evidence_until_approval(tmp_path):
     tools = [step.tool for step in result.plan.steps]
     assert tools[0] == "nmap"
     assert tools[-1] == "nuclei"
-    assert set(tools) == {"nmap", "httpx", "crawler", "dns-intel", "nuclei"}
-    assert calls == ["nmap", "httpx", "crawler", "dns-intel"]
-    assert result.executions == 4
+    assert set(tools) == {"nmap", "httpx", "crawler", "api-intel", "dns-intel", "nuclei"}
+    assert calls[0] == "nmap"
+    assert set(calls) == {"nmap", "httpx", "crawler", "api-intel", "dns-intel"}
+    assert "nuclei" not in calls
+    assert result.executions == 5
     assert result.stop_reason is LoopStopReason.APPROVAL_REQUIRED
     assert _events(events, "mission.completed") == []
 
     revisions = [node for node in result.run.graph.nodes.values() if node.kind == "planning.revision"]
-    assert {node.metadata["tool"] for node in revisions} == {"httpx", "crawler", "dns-intel", "nuclei"}
+    assert {node.metadata["tool"] for node in revisions} == {"httpx", "crawler", "api-intel", "dns-intel", "nuclei"}
     assert all(node.metadata["execution_authority"] is False for node in revisions)
     assert all(node.metadata["rationale"] for node in revisions)
     assert all(node.metadata["expected_information_gain"] for node in revisions)
 
 
-def test_explicit_web_target_adds_tls_and_dns_before_validation(tmp_path):
+def test_explicit_web_target_adds_tls_dns_and_api_intelligence_before_validation(tmp_path):
     runtime, calls, events = _runtime(tmp_path, web=True)
     seed = MissionPlanner(runtime).seed("https://localhost")
 
@@ -106,12 +118,12 @@ def test_explicit_web_target_adds_tls_and_dns_before_validation(tmp_path):
     tools = [step.tool for step in result.plan.steps]
     assert tools[0] == "httpx"
     assert tools[-1] == "nuclei"
-    assert set(tools) == {"httpx", "crawler", "tls-intel", "dns-intel", "nuclei"}
+    assert set(tools) == {"httpx", "crawler", "api-intel", "tls-intel", "dns-intel", "nuclei"}
     assert calls[0] == "httpx"
-    assert calls[-1] == "dns-intel"
-    assert {"crawler", "tls-intel", "dns-intel"}.issubset(calls)
+    assert {"crawler", "api-intel", "tls-intel", "dns-intel"}.issubset(calls)
     assert "nmap" not in calls
     assert "nuclei" not in calls
+    assert result.executions == 5
     assert result.stop_reason is LoopStopReason.APPROVAL_REQUIRED
     assert _events(events, "mission.completed") == []
 
@@ -126,7 +138,7 @@ def test_non_web_host_can_add_dns_identity_without_growing_web_chain(tmp_path):
     tools = [step.tool for step in result.plan.steps]
     assert tools == ["nmap", "dns-intel"]
     assert calls == ["nmap", "dns-intel"]
-    assert not ({"httpx", "crawler", "tls-intel", "nuclei"} & set(tools))
+    assert not ({"httpx", "crawler", "api-intel", "tls-intel", "nuclei"} & set(tools))
     assert result.stop_reason is LoopStopReason.COMPLETE
 
     revisions = [node for node in result.run.graph.nodes.values() if node.kind == "planning.revision"]
