@@ -86,6 +86,116 @@ def _loop_policy(run: MissionRun) -> dict[str, Any]:
     return dict(latest.metadata)
 
 
+def _overlaps(left: list[str] | tuple[str, ...], right: list[str] | tuple[str, ...]) -> bool:
+    return bool(set(left) & set(right))
+
+
+def _adaptive_causality(plan: MissionPlan, run: MissionRun) -> list[dict[str, Any]]:
+    """Build portable Why-Graph records from persisted provenance only.
+
+    This function never executes tools or invents causal links. It follows the graph
+    relations written by AdaptiveMissionPlanner and MissionCoordinator, then attaches
+    Reasoner/Council context only when their recorded fact basis intersects the same
+    planning-revision basis.
+    """
+    planned = {step.id: step for step in plan.steps}
+    nodes = run.graph.nodes
+    evidence_by_id = {item.id: item for item in run.evidence}
+    reasoning_nodes = [node for node in nodes.values() if node.kind.startswith("reasoning.")]
+    round_nodes = [node for node in nodes.values() if node.kind == "council.round"]
+    result: list[dict[str, Any]] = []
+
+    for execution in run.steps:
+        revision_id = str(execution.metadata.get("plan_revision_id") or "")
+        if not revision_id:
+            continue
+        revision = nodes.get(revision_id)
+        if revision is None or revision.kind != "planning.revision":
+            continue
+
+        revision_md = dict(revision.metadata)
+        basis_ids = [str(item) for item in revision_md.get("basis_fact_ids", [])]
+        basis_set = set(basis_ids)
+        facts = [_node(nodes[fact_id]) for fact_id in basis_ids if fact_id in nodes]
+
+        evidence_ids: list[str] = []
+        support_edges = 0
+        adds_step = False
+        for edge in run.graph.edges:
+            if edge.relation == "reveals" and edge.target in basis_set and edge.source not in evidence_ids:
+                evidence_ids.append(edge.source)
+            if edge.relation == "supports_plan_revision" and edge.target == revision_id and edge.source in basis_set:
+                support_edges += 1
+            if edge.relation == "adds_step" and edge.source == revision_id and edge.target == execution.step_id:
+                adds_step = True
+
+        evidence_refs = []
+        for evidence_id in evidence_ids:
+            item = evidence_by_id.get(evidence_id)
+            if item is None:
+                continue
+            evidence_refs.append(
+                {
+                    "id": item.id,
+                    "tool": item.tool,
+                    "target": item.target,
+                    "argv": list(item.argv),
+                    "exit_code": item.exit_code,
+                }
+            )
+
+        reasoning = []
+        reasoning_ids: set[str] = set()
+        for node in reasoning_nodes:
+            metadata = node.metadata
+            node_basis = [str(item) for item in metadata.get("basis_fact_ids", [])]
+            if metadata.get("next_step_id") == execution.step_id or _overlaps(basis_ids, node_basis):
+                reasoning.append(_node(node))
+                reasoning_ids.add(node.id)
+
+        council = []
+        for round_node in round_nodes:
+            include = str(round_node.metadata.get("decision_id") or "") in reasoning_ids
+            agents = []
+            for edge in run.graph.edges:
+                if edge.source != round_node.id or edge.relation != "contains_subagent":
+                    continue
+                agent = nodes.get(edge.target)
+                if agent is None:
+                    continue
+                agent_fact_ids = [str(item) for item in agent.metadata.get("fact_ids", [])]
+                if _overlaps(basis_ids, agent_fact_ids):
+                    include = True
+                agents.append(_node(agent))
+            if include:
+                council.append({**_node(round_node), "subagents": agents})
+
+        step = planned.get(execution.step_id)
+        result.append(
+            {
+                "step_id": execution.step_id,
+                "tool": execution.tool,
+                "target": execution.target,
+                "risk": step.risk if step else None,
+                "requires_approval": step.requires_approval if step else False,
+                "state": execution.state.value,
+                "revision": _node(revision),
+                "basis_fact_ids": basis_ids,
+                "basis_facts": facts,
+                "evidence": evidence_refs,
+                "profile": dict(execution.metadata.get("adaptive_profile", {})),
+                "reasoning": reasoning,
+                "council": council,
+                "support_edges": support_edges,
+                "adds_step_edge": adds_step,
+                "expected_information_gain": revision_md.get("expected_information_gain"),
+                "execution_authority": revision_md.get("execution_authority", False),
+            }
+        )
+
+    return result
+
+
 def build_report(plan: MissionPlan, run: MissionRun) -> dict[str, Any]:
     evidence = []
     payloads: list[dict[str, Any]] = []
@@ -131,6 +241,7 @@ def build_report(plan: MissionPlan, run: MissionRun) -> dict[str, Any]:
     reasoning = [_node(node) for node in run.graph.nodes.values() if node.kind.startswith("reasoning.")]
     loop = [_node(node) for node in run.graph.nodes.values() if node.kind.startswith("loop.")]
     council = _council(run)
+    causality = _adaptive_causality(plan, run)
     findings = [node for node in intelligence if node["kind"] == "intelligence.finding"]
     approval_steps = [step for step in steps if step["requires_approval"]]
     failures = [step for step in steps if step["state"] in {"failed", "denied"}]
@@ -158,6 +269,7 @@ def build_report(plan: MissionPlan, run: MissionRun) -> dict[str, Any]:
             "executed_payloads": len(payloads),
             "assessment_rounds": len(council),
             "subagent_reviews": sum(len(item["subagents"]) for item in council),
+            "adaptive_revisions": len(causality),
         },
         "governance": {
             "execution_model": "Scope -> Guard -> Approval -> structured adapter -> shell=False Executor",
@@ -184,6 +296,7 @@ def build_report(plan: MissionPlan, run: MissionRun) -> dict[str, Any]:
         "reasoning": reasoning,
         "loop": loop,
         "assessment_council": council,
+        "adaptive_causality": causality,
         "executed_payloads": payloads,
         "evidence": evidence,
         "graph": {
@@ -222,6 +335,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- Executed request/payload records: {summary['executed_payloads']}",
         f"- Assessment rounds: {summary['assessment_rounds']}",
         f"- Subagent reviews: {summary['subagent_reviews']}",
+        f"- Adaptive plan revisions: {summary.get('adaptive_revisions', 0)}",
         "",
         "## Governance",
         "",
@@ -246,6 +360,37 @@ def render_markdown(report: dict[str, Any]) -> str:
                 "",
             ]
         )
+
+    lines.extend(["## Adaptive Causality / Why Graph", ""])
+    if report.get("adaptive_causality"):
+        for index, chain in enumerate(report["adaptive_causality"], start=1):
+            revision = chain.get("revision", {})
+            md = revision.get("metadata", {})
+            fact_labels = [item.get("label", item.get("id", "")) for item in chain.get("basis_facts", [])]
+            evidence_ids = [item.get("id", "") for item in chain.get("evidence", [])]
+            reasoning_actions = [item.get("metadata", {}).get("action", item.get("kind", "")) for item in chain.get("reasoning", [])]
+            council_rounds = [item.get("metadata", {}).get("round") for item in chain.get("council", [])]
+            lines.extend(
+                [
+                    f"### Why {index}: {chain.get('tool')} — dynamic plan revision",
+                    "",
+                    f"- Step: `{chain.get('step_id')}`",
+                    f"- Revision: `{revision.get('id', '—')}`",
+                    f"- Rationale: {md.get('rationale') or revision.get('label', '—')}",
+                    f"- Expected information gain: {chain.get('expected_information_gain') or '—'}",
+                    f"- Evidence: `{', '.join(evidence_ids) or '—'}`",
+                    f"- Basis facts: {', '.join(fact_labels) or '—'}",
+                    f"- Reasoner context: `{', '.join(str(item) for item in reasoning_actions) or '—'}`",
+                    f"- Council rounds: `{', '.join(str(item) for item in council_rounds) or '—'}`",
+                    f"- Support edges: `{chain.get('support_edges', 0)}`",
+                    f"- Revision adds step edge: `{chain.get('adds_step_edge', False)}`",
+                    f"- Execution authority: `{chain.get('execution_authority', False)}`",
+                    f"- Profile: `{json.dumps(chain.get('profile', {}), ensure_ascii=False)}`",
+                    "",
+                ]
+            )
+    else:
+        lines.extend(["No evidence-driven dynamic capability revisions were recorded.", ""])
 
     lines.extend(["## Evidence-backed Findings", ""])
     if report["findings"]:
