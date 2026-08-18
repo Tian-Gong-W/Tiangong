@@ -70,6 +70,7 @@ def inspect_tls(host: str, port: int, timeout: int) -> int:
                         "type": "tls",
                         "host": host,
                         "port": port,
+                        "reachable": True,
                         "version": tls_sock.version(),
                         "cipher": cipher[0] if cipher else None,
                         "cipher_bits": cipher[2] if cipher else None,
@@ -84,8 +85,16 @@ def inspect_tls(host: str, port: int, timeout: int) -> int:
                 )
         return 0
     except (OSError, ssl.SSLError, TimeoutError) as exc:
-        _emit({"type": "tls_error", "host": host, "port": port, "error": str(exc)[:400]})
-        return 2
+        _emit(
+            {
+                "type": "tls",
+                "host": host,
+                "port": port,
+                "reachable": False,
+                "error": str(exc)[:400],
+            }
+        )
+        return 0
 
 
 def main(argv: list[str] | None = None) -> int:
