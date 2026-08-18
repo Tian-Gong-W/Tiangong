@@ -14,11 +14,11 @@ class HttpxAdapter(ToolAdapter):
         planning=CapabilityPlanningSpec(
             target_kinds=("host", "web"),
             seed_for=("web",),
-            requires_profile=("has_web_surface",),
+            requires_profile=("web_probe_warranted",),
             basis_fact_kinds=("intelligence.service",),
             resolves_unknowns=("web_reachability_and_technology",),
             default_parameters={"follow_redirects": False, "timeout": 10},
-            rationale="Resolve HTTP reachability and application metadata only when the target is explicitly Web or evidence exposes an HTTP-capable surface.",
+            rationale="Resolve HTTP reachability and application metadata when Web is explicit, HTTP is observed, or service evidence remains unresolved.",
             information_gain="HTTP reachability, status, title and technology evidence",
             information_gain_score=0.88,
             cost_score=0.24,
