@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -20,6 +23,8 @@ from tonmen.missions import (
 from tonmen.observations import Observation
 
 _SCHEMA_VERSION = 1
+_KEY_BYTES = 32
+_INTEGRITY_ALGORITHM = "hmac-sha256"
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,11 +37,33 @@ class ChronicleEntry:
     finished_at: datetime | None
 
 
+def _canonical_snapshot(payload: dict[str, Any]) -> bytes:
+    body = {key: value for key, value in payload.items() if key != "integrity"}
+    return json.dumps(
+        body,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def _snapshot_hmac(payload: dict[str, Any], key: bytes) -> str:
+    return hmac.new(key, _canonical_snapshot(payload), hashlib.sha256).hexdigest()
+
+
 class ChronicleStore:
-    """Private, atomic local persistence for mission plans, runtime state and evidence."""
+    """Private, atomic and authenticated local mission persistence.
+
+    New snapshots are HMAC-SHA256 authenticated with a separate 0600 local key.
+    Schema-1 snapshots without an integrity block remain loadable for migration; the
+    next save upgrades them to authenticated form.
+    """
 
     def __init__(self, workspace: Path) -> None:
-        self.root = Path(workspace) / "missions"
+        self.workspace = Path(workspace)
+        self.root = self.workspace / "missions"
+        self.key_path = self.workspace / ".chronicle.key"
+        self._lock = threading.RLock()
 
     def _ensure_root(self) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
@@ -44,6 +71,44 @@ class ChronicleStore:
             self.root.chmod(0o700)
         except OSError:
             pass
+
+    def _load_key(self, *, create: bool) -> bytes:
+        if self.key_path.exists():
+            key = self.key_path.read_bytes()
+            if len(key) != _KEY_BYTES:
+                raise RuntimeError("Chronicle HMAC key has invalid length")
+            return key
+        if not create:
+            raise RuntimeError("Chronicle HMAC key is missing")
+
+        self.workspace.mkdir(parents=True, exist_ok=True)
+        key = os.urandom(_KEY_BYTES)
+        try:
+            fd = os.open(self.key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            existing = self.key_path.read_bytes()
+            if len(existing) != _KEY_BYTES:
+                raise RuntimeError("Chronicle HMAC key has invalid length")
+            return existing
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(key)
+                handle.flush()
+                try:
+                    os.fsync(handle.fileno())
+                except OSError:
+                    pass
+        except Exception:
+            try:
+                self.key_path.unlink()
+            except OSError:
+                pass
+            raise
+        try:
+            os.chmod(self.key_path, 0o600)
+        except OSError:
+            pass
+        return key
 
     @staticmethod
     def _validate_run_id(run_id: str) -> str:
@@ -55,69 +120,117 @@ class ChronicleStore:
     def _path(self, run_id: str) -> Path:
         return self.root / f"{self._validate_run_id(run_id)}.json"
 
+    def _verify_payload(self, payload: dict[str, Any]) -> bool | None:
+        """Return True for authenticated valid, False for invalid, None for legacy."""
+        integrity = payload.get("integrity")
+        if integrity is None:
+            return None
+        if not isinstance(integrity, dict):
+            return False
+        if integrity.get("algorithm") != _INTEGRITY_ALGORITHM:
+            return False
+        digest = str(integrity.get("digest") or "")
+        if len(digest) != 64:
+            return False
+        try:
+            key = self._load_key(create=False)
+        except (OSError, RuntimeError):
+            return False
+        expected = _snapshot_hmac(payload, key)
+        return hmac.compare_digest(digest, expected)
+
+    def verify(self, run_id: str) -> bool:
+        with self._lock:
+            path = self._path(run_id)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            return self._verify_payload(payload) is True
+
     def save(self, plan: MissionPlan, run: MissionRun) -> Path:
         if run.plan_id != plan.id:
             raise ValueError("mission run does not belong to this plan")
-        self._ensure_root()
-        path = self._path(run.id)
-        temp = path.with_suffix(".tmp")
-        payload = {"schema": _SCHEMA_VERSION, "plan": self._plan_to_dict(plan), "run": self._run_to_dict(run)}
-        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-        fd = os.open(temp, flags, 0o600)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                json.dump(payload, handle, ensure_ascii=False, sort_keys=True, indent=2)
-                handle.write("\n")
-        except Exception:
+        with self._lock:
+            self._ensure_root()
+            key = self._load_key(create=True)
+            path = self._path(run.id)
+            temp = path.with_suffix(".tmp")
+            payload: dict[str, Any] = {
+                "schema": _SCHEMA_VERSION,
+                "plan": self._plan_to_dict(plan),
+                "run": self._run_to_dict(run),
+            }
+            payload["integrity"] = {
+                "algorithm": _INTEGRITY_ALGORITHM,
+                "digest": _snapshot_hmac(payload, key),
+            }
+            flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+            fd = os.open(temp, flags, 0o600)
             try:
-                temp.unlink()
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    json.dump(payload, handle, ensure_ascii=False, sort_keys=True, indent=2)
+                    handle.write("\n")
+                    handle.flush()
+                    try:
+                        os.fsync(handle.fileno())
+                    except OSError:
+                        pass
+            except Exception:
+                try:
+                    temp.unlink()
+                except OSError:
+                    pass
+                raise
+            os.replace(temp, path)
+            try:
+                path.chmod(0o600)
             except OSError:
                 pass
-            raise
-        os.replace(temp, path)
-        try:
-            path.chmod(0o600)
-        except OSError:
-            pass
-        return path
+            return path
 
     def load(self, run_id: str) -> tuple[MissionPlan, MissionRun]:
-        path = self._path(run_id)
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        if payload.get("schema") != _SCHEMA_VERSION:
-            raise ValueError("unsupported chronicle schema")
-        return self._plan_from_dict(payload["plan"]), self._run_from_dict(payload["run"])
+        with self._lock:
+            path = self._path(run_id)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if payload.get("schema") != _SCHEMA_VERSION:
+                raise ValueError("unsupported chronicle schema")
+            integrity = self._verify_payload(payload)
+            if integrity is False:
+                raise ValueError("chronicle integrity verification failed")
+            return self._plan_from_dict(payload["plan"]), self._run_from_dict(payload["run"])
 
     def delete(self, run_id: str) -> bool:
         """Delete one persisted mission record after validating its run id."""
-        path = self._path(run_id)
-        try:
-            path.unlink()
-        except FileNotFoundError:
-            return False
-        return True
+        with self._lock:
+            path = self._path(run_id)
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                return False
+            return True
 
     def list(self) -> list[ChronicleEntry]:
-        if not self.root.exists():
-            return []
-        entries: list[ChronicleEntry] = []
-        for path in sorted(self.root.glob("*.json")):
-            try:
-                payload = json.loads(path.read_text(encoding="utf-8"))
-                run = payload["run"]
-                entries.append(
-                    ChronicleEntry(
-                        run_id=run["id"],
-                        plan_id=run["plan_id"],
-                        target=run["target"],
-                        state=MissionRunState(run["state"]),
-                        started_at=datetime.fromisoformat(run["started_at"]),
-                        finished_at=datetime.fromisoformat(run["finished_at"]) if run.get("finished_at") else None,
+        with self._lock:
+            if not self.root.exists():
+                return []
+            entries: list[ChronicleEntry] = []
+            for path in sorted(self.root.glob("*.json")):
+                try:
+                    payload = json.loads(path.read_text(encoding="utf-8"))
+                    if self._verify_payload(payload) is False:
+                        continue
+                    run = payload["run"]
+                    entries.append(
+                        ChronicleEntry(
+                            run_id=run["id"],
+                            plan_id=run["plan_id"],
+                            target=run["target"],
+                            state=MissionRunState(run["state"]),
+                            started_at=datetime.fromisoformat(run["started_at"]),
+                            finished_at=datetime.fromisoformat(run["finished_at"]) if run.get("finished_at") else None,
+                        )
                     )
-                )
-            except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
-                continue
-        return sorted(entries, key=lambda entry: entry.started_at, reverse=True)
+                except (OSError, KeyError, TypeError, ValueError, RuntimeError, json.JSONDecodeError):
+                    continue
+            return sorted(entries, key=lambda entry: entry.started_at, reverse=True)
 
     @staticmethod
     def _plan_to_dict(plan: MissionPlan) -> dict[str, Any]:
@@ -221,7 +334,14 @@ class ChronicleStore:
     def _run_from_dict(data: dict[str, Any]) -> MissionRun:
         graph = EvidenceGraph()
         for node in data.get("graph", {}).get("nodes", []):
-            graph.add_node(GraphNode(id=node["id"], kind=node["kind"], label=node["label"], metadata=node.get("metadata", {})))
+            graph.add_node(
+                GraphNode(
+                    id=node["id"],
+                    kind=node["kind"],
+                    label=node["label"],
+                    metadata=node.get("metadata", {}),
+                )
+            )
         for edge in data.get("graph", {}).get("edges", []):
             graph.link(edge["source"], edge["relation"], edge["target"])
         return MissionRun(
