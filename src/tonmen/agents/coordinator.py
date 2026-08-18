@@ -383,6 +383,34 @@ class MissionCoordinator:
                             evidence_id=job.outcome.evidence.id,
                         )
                         return mission_run
+                    if timed_out and step.requires_approval:
+                        execution.state = StepExecutionState.WAITING_APPROVAL
+                        execution.metadata["timed_out"] = True
+                        execution.metadata["timeout_seconds"] = job.outcome.result.evidence.get("timeout_seconds")
+                        execution.metadata["retry_requires_fresh_approval"] = True
+                        execution.metadata["degraded_reason"] = "approval_gated_validation_timeout"
+                        mission_run.state = MissionRunState.WAITING_APPROVAL
+                        self._emit(
+                            "step.retry_approval_required",
+                            mission_run,
+                            step_id=step.id,
+                            tool=step.tool,
+                            error=execution.error,
+                            reason="approval_gated_validation_timeout",
+                            evidence_id=job.outcome.evidence.id,
+                            fresh_approval_required=True,
+                        )
+                        self._emit(
+                            "approval.required",
+                            mission_run,
+                            step_id=step.id,
+                            tool=step.tool,
+                            step_target=step.target,
+                            risk=step.risk,
+                            reason="validation timeout; fresh approval required for retry",
+                            retry=True,
+                        )
+                        return mission_run
                 else:
                     execution.error = job.error or "execution failed"
                 mission_run.finish(MissionRunState.FAILED)
