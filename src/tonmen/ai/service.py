@@ -175,11 +175,14 @@ class LocalAIService:
         if self.provider is None:
             return None
         context, fact_ids, candidate_tools = self._context(plan, run, decision, candidates)
-        advisory = self.provider.advise(
-            context,
-            allowed_fact_ids=fact_ids,
-            allowed_candidate_tools=candidate_tools,
-        )
+        if candidate_tools:
+            advisory = self.provider.advise(
+                context,
+                allowed_fact_ids=fact_ids,
+                allowed_candidate_tools=candidate_tools,
+            )
+        else:
+            advisory = self.provider.advise(context, allowed_fact_ids=fact_ids)
         if decision is None and (advisory.challenge_decision or advisory.challenge_reason):
             # A pre-reasoning snapshot has no deterministic decision to challenge.
             # Preserve the analysis while removing a misleading decision-review claim.
