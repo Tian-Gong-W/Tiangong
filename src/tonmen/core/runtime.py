@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from tonmen.ai import LocalAIService
 from tonmen.audit import AuditLog
 from tonmen.events import EventBus
 from tonmen.execution import ToolExecutor
@@ -24,13 +25,20 @@ class TonmenRuntime:
     audit: AuditLog | None = None
     scope: TargetScope | None = None
     events: EventBus | None = None
+    ai: LocalAIService | None = None
 
     @classmethod
     def genesis(cls, config: TonmenConfig | None = None, *, events: EventBus | None = None) -> "TonmenRuntime":
         config = config or TonmenConfig.default()
         if config.allow_arbitrary_shell:
             raise ValueError("TONMEN forbids arbitrary shell execution")
-        return cls(config=config, registry=ToolRegistry(), policy=PolicyEngine(), events=events)
+        return cls(
+            config=config,
+            registry=ToolRegistry(),
+            policy=PolicyEngine(),
+            events=events,
+            ai=LocalAIService(config),
+        )
 
     @classmethod
     def forge(cls, config: TonmenConfig | None = None, *, events: EventBus | None = None) -> "TonmenRuntime":
@@ -67,6 +75,9 @@ class TonmenRuntime:
 
     def status_text(self) -> str:
         scope_count = len(self.scope.allowed) if self.scope else 0
+        ai_state = "○ Disabled"
+        if self.ai is not None and self.ai.enabled:
+            ai_state = f"● Local ({self.config.ai_provider}:{self.config.ai_model})"
         return "\n".join(
             [
                 "天樞 Core        ● Online",
@@ -80,5 +91,6 @@ class TonmenRuntime:
                 "天鑑 Intelligence ● Ready",
                 "天策 Reasoner     ● Ready",
                 "天衡 Mission Loop ● Ready",
+                f"天智 Local AI     {ai_state}",
             ]
         )
