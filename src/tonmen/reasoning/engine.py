@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tonmen.adaptive import build_target_profile
+from tonmen.adaptive import assess_evidence_confidence, build_target_profile
 from tonmen.missions import MissionPlan, MissionRun, MissionRunState, StepExecutionState
 
 from .model import ReasoningAction, ReasoningDecision
@@ -32,6 +32,8 @@ class MissionReasoner:
 
     The reasoner may continue or skip candidate capabilities based on the live target
     profile. It never expands Scope, issues approvals, or creates executable shell text.
+    Explicit conflicts between comparable persisted facts are surfaced for review rather
+    than silently collapsed into a single conclusion.
     """
 
     def decide(self, plan: MissionPlan, run: MissionRun) -> ReasoningDecision:
@@ -40,6 +42,7 @@ class MissionReasoner:
 
         facts = _intelligence_nodes(run)
         profile = build_target_profile(plan, run)
+        confidence = assess_evidence_confidence(plan, run)
         completed_tools = _completed_tools(run)
 
         if run.state in {MissionRunState.FAILED, MissionRunState.DENIED}:
@@ -107,10 +110,24 @@ class MissionReasoner:
                 action=ReasoningAction.CONTINUE,
                 summary=(
                     f"Continue with governed capability {step.tool}; current profile complexity={profile.complexity}, "
-                    f"unknowns={','.join(profile.unknowns) if profile.unknowns else 'none'}."
+                    f"unknowns={','.join(profile.unknowns) if profile.unknowns else 'none'}, "
+                    f"evidence_conflicts={len(confidence.conflicted)}."
                 ),
                 basis_fact_ids=tuple(node.id for node in facts[:16]),
                 next_step_id=step.id,
+            )
+
+        if confidence.conflicted:
+            conflict_ids = confidence.conflict_fact_ids
+            labels = ", ".join(item.subject for item in confidence.conflicted[:3])
+            return ReasoningDecision.create(
+                action=ReasoningAction.REVIEW,
+                summary=(
+                    f"{len(confidence.conflicted)} explicit evidence conflict(s) remain ({labels}); "
+                    "review corroboration before treating the target profile as converged."
+                ),
+                basis_fact_ids=conflict_ids[:16],
+                requires_human=True,
             )
 
         severe = [
@@ -132,7 +149,7 @@ class MissionReasoner:
         return ReasoningDecision.create(
             action=ReasoningAction.COMPLETE,
             summary=(
-                "No further governed candidate capability is justified by the current evidence; "
+                "No further governed candidate capability is justified and no explicit comparable-fact conflict remains; "
                 "proceed to bounded assessment synthesis and reporting."
             ),
             basis_fact_ids=tuple(node.id for node in facts[:16]),
