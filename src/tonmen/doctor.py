@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Callable, Mapping
 
 from .core.config import TonmenConfig
+from .tools.binary_identity import resolve_projectdiscovery_httpx
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,21 +129,41 @@ def run_doctor(
 
     checks.append(_workspace_check(config))
 
-    for executable, note in (
-        ("nmap", "Nmap network scanner"),
-        ("httpx", "ProjectDiscovery HTTPx CLI (not the Python httpx package)"),
-    ):
-        path = which(executable)
-        checks.append(
-            DoctorCheck(
-                executable,
-                path is not None,
-                f"{note}: {path}" if path else f"{note}: not found in PATH",
-                code="ready" if path else "missing_binary",
-                remediation=None if path else f"Install {executable} and make sure it is available in PATH.",
-                metadata={"path": path} if path else {},
-            )
+    nmap_path = which("nmap")
+    checks.append(
+        DoctorCheck(
+            "nmap",
+            nmap_path is not None,
+            f"Nmap network scanner: {nmap_path}" if nmap_path else "Nmap network scanner: not found in PATH",
+            code="ready" if nmap_path else "missing_binary",
+            remediation=None if nmap_path else "Install nmap and make sure it is available in PATH.",
+            metadata={"path": nmap_path} if nmap_path else {},
         )
+    )
+
+    httpx_resolution = resolve_projectdiscovery_httpx(environ=environ)
+    checks.append(
+        DoctorCheck(
+            "httpx",
+            httpx_resolution.ready,
+            httpx_resolution.detail,
+            code=httpx_resolution.code,
+            remediation=(
+                None
+                if httpx_resolution.ready
+                else (
+                    "Install ProjectDiscovery httpx. If a Python httpx CLI or another executable shadows the name, "
+                    "leave it installed if needed; TONMEN will skip incompatible PATH candidates and use a later compatible binary."
+                )
+            ),
+            metadata={
+                "path": httpx_resolution.path,
+                "identity_verified": httpx_resolution.ready,
+                "candidates": list(httpx_resolution.candidates),
+                "rejected": list(httpx_resolution.rejected),
+            },
+        )
+    )
 
     nuclei_path = which("nuclei")
     nuclei_binary = DoctorCheck(
