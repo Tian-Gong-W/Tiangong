@@ -102,6 +102,10 @@ class CapabilityCatalog:
         return {
             "target_kind": profile.target_kind,
             "complexity": profile.complexity,
+            "ports": tuple(profile.ports),
+            "services": tuple(profile.services),
+            "dns_addresses": tuple(profile.dns_addresses),
+            "tls_versions": tuple(profile.tls_versions),
             "port_count": len(profile.ports),
             "service_count": len(profile.services),
             "web_url_count": len(profile.web_urls),
@@ -122,7 +126,6 @@ class CapabilityCatalog:
         return parsed.hostname
 
     def _readiness(self, adapter) -> tuple[bool, str]:
-        # Test/injected executors intentionally stand in for local dependencies.
         if self.runtime.executor is not None and not self.runtime.executor.uses_local_subprocess:
             return True, "injected_executor"
         readiness = adapter.readiness()
@@ -144,12 +147,6 @@ class CapabilityCatalog:
         return tuple(name for _, name in sorted(ranked, key=lambda item: (-item[0], item[1])))
 
     def envelope_tools(self, target: str) -> tuple[str, ...]:
-        """Return the dry-run capability pool in registry order.
-
-        This is deliberately not the adaptive execution order. A target-specific
-        capability can appear here even when its live preconditions are not yet met;
-        `rank()` is the authority for dynamic eligibility and selection.
-        """
         _ = target_kind(target)
         return tuple(
             adapter.spec.name
@@ -219,9 +216,6 @@ class CapabilityCatalog:
         request = ToolRequest(tool=spec.name, target=step_target, parameters=parameters)
         requires_approval = False
         try:
-            # Candidate parameters are adapted by the adapter from bounded profile
-            # context before they become part of a dynamic MissionStep. This uses the
-            # actual runtime registry, including plugin adapters.
             parameters = dict(adapter.adapt_parameters(request, self._profile_context(profile)))
             request = ToolRequest(tool=spec.name, target=step_target, parameters=parameters)
             adapter.validate(request)
