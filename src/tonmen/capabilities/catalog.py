@@ -63,6 +63,21 @@ class CapabilityCatalog:
     def _successful_state(state: StepExecutionState) -> bool:
         return state in {StepExecutionState.SUCCEEDED, StepExecutionState.DEGRADED}
 
+    @staticmethod
+    def _frontier_complete(run: MissionRun) -> bool:
+        """A new capability may be appended only after the current frontier settles.
+
+        This prevents adaptive-only capabilities from being appended behind already
+        pending or approval-gated steps in a pre-built envelope. Seed-driven missions
+        naturally satisfy this after each single governed step completes.
+        """
+        settled = {
+            StepExecutionState.SUCCEEDED,
+            StepExecutionState.DEGRADED,
+            StepExecutionState.SKIPPED,
+        }
+        return all(execution.state in settled for execution in run.steps)
+
     def completed_capabilities(self, plan: MissionPlan, run: MissionRun) -> set[str]:
         planned = {step.id: step for step in plan.steps}
         capabilities: set[str] = set()
@@ -236,6 +251,8 @@ class CapabilityCatalog:
         )
 
     def rank(self, plan: MissionPlan, run: MissionRun, *, require_ready: bool = True) -> tuple[CapabilityCandidate, ...]:
+        if not self._frontier_complete(run):
+            return ()
         candidates = [self.evaluate(plan, run, adapter.spec.name, require_ready=require_ready) for adapter in self.runtime.registry if adapter.spec.planning is not None]
         candidates.sort(key=lambda item: (-int(item.eligible), -item.score, item.tool))
         return tuple(candidates)
