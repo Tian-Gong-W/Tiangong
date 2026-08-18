@@ -48,6 +48,28 @@ class ApiIntelAdapter(ToolAdapter):
         parsed = urlparse(value if "://" in value else f"https://{value}")
         return (parsed.hostname or "").lower()
 
+    @staticmethod
+    def _bounded_entry_url(target: str, context: Mapping[str, Any]) -> str:
+        if "://" in target:
+            return target
+        ports = context.get("ports", ())
+        observed = {
+            int(value)
+            for value in ports
+            if isinstance(value, int) or (isinstance(value, str) and value.isdigit())
+        } if isinstance(ports, (list, tuple)) else set()
+        if 443 in observed:
+            return f"https://{target}"
+        if 80 in observed:
+            return f"http://{target}"
+        for port in (8443, 9443):
+            if port in observed:
+                return f"https://{target}:{port}"
+        for port in (8080, 8000, 8888):
+            if port in observed:
+                return f"http://{target}:{port}"
+        return f"https://{target}"
+
     def validate(self, request: ToolRequest) -> None:
         reject_unknown_parameters(request.parameters, {"url", "max_scripts", "max_bytes", "timeout"})
         target = validate_web_target(request.target)
@@ -67,14 +89,8 @@ class ApiIntelAdapter(ToolAdapter):
 
     def adapt_parameters(self, request: ToolRequest, context: Mapping[str, Any]) -> Mapping[str, Any]:
         parameters = dict(request.parameters)
-        web_urls = context.get("web_urls", ())
-        if isinstance(web_urls, (list, tuple)):
-            target_host = self._host(str(request.target))
-            for candidate in web_urls:
-                value = str(candidate).strip()
-                if value and self._host(value) == target_host:
-                    parameters["url"] = value
-                    break
+        target = str(request.target)
+        parameters["url"] = self._bounded_entry_url(target, context)
         complexity = max(1, min(5, int(context.get("complexity", 1) or 1)))
         parameters["max_scripts"] = max(4, min(16, 6 + complexity * 2))
         parameters["max_bytes"] = max(65_536, min(524_288, 131_072 + complexity * 65_536))
