@@ -27,6 +27,7 @@ class TlsIntelAdapter(ToolAdapter):
             information_gain="TLS version/cipher plus certificate subject, issuer, SAN, validity and fingerprint evidence",
             information_gain_score=0.66,
             cost_score=0.16,
+            include_in_baseline_envelope=False,
         ),
     )
 
