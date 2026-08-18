@@ -58,10 +58,25 @@ class LocalAIService:
         ]
         return facts, fact_ids
 
-    def _context(self, plan: MissionPlan, run: MissionRun, decision: ReasoningDecision) -> tuple[dict[str, Any], set[str]]:
+    def _context(
+        self,
+        plan: MissionPlan,
+        run: MissionRun,
+        decision: ReasoningDecision | None,
+    ) -> tuple[dict[str, Any], set[str]]:
         profile = build_target_profile(plan, run)
         confidence = assess_evidence_confidence(plan, run)
         facts, fact_ids = self._fact_payload(run)
+        decision_payload = None
+        if decision is not None:
+            decision_payload = {
+                "id": decision.id,
+                "action": decision.action.value,
+                "summary": decision.summary,
+                "basis_fact_ids": list(decision.basis_fact_ids),
+                "next_step_id": decision.next_step_id,
+                "requires_human": decision.requires_human,
+            }
         context = {
             "governance": {
                 "execution_authority": False,
@@ -70,6 +85,7 @@ class LocalAIService:
                 "arbitrary_shell": False,
                 "report_only": True,
             },
+            "phase": "decision_review" if decision is not None else "pre_reasoning_advisory",
             "target": plan.target,
             "mission_state": run.state.value,
             "target_profile": {
@@ -113,19 +129,17 @@ class LocalAIService:
                 }
                 for step, execution in zip(plan.steps, run.steps, strict=True)
             ],
-            "deterministic_decision": {
-                "id": decision.id,
-                "action": decision.action.value,
-                "summary": decision.summary,
-                "basis_fact_ids": list(decision.basis_fact_ids),
-                "next_step_id": decision.next_step_id,
-                "requires_human": decision.requires_human,
-            },
+            "deterministic_decision": decision_payload,
             "facts": facts,
         }
         return context, fact_ids
 
-    def advise(self, plan: MissionPlan, run: MissionRun, decision: ReasoningDecision) -> AIAdvisory | None:
+    def advise(
+        self,
+        plan: MissionPlan,
+        run: MissionRun,
+        decision: ReasoningDecision | None = None,
+    ) -> AIAdvisory | None:
         if self.provider is None:
             return None
         context, fact_ids = self._context(plan, run, decision)
