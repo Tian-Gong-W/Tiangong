@@ -20,7 +20,7 @@ Every adaptively plannable `ToolAdapter` declares a `CapabilityPlanningSpec` on 
 - `information_gain_score` and `cost_score` — bounded deterministic planning inputs;
 - `include_in_baseline_envelope` — whether the capability appears in the historical operator/dry-run baseline envelope. `False` keeps a capability adaptive-only without removing it from live Catalog ranking.
 
-The central Planner therefore does not need to know that a specific binary is named `httpx`, `crawler`, `nuclei`, or anything else. A future adapter can satisfy a downstream prerequisite by providing `http.metadata` or `endpoint.discover` under a completely different tool name.
+The central Planner therefore does not need to know that a specific binary is named `httpx`, `crawler`, `api-intel`, `nuclei`, or anything else. A future adapter can satisfy a downstream prerequisite by providing semantic capabilities such as `http.metadata` or `endpoint.discover` under a completely different tool name.
 
 ## Deterministic eligibility
 
@@ -78,7 +78,8 @@ Every adaptive `planning.revision` records selected capability, deterministic ba
 Current adaptive-only built-ins include:
 
 - `dns-intel` → `dns.resolve`, `address.discover`;
-- `tls-intel` → `tls.handshake`, `certificate.inspect`.
+- `tls-intel` → `tls.handshake`, `certificate.inspect`;
+- `api-intel` → `api.surface.observe`, `javascript.endpoint.extract`, `openapi.hint.observe`.
 
 They remain available to live `CapabilityCatalog.rank()` whenever Target Profile evidence justifies them.
 
@@ -91,6 +92,23 @@ DNS intelligence is bounded to hostname identity evidence: A/AAAA addresses plus
 TLS intelligence performs one bounded handshake against an evidence-selected/default port and records protocol version, cipher, certificate SHA-256 fingerprint, subject, issuer, SANs, serial and validity metadata. It does not attempt credential use, session takeover, exploitation or protocol downgrade attacks.
 
 Negative observations are evidence rather than mission crashes: an unresolved hostname or unavailable TLS handshake produces a structured DNS/TLS Fact so later planning can reason about the absence of that surface.
+
+## API and static JavaScript intelligence semantics
+
+`api-intel` is a bounded same-origin **static analysis** capability. It requires an already-confirmed HTTP metadata capability and is adaptive-only by default.
+
+It may:
+
+- fetch one confirmed same-origin entry page;
+- inspect inline JavaScript text without executing it;
+- fetch a bounded number of same-origin script assets;
+- extract same-origin strings that resemble API, REST, RPC, GraphQL or versioned endpoint paths;
+- record OpenAPI / Swagger / GraphQL technology hints;
+- emit a structured summary even when no endpoint is observed, allowing `client_api_surface` uncertainty to close without inventing a positive result.
+
+It does **not** execute JavaScript, submit forms, follow cross-origin scripts/redirects, capture credentials, replay sessions or perform API calls against extracted endpoints. Endpoint strings are evidence for later planning, not execution instructions.
+
+`intelligence.api` facts feed Target Profile fields (`api_endpoints`, `api_hints`, `api_inspected`), Evidence Confidence, hypotheses and the bounded Local AI context. A negative static inspection remains unresolved/non-contradictory evidence rather than being treated as proof that no API exists.
 
 ## Adapter-owned parameter adaptation
 
