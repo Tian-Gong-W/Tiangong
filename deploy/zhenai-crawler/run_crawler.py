@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """统一采集入口：不再区分上海/香港/迪拜，单实例直接处理全国城市。"""
 
+import hashlib
 import importlib.util
 import os
 import sys
@@ -20,6 +21,37 @@ os.chdir(DATA_DIR)
 spec = importlib.util.spec_from_file_location("TON_MAM", APP_DIR / "TON-MAM.py")
 ton_mam = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ton_mam)
+
+# 以 2026-07-14 最后一条真实成功的 getConditionData.do 抓包为传输层基准：
+# 1) body 中的 ua 与 header 中的 ua 是两次独立生成；
+# 2) Content-Type 不带 charset；
+# 3) 补齐小程序 XHR 的静态请求头。
+_original_common_headers = ton_mam.ZhenaiCrawler._common_headers
+
+def _capture_aligned_headers(self, _body_ua):
+    header_ua = self.generate_ua()
+    headers = _original_common_headers(self, header_ua)
+    headers["content-type"] = "application/x-www-form-urlencoded"
+    headers["referer"] = "https://servicewechat.com/wxeb13e85bef8b60d9/428/page-frame.html"
+    headers["sec-fetch-site"] = "cross-site"
+    headers["sec-fetch-mode"] = "cors"
+    headers["sec-fetch-dest"] = "empty"
+    headers["accept-language"] = "zh-CN,zh;q=0.9"
+    headers["priority"] = "u=1, i"
+    return headers
+
+ton_mam.ZhenaiCrawler._common_headers = _capture_aligned_headers
+
+# 只输出不可逆短指纹，用于确认 Railway 的 token/seedtoken 是否与成功抓包属于同一认证对。
+def _fp(value):
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:10] if value else "empty"
+
+print(
+    "🔐 Auth fingerprint: "
+    f"token(len={len(ZHENAI_TOKEN)},fp={_fp(ZHENAI_TOKEN)}) | "
+    f"seed(len={len(ZHENAI_SEEDTOKEN)},fp={_fp(ZHENAI_SEEDTOKEN)})"
+)
+print("🧭 Capture transport profile: 2026-07-14 last-success / channel=904106 / page-frame=428 / independent-UA")
 
 if CITY_NAMES:
     unknown = [name for name in CITY_NAMES if name not in ton_mam.CITY_CODE_MAP]
