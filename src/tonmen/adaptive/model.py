@@ -30,6 +30,9 @@ class TargetProfile:
     certificate_sans: tuple[str, ...]
     web_urls: tuple[str, ...]
     technologies: tuple[str, ...]
+    api_endpoints: tuple[str, ...]
+    api_hints: tuple[str, ...]
+    api_inspected: bool
     findings: tuple[str, ...]
     severities: tuple[str, ...]
     unknowns: tuple[str, ...]
@@ -94,12 +97,16 @@ def build_target_profile(plan: MissionPlan, run: MissionRun) -> TargetProfile:
     certificate_sans: list[str] = []
     web_urls: list[str] = []
     technologies: list[str] = []
+    api_endpoints: list[str] = []
+    api_hints: list[str] = []
+    api_inspected = False
     findings: list[str] = []
     severities: list[str] = []
     service_fact_ids: list[str] = []
     dns_fact_ids: list[str] = []
     tls_fact_ids: list[str] = []
     web_fact_ids: list[str] = []
+    api_fact_ids: list[str] = []
     finding_fact_ids: list[str] = []
     endpoint_coverage_observed = False
 
@@ -156,6 +163,23 @@ def build_target_profile(plan: MissionPlan, run: MissionRun) -> TargetProfile:
             elif isinstance(tech, (list, tuple)):
                 technologies.extend(str(part).strip().lower() for part in tech)
 
+        elif node.kind == "intelligence.api":
+            api_fact_ids.append(node.id)
+            kind = str(data.get("kind") or "").strip().lower()
+            if kind == "endpoint":
+                endpoint = str(data.get("absolute_url") or data.get("endpoint") or "").strip()
+                if endpoint:
+                    api_endpoints.append(endpoint)
+            elif kind == "hint":
+                hint = str(data.get("hint") or "").strip().lower()
+                if hint:
+                    api_hints.append(hint)
+            elif kind == "summary":
+                api_inspected = bool(data.get("inspected", True))
+                hints = data.get("hints", ())
+                if isinstance(hints, (list, tuple)):
+                    api_hints.extend(str(value).strip().lower() for value in hints if str(value).strip())
+
         elif node.kind == "intelligence.finding":
             finding_fact_ids.append(node.id)
             findings.append(node.label)
@@ -176,6 +200,9 @@ def build_target_profile(plan: MissionPlan, run: MissionRun) -> TargetProfile:
         certificate_sans=_unique(certificate_sans),
         web_urls=_unique(web_urls),
         technologies=_unique(technologies),
+        api_endpoints=_unique(api_endpoints),
+        api_hints=_unique(api_hints),
+        api_inspected=api_inspected,
         findings=_unique(findings),
         severities=_unique(severities),
         unknowns=(),
@@ -195,6 +222,8 @@ def build_target_profile(plan: MissionPlan, run: MissionRun) -> TargetProfile:
     if web_fact_ids:
         if not endpoint_coverage_observed:
             unknowns.append("same_origin_endpoint_coverage")
+        if not api_fact_ids:
+            unknowns.append("client_api_surface")
         if not finding_fact_ids:
             unknowns.append("validation_coverage")
     if finding_fact_ids:
@@ -215,9 +244,19 @@ def build_target_profile(plan: MissionPlan, run: MissionRun) -> TargetProfile:
     if has_web:
         basis = tuple((web_fact_ids + service_fact_ids)[:16])
         hypotheses.append(Hypothesis("web_surface", "The target exposes an HTTP-capable surface worth deeper evidence-driven analysis.", 0.9 if web_fact_ids else 0.65, basis))
-    lowered = " ".join(web_urls + technologies + findings)
-    if any(token in lowered for token in ("graphql", "/api", "swagger", "openapi")):
-        hypotheses.append(Hypothesis("api_surface", "Observed evidence suggests an API-oriented application surface.", 0.75, tuple(web_fact_ids[:16])))
+    if api_endpoints or api_hints:
+        hypotheses.append(
+            Hypothesis(
+                "api_surface",
+                "Static same-origin evidence indicates an API-oriented client/application surface.",
+                0.85 if api_endpoints else 0.75,
+                tuple(api_fact_ids[:16]),
+            )
+        )
+    else:
+        lowered = " ".join(web_urls + technologies + findings)
+        if any(token in lowered for token in ("graphql", "/api", "swagger", "openapi")):
+            hypotheses.append(Hypothesis("api_surface", "Observed evidence suggests an API-oriented application surface.", 0.75, tuple(web_fact_ids[:16])))
     if finding_fact_ids:
         hypotheses.append(Hypothesis("risk_review", "Evidence-backed findings require root-cause, impact and remediation analysis; active end-stage actions remain disabled.", 0.8 if any(s in {"high", "critical"} for s in severities) else 0.65, tuple(finding_fact_ids[:16])))
 
@@ -227,6 +266,7 @@ def build_target_profile(plan: MissionPlan, run: MissionRun) -> TargetProfile:
     complexity += 1 if len(set(dns_addresses)) > 1 else 0
     complexity += 1 if tls_fact_ids else 0
     complexity += 1 if len(set(web_urls)) >= 5 else 0
+    complexity += 1 if api_endpoints or api_hints else 0
     complexity += 1 if finding_fact_ids else 0
     complexity += 1 if any(s in {"high", "critical"} for s in severities) else 0
     complexity = max(1, min(5, complexity))
@@ -241,6 +281,9 @@ def build_target_profile(plan: MissionPlan, run: MissionRun) -> TargetProfile:
         certificate_sans=_unique(certificate_sans),
         web_urls=_unique(web_urls),
         technologies=_unique(technologies),
+        api_endpoints=_unique(api_endpoints),
+        api_hints=_unique(api_hints),
+        api_inspected=api_inspected,
         findings=_unique(findings),
         severities=_unique(severities),
         unknowns=_unique(unknowns),
