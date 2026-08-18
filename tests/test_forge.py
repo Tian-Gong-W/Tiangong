@@ -55,6 +55,12 @@ def test_httpx_rejects_shell_metacharacters_in_target():
         HttpxAdapter().build_argv(ToolRequest(tool="httpx", target="example.com;id"))
 
 
+def test_web_adapters_reject_credentials_in_target():
+    for adapter in (HttpxAdapter(), CrawlerAdapter(), NucleiAdapter()):
+        with pytest.raises(ValueError, match="credentials"):
+            adapter.build_argv(ToolRequest(tool=adapter.spec.name, target="https://user:secret@example.com/private"))
+
+
 def test_nuclei_requires_explicit_approval():
     registry = ToolRegistry()
     registry.register(NucleiAdapter())
