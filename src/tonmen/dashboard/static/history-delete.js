@@ -415,3 +415,192 @@
   });
   refreshDelta();
 })();
+
+(() => {
+  "use strict";
+  const WHY_GRAPH_PLUGIN = true;
+  const esc = value => String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;'"}[ch]));
+  const short = value => String(value || "").slice(0, 8);
+  let installing = false;
+  let cachedDetail = null;
+  let cachedRunId = null;
+
+  function selectedRun() {
+    return new URLSearchParams(location.search).get("run") || document.querySelector("#module-page-root .module-table tr.selected[data-select-run]")?.dataset.selectRun || null;
+  }
+
+  function ensureStyles() {
+    if (document.getElementById("tonmen-why-graph-style")) return;
+    const style = document.createElement("style");
+    style.id = "tonmen-why-graph-style";
+    style.textContent = `
+      .why-graph-view{margin-top:10px}.why-toolbar{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.why-tool{min-height:30px;padding:5px 9px;border:1px solid #315365;border-radius:6px;background:#07131b;color:#91b2c1;font-size:9px;cursor:pointer}.why-tool:hover,.why-tool.active{border-color:#68a9c5;color:#d8edf5;background:#0b1d28}.why-chain{display:grid;grid-template-columns:minmax(120px,1fr) 24px minmax(140px,1.2fr) 24px minmax(170px,1.25fr) 24px minmax(160px,1.15fr) 24px minmax(130px,1fr);gap:6px;align-items:stretch;margin-top:9px}.why-lane{min-width:0;padding:8px;border:1px solid #203846;border-radius:7px;background:#08151e}.why-lane>span{display:block;margin-bottom:6px;color:#637d8a;font-size:8px;text-transform:uppercase;letter-spacing:.06em}.why-node{padding:7px;border:1px solid #2a4858;border-radius:5px;background:#07131b;margin-top:5px;min-width:0}.why-node:first-of-type{margin-top:0}.why-node strong{display:block;color:#cfe0e7;font-size:9px;overflow:hidden;text-overflow:ellipsis}.why-node small{display:block;margin-top:3px;color:#718995;font-size:8px;line-height:1.4;overflow-wrap:anywhere}.why-node.fact{border-color:#355a6e}.why-node.reason{border-color:#725b33}.why-node.council{border-color:#5d4977}.why-node.revision{border-color:#3c7388}.why-node.tool{border-color:#3d745d}.why-arrow{display:grid;place-items:center;color:#4e7486;font-size:16px}.why-summary{margin-top:9px;padding:8px 10px;border-left:2px solid #4f8aa1;background:#07131b;color:#9fb9c5;font-size:9px;line-height:1.55}.why-step-button{min-height:24px;padding:3px 7px;margin-left:7px;border:1px solid #3b6578;border-radius:5px;background:#07131b;color:#83bdd0;font-size:8px;cursor:pointer}.why-step-button:hover{border-color:#6eb3d0;color:#d7f2fb}@media(max-width:980px){.why-chain{grid-template-columns:1fr}.why-arrow{transform:rotate(90deg);min-height:20px}}
+    `;
+    document.head.appendChild(style);
+  }
+
+  function nodeMap(detail) {
+    return new Map((detail.graph?.nodes || []).map(node => [node.id, node]));
+  }
+
+  function overlaps(left, right) {
+    const set = new Set(left || []);
+    return (right || []).some(value => set.has(value));
+  }
+
+  function revisionForStep(step, nodes) {
+    const id = step?.metadata?.plan_revision_id;
+    if (id && nodes.has(id)) return nodes.get(id);
+    return [...nodes.values()].find(node => node.kind === "planning.revision" && node.metadata?.tool === step.tool) || null;
+  }
+
+  function evidenceForFacts(detail, basisIds) {
+    const wanted = new Set(basisIds || []);
+    const evidenceIds = [];
+    for (const edge of detail.graph?.edges || []) {
+      if (edge.relation === "reveals" && wanted.has(edge.target) && !evidenceIds.includes(edge.source)) evidenceIds.push(edge.source);
+    }
+    return evidenceIds.map(id => (detail.evidence || []).find(item => item.id === id)).filter(Boolean);
+  }
+
+  function reasoningForStep(detail, step, basisIds) {
+    return (detail.reasoning || []).filter(node => {
+      const md = node.metadata || {};
+      return md.next_step_id === step.id || overlaps(basisIds, md.basis_fact_ids || []);
+    });
+  }
+
+  function councilForFacts(detail, basisIds, reasoningIds, nodes) {
+    const reasoningSet = new Set(reasoningIds || []);
+    const basis = new Set(basisIds || []);
+    return (detail.graph?.nodes || []).filter(round => {
+      if (round.kind !== "council.round") return false;
+      if (reasoningSet.has(round.metadata?.decision_id)) return true;
+      const agents = (detail.graph?.edges || [])
+        .filter(edge => edge.source === round.id && edge.relation === "contains_subagent")
+        .map(edge => nodes.get(edge.target)).filter(Boolean);
+      return agents.some(agent => (agent.metadata?.fact_ids || []).some(id => basis.has(id)));
+    });
+  }
+
+  function whyModels(detail) {
+    const nodes = nodeMap(detail);
+    return (detail.steps || []).filter(step => step.metadata?.plan_revision_id).map(step => {
+      const revision = revisionForStep(step, nodes);
+      const basisIds = revision?.metadata?.basis_fact_ids || step.metadata?.basis_fact_ids || [];
+      const facts = basisIds.map(id => nodes.get(id)).filter(Boolean);
+      const evidence = evidenceForFacts(detail, basisIds);
+      const reasoning = reasoningForStep(detail, step, basisIds);
+      const council = councilForFacts(detail, basisIds, reasoning.map(node => node.id), nodes);
+      const profile = step.metadata?.adaptive_profile || {};
+      const revisionEdge = (detail.graph?.edges || []).find(edge => edge.source === revision?.id && edge.relation === "adds_step" && edge.target === step.id);
+      const supportEdges = (detail.graph?.edges || []).filter(edge => edge.target === revision?.id && edge.relation === "supports_plan_revision");
+      return {step, revision, basisIds, facts, evidence, reasoning, council, profile, revisionEdge, supportEdges};
+    });
+  }
+
+  function lane(title, items, kind, formatter) {
+    const content = items.length ? items.map(item => `<div class="why-node ${kind}">${formatter(item)}</div>`).join("") : `<div class="why-node"><small>none recorded</small></div>`;
+    return `<section class="why-lane"><span>${esc(title)}</span>${content}</section>`;
+  }
+
+  function renderModel(model) {
+    const md = model.revision?.metadata || {};
+    const evidenceLane = lane("Evidence", model.evidence, "evidence", item => `<strong>${esc(item.tool)} · ${esc(short(item.id))}</strong><small>exit ${esc(item.exit_code)} · $ ${esc((item.argv || []).join(" "))}</small>`);
+    const factLane = lane("Facts", model.facts, "fact", item => `<strong>${esc(item.label)}</strong><small>${esc(item.kind)} · ${esc(short(item.id))}</small>`);
+    const contextItems = [
+      ...model.reasoning.map(item => ({kind:"reason", title:`Reasoner · ${item.metadata?.action || item.kind}`, text:item.label})),
+      ...model.council.map(item => ({kind:"council", title:`Council R${item.metadata?.round ?? "?"} · ${item.metadata?.focus || "review"}`, text:`${(item.metadata?.roles || []).join(", ") || "evidence review"}`})),
+      {kind:"profile", title:`Profile · complexity ${model.profile.complexity ?? "—"}`, text:`unknowns: ${(model.profile.unknowns || []).join(", ") || "none"} · hypotheses: ${(model.profile.hypotheses || []).join(", ") || "none"}`},
+    ];
+    const contextLane = lane("Context / judgment", contextItems, "", item => `<strong>${esc(item.title)}</strong><small>${esc(item.text)}</small>`);
+    const revisionLane = lane("Plan revision", model.revision ? [model.revision] : [], "revision", item => `<strong>${esc(item.label)}</strong><small>${esc(md.rationale || "—")}</small><small>information gain: ${esc(md.expected_information_gain || "—")}</small><small>support edges ${model.supportEdges.length} · adds_step=${model.revisionEdge ? "yes" : "no"} · execution_authority=${md.execution_authority === false ? "false" : "—"}</small>`);
+    const toolLane = lane("Selected tool", [model.step], "tool", item => `<strong>${esc(item.tool)}</strong><small>${esc(item.target)} · L${esc(item.risk ?? "—")} · ${item.requires_approval ? "approval" : "governed auto"}</small>`);
+    return `<div class="why-chain">${evidenceLane}<div class="why-arrow">→</div>${factLane}<div class="why-arrow">→</div>${contextLane}<div class="why-arrow">→</div>${revisionLane}<div class="why-arrow">→</div>${toolLane}</div><div class="why-summary"><strong>Why selected:</strong> ${esc(md.rationale || model.step.metadata?.plan_rationale || "The recorded evidence basis justified this registered capability.")}<br><strong>Basis:</strong> ${model.facts.length} Fact(s) from ${model.evidence.length} Evidence record(s). The graph contains ${model.supportEdges.length} <code>supports_plan_revision</code> edge(s) and ${model.revisionEdge ? "an" : "no"} <code>adds_step</code> edge.</div>`;
+  }
+
+  function renderWhyGraph(view, models, selectedStepId) {
+    const selected = models.find(model => model.step.id === selectedStepId) || models[0];
+    view.innerHTML = `<div class="trace-title"><div><strong>Why Graph · 为什么选这个工具</strong><span>Evidence → Fact → Profile / Reasoner / Council → planning.revision → Dynamic Tool</span></div><div class="trace-legend"><span>${models.length} dynamic tools</span><span>read only</span></div></div><div class="why-toolbar">${models.map(model => `<button type="button" class="why-tool ${selected?.step.id === model.step.id ? "active" : ""}" data-why-select-step="${esc(model.step.id)}">${esc(model.step.tool)} · ${esc(short(model.revision?.id))}</button>`).join("")}</div>${selected ? renderModel(selected) : `<div class="trace-card" style="margin-top:8px"><span class="trace-muted">尚无 Evidence-driven dynamic capability。</span></div>`}`;
+    view.dataset.selectedStep = selected?.step.id || "";
+  }
+
+  function installExecutionButtons(detail, models) {
+    const cards = [...document.querySelectorAll("#module-page-root .trace-execution-delta-view > .trace-card")];
+    const executed = (detail.steps || []).filter(step => step.evidence_id);
+    cards.forEach((card, index) => {
+      const step = executed[index];
+      if (!step?.metadata?.plan_revision_id || card.querySelector("[data-open-why-step]")) return;
+      const model = models.find(item => item.step.id === step.id);
+      if (!model) return;
+      const head = card.querySelector(".trace-head");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "why-step-button";
+      button.dataset.openWhyStep = step.id;
+      button.textContent = "Why?";
+      head?.appendChild(button);
+    });
+  }
+
+  async function installWhyGraph() {
+    if (installing || location.pathname !== "/missions") return;
+    ensureStyles();
+    const shell = document.querySelector("#module-page-root .decision-trace-shell");
+    const runId = selectedRun();
+    if (!shell || !runId) return;
+    installing = true;
+    try {
+      let detail = cachedRunId === runId ? cachedDetail : null;
+      if (!detail) {
+        const response = await fetch(`/api/missions/${encodeURIComponent(runId)}`, {cache:"no-store", headers:{"Accept":"application/json"}});
+        if (!response.ok) return;
+        detail = await response.json();
+        cachedRunId = runId;
+        cachedDetail = detail;
+      }
+      if (selectedRun() !== runId || !document.contains(shell)) return;
+      const models = whyModels(detail);
+      let view = shell.querySelector(`[data-why-graph-run="${runId}"]`);
+      if (!view) {
+        view = document.createElement("section");
+        view.className = "why-graph-view";
+        view.dataset.whyGraphRun = runId;
+        const executionDelta = shell.querySelector(".trace-execution-delta-view");
+        const councilDelta = shell.querySelector(".trace-delta-view");
+        if (executionDelta) executionDelta.insertAdjacentElement("afterend", view);
+        else if (councilDelta) councilDelta.insertAdjacentElement("afterend", view);
+        else (shell.querySelector(".trace-profile") || shell.querySelector(".trace-title"))?.insertAdjacentElement("afterend", view);
+      }
+      renderWhyGraph(view, models, view.dataset.selectedStep || models[0]?.step.id);
+      installExecutionButtons(detail, models);
+    } finally {
+      installing = false;
+    }
+  }
+
+  document.addEventListener("click", event => {
+    const direct = event.target.closest?.("[data-open-why-step]");
+    const select = event.target.closest?.("[data-why-select-step]");
+    const stepId = direct?.dataset.openWhyStep || select?.dataset.whySelectStep;
+    if (!stepId) return;
+    const view = document.querySelector("#module-page-root .why-graph-view");
+    if (!view || !cachedDetail) return;
+    const models = whyModels(cachedDetail);
+    renderWhyGraph(view, models, stepId);
+    view.scrollIntoView({behavior:"smooth", block:"start"});
+  });
+
+  const root = document.getElementById("module-page-root");
+  if (root) new MutationObserver(() => queueMicrotask(installWhyGraph)).observe(root, {childList:true, subtree:true});
+  window.addEventListener("popstate", () => { cachedDetail = null; cachedRunId = null; setTimeout(installWhyGraph, 0); });
+  window.addEventListener("tonmen:runtime-event", event => {
+    if (["step.completed", "intelligence.created", "plan.revised", "reasoning.decided", "council.round", "loop.stopped"].includes(event.detail?.type || "")) {
+      cachedDetail = null;
+      cachedRunId = null;
+      document.querySelector("#module-page-root .why-graph-view")?.remove();
+      setTimeout(installWhyGraph, 140);
+    }
+  });
+  installWhyGraph();
+})();
