@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from time import monotonic
 from typing import Any, Mapping
 from uuid import uuid4
 
@@ -41,6 +42,10 @@ class LeadDirective:
     provider: str | None = None
     model: str | None = None
     error: str | None = None
+    latency_ms: int | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
 
     def metadata(self) -> dict[str, object]:
         return {
@@ -55,6 +60,10 @@ class LeadDirective:
             "provider": self.provider,
             "model": self.model,
             "error": self.error,
+            "latency_ms": self.latency_ms,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "total_tokens": self.total_tokens,
             "execution_authority": False,
             "approval_authority": False,
             "scope_authority": False,
@@ -176,6 +185,17 @@ class LeadAIOrchestrator:
         text = str(value or "").strip()
         return (text or fallback)[:limit]
 
+    @staticmethod
+    def _provider_usage(provider: object) -> dict[str, int | None]:
+        usage = getattr(provider, "last_usage", {})
+        if not isinstance(usage, dict):
+            usage = {}
+        return {
+            "input_tokens": usage.get("input_tokens") if isinstance(usage.get("input_tokens"), int) else None,
+            "output_tokens": usage.get("output_tokens") if isinstance(usage.get("output_tokens"), int) else None,
+            "total_tokens": usage.get("total_tokens") if isinstance(usage.get("total_tokens"), int) else None,
+        }
+
     def direct(
         self,
         plan: MissionPlan,
@@ -202,8 +222,11 @@ class LeadAIOrchestrator:
             return fallback
 
         snapshot = self._snapshot(plan, run, round_number=round_number, phase=phase, default_focus=default_focus)
+        started = monotonic()
         try:
             result: Mapping[str, Any] = self.provider.complete_json(system=_SYSTEM, payload=snapshot)
+            latency_ms = max(0, round((monotonic() - started) * 1000))
+            usage = self._provider_usage(self.provider)
             action = str(result.get("recommended_action") or "").strip().lower()
             if action not in _ALLOWED_ACTIONS:
                 raise ValueError("Lead AI returned an unsupported recommended_action")
@@ -222,6 +245,10 @@ class LeadAIOrchestrator:
                 source="model",
                 provider=self.config.provider,
                 model=self.config.model,
+                latency_ms=latency_ms,
+                **usage,
             )
         except Exception as exc:
-            return replace(fallback, error=str(exc)[:240])
+            latency_ms = max(0, round((monotonic() - started) * 1000))
+            usage = self._provider_usage(self.provider)
+            return replace(fallback, error=str(exc)[:240], latency_ms=latency_ms, **usage)
