@@ -82,6 +82,26 @@ class MissionCoordinator:
             run.graph.add_node(GraphNode(id=evidence.id, kind="evidence", label=f"evidence:{execution.tool}", metadata={"exit_code": evidence.exit_code, "argv": evidence.argv}))
             run.graph.link(execution.step_id, "produced", evidence.id)
 
+    @staticmethod
+    def _record_execution_route(run: MissionRun, execution, outcome) -> None:
+        metadata = outcome.result.evidence
+        route = {
+            key: metadata[key]
+            for key in ("worker_id", "worker_region", "worker_tags", "remote_job_id", "remote_execution")
+            if key in metadata
+        }
+        if not route:
+            return
+        execution.metadata.update(route)
+        node = run.graph.nodes.get(outcome.evidence.id)
+        if node is not None:
+            run.graph.nodes[node.id] = GraphNode(
+                id=node.id,
+                kind=node.kind,
+                label=node.label,
+                metadata={**dict(node.metadata), **route},
+            )
+
     def start(self, plan: MissionPlan) -> MissionRun:
         self._check_scope(plan)
         run = MissionRun.create(plan)
@@ -195,6 +215,7 @@ class MissionCoordinator:
                 execution.state = StepExecutionState.FAILED
                 if job.outcome is not None:
                     self._record_execution_evidence(mission_run, execution, job.outcome.evidence)
+                    self._record_execution_route(mission_run, execution, job.outcome)
                     self._emit("evidence.created", mission_run, step_id=step.id, tool=step.tool, evidence_id=job.outcome.evidence.id, exit_code=job.outcome.evidence.exit_code)
                     execution.error = job.error or job.outcome.result.summary
                     timed_out = bool(job.outcome.result.evidence.get("timed_out"))
@@ -216,15 +237,20 @@ class MissionCoordinator:
             outcome = job.outcome
             evidence = outcome.evidence
             self._record_execution_evidence(mission_run, execution, evidence)
+            self._record_execution_route(mission_run, execution, outcome)
             self._emit("evidence.created", mission_run, step_id=step.id, tool=step.tool, evidence_id=evidence.id, exit_code=evidence.exit_code)
 
             facts = parse_evidence(evidence)
-            observation = Observation.create(source=step.tool, target=step.target, summary=summarize_facts(step.tool, facts, outcome.result.summary), evidence_id=evidence.id, metadata={"exit_code": evidence.exit_code, "job_id": job.id, "fact_ids": [fact.id for fact in facts]})
+            observation_metadata = {"exit_code": evidence.exit_code, "job_id": job.id, "fact_ids": [fact.id for fact in facts]}
+            for key in ("worker_id", "worker_region", "worker_tags", "remote_job_id", "remote_execution"):
+                if key in execution.metadata:
+                    observation_metadata[key] = execution.metadata[key]
+            observation = Observation.create(source=step.tool, target=step.target, summary=summarize_facts(step.tool, facts, outcome.result.summary), evidence_id=evidence.id, metadata=observation_metadata)
             mission_run.observations.append(observation)
             execution.state = StepExecutionState.SUCCEEDED
             execution.observation_id = observation.id
             execution.metadata["fact_ids"] = [fact.id for fact in facts]
-            mission_run.graph.add_node(GraphNode(id=observation.id, kind="observation", label=observation.summary, metadata={"source": observation.source, "target": observation.target}))
+            mission_run.graph.add_node(GraphNode(id=observation.id, kind="observation", label=observation.summary, metadata={"source": observation.source, "target": observation.target, **{key: value for key, value in observation_metadata.items() if key.startswith("worker_") or key in {"remote_job_id", "remote_execution"}}}))
             mission_run.graph.link(evidence.id, "supports", observation.id)
             mission_run.graph.link(mission_run.id, "observed", observation.id)
             self._emit("observation.created", mission_run, step_id=step.id, observation_id=observation.id, evidence_id=evidence.id, summary=observation.summary)
@@ -236,7 +262,7 @@ class MissionCoordinator:
                 mission_run.graph.link(mission_run.id, "knows", fact.id)
                 self._emit("intelligence.created", mission_run, step_id=step.id, fact_id=fact.id, kind=fact.kind.value, title=fact.title, severity=fact.severity.value, evidence_id=fact.evidence_id)
 
-            self._emit("step.completed", mission_run, step_id=step.id, tool=step.tool, evidence_id=evidence.id, observation_id=observation.id, facts=len(facts))
+            self._emit("step.completed", mission_run, step_id=step.id, tool=step.tool, evidence_id=evidence.id, observation_id=observation.id, facts=len(facts), worker_id=execution.metadata.get("worker_id"), worker_region=execution.metadata.get("worker_region"))
             if all(item.state in {StepExecutionState.SUCCEEDED, StepExecutionState.DEGRADED, StepExecutionState.SKIPPED} for item in mission_run.steps):
                 mission_run.finish(MissionRunState.SUCCEEDED)
                 self._emit("mission.completed", mission_run)
