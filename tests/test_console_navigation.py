@@ -15,6 +15,7 @@ def test_sidebar_uses_native_links_for_every_console_workspace():
         "/tools",
         "/intelligence",
         "/reasoner",
+        "/lead",
         "/loop",
         "/chronicle",
         "/approval",
@@ -41,6 +42,7 @@ def test_module_page_assets_render_detailed_execution_workspaces():
     assert 'root.id = "module-page-root"' in module_script
     assert '"/missions": ["任務", "Missions"' in module_script
     assert '"/tools": ["天工", "Tools"' in module_script
+    assert '"/lead": ["主導", "Lead AI"' in module_script
     assert '"/approval": ["審批", "Approval"' in module_script
     assert 'Execution Content' in module_script
     assert 'stdout' in module_script
