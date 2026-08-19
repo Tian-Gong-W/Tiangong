@@ -22,8 +22,9 @@ class LeadAIConfig:
     @classmethod
     def from_env(cls) -> "LeadAIConfig":
         key_env = (os.getenv("TONMEN_AI_KEY_ENV") or "OPENAI_API_KEY").strip()
-        key_present = bool(os.getenv(key_env, "").strip())
-        provider = (os.getenv("TONMEN_AI_PROVIDER") or ("openai" if key_present else "disabled")).strip().lower()
+        # Explicit opt-in avoids surprise network calls/cost merely because a shell
+        # already contains an unrelated OPENAI_API_KEY.
+        provider = (os.getenv("TONMEN_AI_PROVIDER") or "disabled").strip().lower()
         if provider not in {"disabled", "openai"}:
             raise ValueError("TONMEN_AI_PROVIDER must be 'disabled' or 'openai'")
         timeout = int(os.getenv("TONMEN_AI_TIMEOUT_SECONDS") or "30")
