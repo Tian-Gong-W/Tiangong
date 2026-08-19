@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from tonmen.ai import LeadAIConfig
+from tonmen.ai import LeadAIOrchestrator
 from tonmen.audit import AuditLog
 from tonmen.events import EventBus
 from tonmen.execution import ToolExecutor
@@ -68,10 +68,15 @@ class TonmenRuntime:
 
     def status_text(self) -> str:
         scope_count = len(self.scope.allowed) if self.scope else 0
-        ai = LeadAIConfig.from_env()
-        ai_state = f"● {ai.provider}/{ai.model}" if ai.enabled else "○ Disabled"
-        if ai.provider == "openai" and not ai.key_configured:
-            ai_state = f"○ OpenAI key missing ({ai.api_key_env})"
+        ai = LeadAIOrchestrator().public_status()
+        if ai.get("active"):
+            ai_state = f"● {ai.get('provider')}/{ai.get('model')}"
+        elif ai.get("provider") == "openai" and not ai.get("key_configured"):
+            ai_state = f"○ OpenAI key missing ({ai.get('key_env')})"
+        elif ai.get("error"):
+            ai_state = f"○ Disabled ({ai.get('error')})"
+        else:
+            ai_state = "○ Disabled"
         return "\n".join(
             [
                 "天樞 Core        ● Online",
