@@ -18,7 +18,7 @@ def test_worker_fleet_assets_are_packaged():
 
     assert "天役" in html
     assert "Worker Fleet" in html
-    assert "Approval Token" in html
+    assert "APPROVAL TOKEN" in html
     assert "/api/workers" in js
     assert "data-worker-probe" in js
     assert ".worker-grid" in css
