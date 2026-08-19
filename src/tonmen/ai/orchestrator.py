@@ -66,7 +66,9 @@ class LeadAIOrchestrator:
     """One lead intelligence layer over the bounded council.
 
     Lead AI directs review focus and synthesis only. It cannot mutate MissionPlan,
-    call ToolExecutor, issue ApprovalGrant, or add Scope rules.
+    call ToolExecutor, issue ApprovalGrant, or add Scope rules. Because it is an
+    optional intelligence layer, provider/configuration failures degrade to the
+    deterministic Lead instead of stopping the governed MissionLoop.
     """
 
     def __init__(
@@ -75,11 +77,22 @@ class LeadAIOrchestrator:
         *,
         provider: OpenAIResponsesProvider | None = None,
     ) -> None:
-        self.config = config or LeadAIConfig.from_env()
+        self.config_error: str | None = None
+        if config is None:
+            try:
+                config = LeadAIConfig.from_env()
+            except Exception as exc:
+                self.config_error = str(exc)[:240]
+                config = LeadAIConfig()
+        self.config = config
         if provider is not None:
             self.provider = provider
         elif self.config.enabled and self.config.provider == "openai":
-            self.provider = OpenAIResponsesProvider(self.config)
+            try:
+                self.provider = OpenAIResponsesProvider(self.config)
+            except Exception as exc:
+                self.config_error = str(exc)[:240]
+                self.provider = None
         else:
             self.provider = None
 
@@ -91,6 +104,7 @@ class LeadAIOrchestrator:
         status = self.config.public_status()
         status["active"] = self.enabled
         status["role"] = "lead_orchestrator"
+        status["error"] = self.config_error
         return status
 
     @staticmethod
@@ -182,6 +196,7 @@ class LeadAIOrchestrator:
             rationale="Deterministic TONMEN fallback; Lead AI provider is disabled or unavailable.",
             confidence=0.5,
             source="deterministic",
+            error=self.config_error,
         )
         if self.provider is None:
             return fallback
