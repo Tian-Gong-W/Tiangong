@@ -2,6 +2,20 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from urllib.parse import urlparse
+
+
+def _validate_openai_base_url(value: str) -> str:
+    base_url = value.strip().rstrip("/")
+    parsed = urlparse(base_url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "https":
+        raise ValueError("OpenAI base URL must use https")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError("OpenAI base URL may not contain credentials, query, or fragment")
+    if host != "api.openai.com" and not host.endswith(".api.openai.com"):
+        raise ValueError("OpenAI base URL must use an official *.api.openai.com host")
+    return base_url
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,8 +45,8 @@ class LeadAIConfig:
         if not 1 <= timeout <= 120:
             raise ValueError("TONMEN_AI_TIMEOUT_SECONDS must be between 1 and 120")
         base_url = (os.getenv("TONMEN_OPENAI_BASE_URL") or "https://api.openai.com/v1").strip().rstrip("/")
-        if provider == "openai" and not base_url.startswith("https://"):
-            raise ValueError("OpenAI base URL must use https")
+        if provider == "openai":
+            base_url = _validate_openai_base_url(base_url)
         return cls(
             provider=provider,
             model=(os.getenv("TONMEN_AI_MODEL") or "gpt-5.6").strip(),
