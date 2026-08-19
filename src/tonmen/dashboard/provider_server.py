@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import threading
 import webbrowser
@@ -11,6 +12,7 @@ from urllib.parse import unquote, urlparse
 
 from tonmen.ai import ProviderHub
 from tonmen.core.config import TonmenConfig
+from tonmen.workers import RemoteWorkerExecutor, WorkerHTTPTransport, WorkerPool
 
 from .server import DashboardState as BaseDashboardState
 from .server import TonmenDashboardHandler, validate_console_host
@@ -18,15 +20,18 @@ from .server import TonmenDashboardHandler, validate_console_host
 _PROVIDER_ASSETS = {
     "provider-hub-page.css": "text/css; charset=utf-8",
     "provider-hub-page.js": "text/javascript; charset=utf-8",
+    "worker-fleet-page.css": "text/css; charset=utf-8",
+    "worker-fleet-page.js": "text/javascript; charset=utf-8",
 }
 
 
 class DashboardState(BaseDashboardState):
-    """Dashboard facade extended with a credential-safe AI Provider Hub."""
+    """Dashboard facade extended with credential-safe AI and Worker control planes."""
 
     def __init__(self, config: TonmenConfig) -> None:
         super().__init__(config)
         self._provider_probes: dict[str, dict[str, Any]] = {}
+        self._worker_probes: dict[str, dict[str, Any]] = {}
 
     @staticmethod
     def _empty_usage() -> dict[str, int]:
@@ -172,12 +177,139 @@ class DashboardState(BaseDashboardState):
                 "note": "Authentication is handled by the official CLI; TONMEN does not read or persist its credentials.",
             }
 
+    def _worker_pool(self) -> WorkerPool:
+        return self.runtime.workers if self.runtime.workers is not None else WorkerPool.from_env()
+
+    def worker_fleet(self) -> dict[str, Any]:
+        """Return worker configuration and Chronicle provenance without probing remote nodes."""
+        with self._lock:
+            pool = self._worker_pool()
+            payload = pool.public_status()
+            history: dict[str, dict[str, int]] = {
+                item.id: {"steps": 0, "succeeded": 0, "failed": 0, "evidence": 0}
+                for item in pool.workers
+            }
+            remote_steps = 0
+            evidence_records = 0
+            missions_considered = 0
+            for entry in list(self.chronicle.list())[:100]:
+                try:
+                    _, run = self.chronicle.load(entry.run_id)
+                except (FileNotFoundError, ValueError, OSError):
+                    continue
+                missions_considered += 1
+                for execution in run.steps:
+                    worker_id = execution.metadata.get("worker_id")
+                    if not isinstance(worker_id, str) or not worker_id:
+                        continue
+                    remote_steps += 1
+                    item = history.setdefault(worker_id, {"steps": 0, "succeeded": 0, "failed": 0, "evidence": 0})
+                    item["steps"] += 1
+                    if execution.state.value in {"succeeded", "degraded"}:
+                        item["succeeded"] += 1
+                    elif execution.state.value in {"failed", "denied"}:
+                        item["failed"] += 1
+                    if execution.evidence_id:
+                        item["evidence"] += 1
+                        evidence_records += 1
+
+            workers = []
+            for worker in payload.get("workers", []):
+                item = dict(worker)
+                worker_id = str(item.get("id") or "")
+                item["history"] = history.get(worker_id, {"steps": 0, "succeeded": 0, "failed": 0, "evidence": 0})
+                item["last_probe"] = self._worker_probes.get(worker_id)
+                workers.append(item)
+
+            executor = self.runtime.executor
+            execution_mode = "worker" if isinstance(executor, RemoteWorkerExecutor) else "local"
+            tag_text = os.getenv("TONMEN_WORKER_TAGS", "")
+            payload.update(
+                {
+                    "execution_mode": execution_mode,
+                    "workers": workers,
+                    "historical": {
+                        "missions_considered": missions_considered,
+                        "remote_steps": remote_steps,
+                        "evidence_records": evidence_records,
+                        "workers": history,
+                    },
+                    "routing": {
+                        "probe_before_dispatch": bool(getattr(executor, "probe_before_dispatch", True)),
+                        "job_ttl_seconds": int(getattr(executor, "job_ttl_seconds", os.getenv("TONMEN_WORKER_JOB_TTL_SECONDS", "60") or "60")),
+                        "worker_id": os.getenv("TONMEN_WORKER_ID", "").strip(),
+                        "region": os.getenv("TONMEN_WORKER_REGION", "").strip(),
+                        "tags": [item.strip() for item in tag_text.split(",") if item.strip()],
+                        "automatic_cross_worker_retry_after_dispatch": False,
+                    },
+                    "privacy": {
+                        "secret_values_exposed": False,
+                        "approval_tokens_sent": False,
+                        "raw_shell_sent": False,
+                        "raw_argv_sent": False,
+                    },
+                }
+            )
+            return payload
+
+    def probe_worker(self, worker_id: str) -> dict[str, Any]:
+        with self._lock:
+            pool = self._worker_pool()
+            spec = pool.get(worker_id)
+            transport = self.runtime.executor.transport if isinstance(self.runtime.executor, RemoteWorkerExecutor) else WorkerHTTPTransport(timeout_seconds=self.config.command_timeout_seconds + 30)
+            try:
+                raw = dict(transport.health(spec, timeout=5))
+                remote = raw.get("worker") if isinstance(raw.get("worker"), dict) else {}
+                identity_ok = str(remote.get("id") or "").strip().lower() == spec.id
+                tools_raw = raw.get("tools") if isinstance(raw.get("tools"), dict) else {}
+                tools = {
+                    str(name): {"ready": bool(value.get("ready")), "code": str(value.get("code") or "")}
+                    for name, value in tools_raw.items()
+                    if isinstance(value, dict)
+                }
+                ready = bool(raw.get("ok")) and identity_ok
+                detail = (
+                    f"worker ready in {remote.get('region') or spec.region}"
+                    if ready
+                    else "worker health identity mismatch"
+                )
+                result = {
+                    "worker": spec.id,
+                    "ready": ready,
+                    "detail": detail,
+                    "region": str(remote.get("region") or spec.region),
+                    "tags": list(remote.get("tags") or spec.tags),
+                    "ready_tools": int(raw.get("ready_tools") or sum(1 for item in tools.values() if item["ready"])),
+                    "total_tools": int(raw.get("total_tools") or len(tools)),
+                    "tools": tools,
+                    "governance": dict(raw.get("governance") or {}),
+                }
+            except Exception as exc:
+                result = {
+                    "worker": spec.id,
+                    "ready": False,
+                    "detail": str(exc)[:300],
+                    "region": spec.region,
+                    "tags": list(spec.tags),
+                    "ready_tools": 0,
+                    "total_tools": 0,
+                    "tools": {},
+                    "governance": {},
+                }
+            self._worker_probes[spec.id] = result
+            self.events.publish("worker.probed", worker_id=spec.id, ready=result["ready"], region=spec.region)
+            return result
+
 
 class ProviderDashboardHandler(TonmenDashboardHandler):
-    """Adds Provider Hub UI/API while preserving the governed base Console."""
+    """Adds Provider Hub and Worker Fleet UI/API while preserving the governed base Console."""
 
     def _provider_index(self) -> bytes:
         text = resources.files("tonmen.dashboard.static").joinpath("provider-hub-page.html").read_text(encoding="utf-8")
+        return text.replace("__TONMEN_CSRF__", self.server.csrf_token).encode("utf-8")
+
+    def _worker_index(self) -> bytes:
+        text = resources.files("tonmen.dashboard.static").joinpath("worker-fleet-page.html").read_text(encoding="utf-8")
         return text.replace("__TONMEN_CSRF__", self.server.csrf_token).encode("utf-8")
 
     def do_GET(self) -> None:
@@ -186,6 +318,9 @@ class ProviderDashboardHandler(TonmenDashboardHandler):
         try:
             if path == "/lead":
                 self._send_bytes(200, "text/html; charset=utf-8", self._provider_index())
+                return
+            if path == "/workers":
+                self._send_bytes(200, "text/html; charset=utf-8", self._worker_index())
                 return
             if path.startswith("/assets/"):
                 name = unquote(path.removeprefix("/assets/"))
@@ -197,11 +332,14 @@ class ProviderDashboardHandler(TonmenDashboardHandler):
             if path == "/api/ai/providers":
                 self._json(200, self.server.state.provider_hub())
                 return
+            if path == "/api/workers":
+                self._json(200, self.server.state.worker_fleet())
+                return
         except (ValueError, OSError, json.JSONDecodeError) as exc:
             self._error(400, str(exc))
             return
         except Exception as exc:
-            self._error(500, f"provider hub error: {exc}")
+            self._error(500, f"control-plane workspace error: {exc}")
             return
         super().do_GET()
 
@@ -209,22 +347,27 @@ class ProviderDashboardHandler(TonmenDashboardHandler):
         path = urlparse(self.path).path.rstrip("/")
         parts = path.split("/")
         is_provider_action = len(parts) == 6 and parts[1:4] == ["api", "ai", "providers"] and parts[5] in {"login", "probe"}
-        if not is_provider_action:
+        is_worker_probe = len(parts) == 5 and parts[1:3] == ["api", "workers"] and parts[4] == "probe"
+        if not is_provider_action and not is_worker_probe:
             super().do_POST()
             return
         if not self._csrf_ok():
             self._error(403, "invalid local CSRF token or origin")
             return
-        provider_id = unquote(parts[4]).strip().lower()
         try:
+            if is_worker_probe:
+                worker_id = unquote(parts[3]).strip().lower()
+                self._json(200, self.server.state.probe_worker(worker_id))
+                return
+            provider_id = unquote(parts[4]).strip().lower()
             if parts[5] == "login":
                 self._json(200, self.server.state.launch_provider_login(provider_id))
             else:
                 self._json(200, self.server.state.probe_provider(provider_id))
-        except (ValueError, OSError) as exc:
+        except (ValueError, OSError, KeyError) as exc:
             self._error(400, str(exc))
         except Exception as exc:
-            self._error(500, f"provider hub error: {exc}")
+            self._error(500, f"control-plane workspace error: {exc}")
 
 
 class ProviderDashboardServer(ThreadingHTTPServer):
