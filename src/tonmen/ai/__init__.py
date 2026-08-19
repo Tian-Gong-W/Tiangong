@@ -1,6 +1,7 @@
 from .config import LeadAIConfig
-from .hub import ProviderHub, ProviderSpec, ProviderUsage, RoutedReview
+from .hub import ProviderSpec, ProviderUsage, RoutedReview
 from .orchestrator import LeadAIOrchestrator, LeadDirective
+from .pool import ProviderHub
 from .provider import OpenAIResponsesProvider
 
 __all__ = [
