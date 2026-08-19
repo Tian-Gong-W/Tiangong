@@ -1,3 +1,3 @@
-from .engine import AssessmentCouncil
+from .resilient import AssessmentCouncil
 
 __all__ = ["AssessmentCouncil"]
