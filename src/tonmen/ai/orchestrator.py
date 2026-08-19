@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Mapping
 from uuid import uuid4
 
@@ -209,6 +209,4 @@ class LeadAIOrchestrator:
                 model=self.config.model,
             )
         except Exception as exc:
-            return LeadDirective(
-                **{**fallback.__dict__, "error": str(exc)[:240]}
-            )
+            return replace(fallback, error=str(exc)[:240])
