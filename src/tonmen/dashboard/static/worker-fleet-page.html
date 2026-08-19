@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="tonmen-csrf" content="__TONMEN_CSRF__">
+  <title>天役 / Worker Fleet | TONMEN Console</title>
+  <link rel="stylesheet" href="/assets/app.css?v=worker-fleet-1">
+  <link rel="stylesheet" href="/assets/viewport.css?v=worker-fleet-1">
+  <link rel="stylesheet" href="/assets/worker-fleet-page.css?v=worker-fleet-1">
+</head>
+<body>
+  <div class="console-frame worker-console">
+    <header class="global-header">
+      <div class="header-brand">
+        <div class="brand-emblem" aria-hidden="true"><span>役</span></div>
+        <div class="brand-name"><strong>雲頂天宮</strong><i></i><b>TONMEN</b></div>
+        <div class="brand-tagline">Worker Fleet · Governed Execution Plane</div>
+      </div>
+      <div class="header-slogan"><span>權歸中樞，器行四方。</span><small>Central governance · Distributed execution</small></div>
+      <div class="fleet-refresh"><span id="fleet-updated">—</span><button class="ghost" id="fleet-refresh" type="button">↻ 刷新</button></div>
+    </header>
+
+    <div class="console-workspace">
+      <aside class="sidebar">
+        <nav class="nav" aria-label="TONMEN module navigation">
+          <a class="nav-item" href="/"><span>◉</span><b>儀表總覽</b></a>
+          <a class="nav-item" href="/missions"><span>◎</span><b>任務 <small>Missions</small></b></a>
+          <a class="nav-item" href="/scope"><span>◌</span><b>天域 <small>Scope</small></b></a>
+          <a class="nav-item" href="/guard"><span>◇</span><b>天律 <small>Guard</small></b></a>
+          <a class="nav-item" href="/tools"><span>⌁</span><b>天工 <small>Tools</small></b></a>
+          <a class="nav-item active" href="/workers"><span>♜</span><b>天役 <small>Workers</small></b></a>
+          <a class="nav-item" href="/intelligence"><span>◉</span><b>天鑑 <small>Intelligence</small></b></a>
+          <a class="nav-item" href="/reasoner"><span>✺</span><b>天策 <small>Reasoner</small></b></a>
+          <a class="nav-item" href="/lead"><span>♜</span><b>主導 <small>AI Hub</small></b></a>
+          <a class="nav-item" href="/loop"><span>∞</span><b>天衡 <small>Loop</small></b></a>
+          <a class="nav-item" href="/chronicle"><span>▤</span><b>天冊 <small>Chronicle</small></b></a>
+          <a class="nav-item" href="/approval"><span>♙</span><b>審批 <small>Approval</small></b></a>
+          <a class="nav-item" href="/settings"><span>⚙</span><b>設定 <small>Settings</small></b></a>
+        </nav>
+        <div class="sidebar-art" aria-hidden="true"><div class="temple-roof">⌁  亠  ⌁</div><div class="temple-lines">╱╲  ╱╲<br>⌒⌒⌒⌒⌒</div></div>
+        <div class="sidebar-poem">中樞授命，天役執器；<br>域律雙驗，證據歸冊。</div>
+      </aside>
+
+      <main class="main-stage worker-stage">
+        <section class="worker-page">
+          <div class="worker-page-head">
+            <div><span class="kicker">EXECUTION FLEET CONTROL</span><h1>天役 <small>/ Worker Fleet</small></h1><p>Worker 只負責執行經主控 Scope → Guard → Approval 授權的 typed adapter job；每台 Worker 仍會再次檢查本地 Scope / Policy。</p></div>
+            <div class="worker-seal"><span>RAW SHELL</span><strong>NO</strong><span>APPROVAL TOKEN</span><strong>LOCAL</strong></div>
+          </div>
+          <div id="fleet-alert" class="fleet-alert hidden"></div>
+          <section id="fleet-summary" class="fleet-summary"></section>
+
+          <div class="fleet-layout">
+            <section class="fleet-panel fleet-panel-wide">
+              <div class="fleet-panel-head"><div><h2>Worker Nodes</h2><small>配置、健康與執行歷史；Secret 值永不顯示</small></div><span id="fleet-mode" class="module-badge blue">LOADING</span></div>
+              <div id="worker-grid" class="worker-grid"><div class="fleet-empty">正在读取 Worker Fleet…</div></div>
+            </section>
+
+            <section class="fleet-panel">
+              <div class="fleet-panel-head"><div><h2>Dispatch Boundary</h2><small>Control plane → signed envelope → Worker</small></div><span class="module-badge ok">GOVERNED</span></div>
+              <div class="boundary-flow">
+                <div><b>1</b><strong>Scope / Guard</strong><span>主控先判定目标与风险</span></div>
+                <div><b>2</b><strong>Approval</strong><span>Grant 在主控消费，不发送 Token</span></div>
+                <div><b>3</b><strong>Signed Job</strong><span>Tool + parameters + target + TTL + nonce</span></div>
+                <div><b>4</b><strong>Worker Guard</strong><span>本地 Scope / Policy / readiness 再检查</span></div>
+                <div><b>5</b><strong>shell=False</strong><span>Worker adapter 本地重建 argv</span></div>
+                <div><b>6</b><strong>Evidence</strong><span>附 worker id / region / remote job provenance 回传</span></div>
+              </div>
+            </section>
+
+            <section class="fleet-panel">
+              <div class="fleet-panel-head"><div><h2>Routing Policy</h2><small>health-gated weighted least-use</small></div></div>
+              <div id="routing-state" class="routing-state"></div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/assets/worker-fleet-page.js?v=worker-fleet-1"></script>
+</body>
+</html>
