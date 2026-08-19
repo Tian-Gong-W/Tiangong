@@ -27,7 +27,12 @@ def _declared_products(item: Mapping[str, Any]) -> tuple[str, ...]:
         if len(parts) > 4:
             values.extend(part.strip().lower() for part in parts[3:5] if part.strip() and part != "*")
     seen: set[str] = set()
-    return tuple(value for value in values if value and not (value in seen or seen.add(value)))
+    unique: list[str] = []
+    for value in values:
+        if value and value not in seen:
+            seen.add(value)
+            unique.append(value)
+    return tuple(unique)
 
 
 def _observed_server(response: str) -> str | None:
@@ -54,10 +59,7 @@ def verify_nuclei_record(item: Mapping[str, Any]) -> dict[str, Any]:
     products = _declared_products(item)
     server = _observed_server(response)
 
-    if matcher is False:
-        template_status = "not_matched"
-    else:
-        template_status = "matched"
+    template_status = "not_matched" if matcher is False else "matched"
 
     strong, evidence_reasons = _strong_evidence(response)
     if template_status != "matched":
@@ -104,6 +106,7 @@ def verify_nuclei_record(item: Mapping[str, Any]) -> dict[str, Any]:
         confidence = min(1.0, confidence + 0.05)
     elif attribution_status == "contradicted":
         confidence = min(confidence, 0.75)
+    confidence = round(confidence, 2)
 
     return {
         "template_status": template_status,
