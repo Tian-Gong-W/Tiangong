@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import os
+from time import monotonic
+from typing import Any, Mapping
 
 from .hub import ProviderHub as _ProviderHub
+from .hub import RoutedReview
 
 _PROVIDER_IDS = ("openai", "chatgpt", "google", "grok", "deepseek", "mistral")
 _ROLES = (
@@ -12,14 +15,57 @@ _ROLES = (
     "governance_reviewer",
     "remediation_editor",
 )
+_ROLE_STRENGTH = {
+    "surface_mapper": 1,
+    "evidence_verifier": 2,
+    "vulnerability_analyst": 3,
+    "governance_reviewer": 1,
+    "remediation_editor": 2,
+}
+_ALLOWED_ACTIONS = {
+    "continue_governed_plan",
+    "await_human_approval",
+    "review_failure_evidence",
+    "finalize_report",
+    "stop_for_human_review",
+}
+
+
+def _parse_int_map(raw: str) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for item in raw.split(","):
+        key, sep, value = item.partition("=")
+        if not sep:
+            continue
+        provider_id = key.strip().lower()
+        if provider_id not in _PROVIDER_IDS:
+            continue
+        try:
+            budget = int(value.strip())
+        except ValueError:
+            continue
+        if budget >= 0:
+            result[provider_id] = budget
+    return result
+
+
+def _enabled(name: str, default: bool = True) -> bool:
+    raw = (os.getenv(name) or "").strip().lower()
+    if not raw:
+        return default
+    return raw not in {"0", "false", "no", "off"}
 
 
 class ProviderHub(_ProviderHub):
-    """Explicit provider pool with a side-effect-free public status surface.
+    """Explicit provider pool with quota-aware failover and safe public status.
 
     Multi-provider subagent calls require TONMEN_AI_POOL. Merely enabling Lead AI
-    never turns on model-backed subagents. Public status intentionally does not run
-    browser-login CLI probes; the Console exposes an explicit probe action instead.
+    never turns on model-backed subagents. Browser-login probes remain explicit.
+
+    Budgets are TONMEN-local guardrails, not claims about a provider account's real
+    billing balance. A provider that fails repeatedly is avoided for the remainder
+    of the current mission/council instance, while another ready provider may take
+    over the evidence-only review.
     """
 
     def __init__(self, pool: tuple[str, ...] | None = None) -> None:
@@ -37,10 +83,249 @@ class ProviderHub(_ProviderHub):
             pool = tuple(values)
         super().__init__(pool=pool)
 
+        legacy_budget = self.token_budget
+        raw_mission_budget = os.getenv("TONMEN_AI_MISSION_TOKEN_BUDGET")
+        try:
+            self.mission_token_budget = max(
+                0,
+                int(raw_mission_budget if raw_mission_budget is not None else legacy_budget),
+            )
+        except ValueError:
+            self.mission_token_budget = max(0, int(legacy_budget))
+        self.token_budget = self.mission_token_budget
+        self.provider_token_budgets = _parse_int_map(os.getenv("TONMEN_AI_PROVIDER_TOKEN_BUDGETS", ""))
+        try:
+            self.failure_limit = max(1, int(os.getenv("TONMEN_AI_PROVIDER_FAILURE_LIMIT", "2") or "2"))
+        except ValueError:
+            self.failure_limit = 2
+        self.failover_enabled = _enabled("TONMEN_AI_FAILOVER", True)
+        self.strict_routes = _enabled("TONMEN_AI_ROUTE_STRICT", False)
+        self._seeded_run_id: str | None = None
+        self.failover_events = 0
+
+    def prime_usage_from_run(self, run: Any) -> None:
+        """Rebuild current-mission usage from persisted Council graph nodes once.
+
+        This makes the mission token budget survive MissionLoop resume/restart. Only
+        model-subagent metadata is inspected; raw Evidence is never read or sent.
+        """
+        run_id = str(getattr(run, "id", "") or "")
+        if not run_id or run_id == self._seeded_run_id:
+            return
+        for item in self.usage.values():
+            item.calls = 0
+            item.input_tokens = 0
+            item.output_tokens = 0
+            item.total_tokens = 0
+            item.estimated_calls = 0
+            item.failures = 0
+        graph = getattr(run, "graph", None)
+        nodes = getattr(graph, "nodes", {}) if graph is not None else {}
+        for node in nodes.values():
+            if getattr(node, "kind", None) != "council.subagent":
+                continue
+            metadata = getattr(node, "metadata", {}) or {}
+            provider_id = metadata.get("provider")
+            if not isinstance(provider_id, str) or provider_id not in self.usage:
+                continue
+            usage = self.usage[provider_id]
+            if metadata.get("source") == "model":
+                usage.calls += 1
+                for key in ("input_tokens", "output_tokens", "total_tokens"):
+                    value = metadata.get(key)
+                    if isinstance(value, int) and value > 0:
+                        setattr(usage, key, getattr(usage, key) + value)
+                if metadata.get("usage_estimated"):
+                    usage.estimated_calls += 1
+            if metadata.get("provider_error") and metadata.get("source") != "model":
+                usage.calls += 1
+                usage.failures += 1
+        self._seeded_run_id = run_id
+
+    def _mission_tokens_used(self) -> int:
+        return sum(item.total_tokens for item in self.usage.values())
+
+    def _provider_budget(self, provider_id: str) -> int | None:
+        value = self.provider_token_budgets.get(provider_id)
+        return value if value is not None and value > 0 else None
+
+    def _provider_remaining(self, provider_id: str) -> int | None:
+        budget = self._provider_budget(provider_id)
+        if budget is None:
+            return None
+        return max(0, budget - self.usage[provider_id].total_tokens)
+
+    def _within_budget(self, provider_id: str) -> bool:
+        if self.mission_token_budget and self._mission_tokens_used() >= self.mission_token_budget:
+            return False
+        remaining = self._provider_remaining(provider_id)
+        return remaining is None or remaining > 0
+
+    def _healthy(self, provider_id: str) -> bool:
+        return self.usage[provider_id].failures < self.failure_limit
+
+    def _explicit_route(self, role: str) -> tuple[str, str | None] | None:
+        raw = (os.getenv(f"TONMEN_AI_ROUTE_{role.upper()}") or "").strip()
+        provider_id, sep, model = raw.partition(":")
+        provider_id = provider_id.strip().lower()
+        if not provider_id:
+            return None
+        if (
+            provider_id not in self.pool
+            or not self.is_ready(provider_id)
+            or not self._within_budget(provider_id)
+            or not self._healthy(provider_id)
+        ):
+            return None
+        return provider_id, model.strip() if sep and model.strip() else self.model_for(provider_id, role)
+
+    def _score(self, provider_id: str, role: str) -> tuple[float, float, str]:
+        spec = self.spec(provider_id)
+        usage = self.usage[provider_id]
+        weight = self.weights.get(provider_id, 1.0)
+        effective = (usage.total_tokens + usage.calls * 1000) / weight
+        required = _ROLE_STRENGTH.get(role, 2)
+        underpowered = max(0, required - spec.strength) * 1_000_000
+        budget = self._provider_budget(provider_id)
+        quota_pressure = 0.0
+        if budget:
+            quota_pressure = min(1.0, usage.total_tokens / budget) * 250_000
+        failure_pressure = usage.failures * 150_000
+        cost = spec.cost_weight * 250
+        return (underpowered + quota_pressure + failure_pressure + effective + cost, effective, provider_id)
+
+    def ordered_candidates(self, role: str, *, exclude: set[str] | None = None) -> list[tuple[str, str | None]]:
+        excluded = exclude or set()
+        explicit = self._explicit_route(role)
+        result: list[tuple[str, str | None]] = []
+        if explicit and explicit[0] not in excluded:
+            result.append(explicit)
+            if self.strict_routes:
+                return result
+        elif self.strict_routes and (os.getenv(f"TONMEN_AI_ROUTE_{role.upper()}") or "").strip():
+            return []
+
+        candidates = [
+            provider_id
+            for provider_id in self.pool
+            if provider_id not in excluded
+            and (not explicit or provider_id != explicit[0])
+            and self.is_ready(provider_id)
+            and self._within_budget(provider_id)
+            and self._healthy(provider_id)
+        ]
+        for provider_id in sorted(candidates, key=lambda item: self._score(item, role)):
+            result.append((provider_id, self.model_for(provider_id, role)))
+        return result
+
+    def select(self, role: str) -> tuple[str, str | None] | None:
+        candidates = self.ordered_candidates(role)
+        return candidates[0] if candidates else None
+
+    def review(
+        self,
+        role: str,
+        *,
+        system: str,
+        payload: Mapping[str, Any],
+        fallback_summary: str,
+        fallback_action: str,
+    ) -> RoutedReview:
+        if self.mission_token_budget and self._mission_tokens_used() >= self.mission_token_budget:
+            return RoutedReview(
+                summary=fallback_summary,
+                recommended_action=fallback_action,
+                confidence=0.5,
+                source="deterministic",
+                error="TONMEN mission AI token budget exhausted",
+            )
+
+        candidates = self.ordered_candidates(role)
+        if not candidates:
+            return RoutedReview(
+                summary=fallback_summary,
+                recommended_action=fallback_action,
+                confidence=0.5,
+                source="deterministic",
+                error="no ready provider within TONMEN mission/provider budgets",
+            )
+
+        failures: list[str] = []
+        last_provider: str | None = None
+        last_model: str | None = None
+        started_all = monotonic()
+        for index, (provider_id, model) in enumerate(candidates):
+            last_provider, last_model = provider_id, model
+            usage = self.usage[provider_id]
+            started = monotonic()
+            try:
+                result, token_usage, estimated = self.complete_json(
+                    provider_id,
+                    model,
+                    system=system,
+                    payload=payload,
+                )
+                action = str(result.get("recommended_action") or fallback_action).strip().lower()
+                if action not in _ALLOWED_ACTIONS:
+                    raise ValueError("subagent provider returned unsupported recommended_action")
+                confidence = round(float(result.get("confidence", 0.5)), 2)
+                if not 0 <= confidence <= 1:
+                    raise ValueError("subagent confidence must be between 0 and 1")
+                summary = str(result.get("summary") or "").strip()[:1200]
+                if not summary:
+                    raise ValueError("subagent provider returned an empty summary")
+
+                usage.calls += 1
+                usage.input_tokens += int(token_usage.get("input_tokens") or 0)
+                usage.output_tokens += int(token_usage.get("output_tokens") or 0)
+                usage.total_tokens += int(token_usage.get("total_tokens") or 0)
+                if estimated:
+                    usage.estimated_calls += 1
+                if failures:
+                    self.failover_events += 1
+                recovery = None
+                if failures:
+                    recovery = "failover recovered after " + "; ".join(failures)[:420]
+                return RoutedReview(
+                    summary=summary,
+                    recommended_action=action,
+                    confidence=confidence,
+                    source="model",
+                    provider=provider_id,
+                    model=model,
+                    latency_ms=max(0, round((monotonic() - started_all) * 1000)),
+                    input_tokens=int(token_usage.get("input_tokens") or 0),
+                    output_tokens=int(token_usage.get("output_tokens") or 0),
+                    total_tokens=int(token_usage.get("total_tokens") or 0),
+                    usage_estimated=estimated,
+                    error=recovery,
+                )
+            except Exception as exc:
+                usage.calls += 1
+                usage.failures += 1
+                failures.append(f"{provider_id}: {str(exc)[:140]}")
+                if not self.failover_enabled or index + 1 >= len(candidates):
+                    break
+                # The next candidate is chosen from the pre-ranked safe pool. A failed
+                # provider cannot gain execution/approval authority through failover.
+                _ = started
+
+        return RoutedReview(
+            summary=fallback_summary,
+            recommended_action=fallback_action,
+            confidence=0.5,
+            source="deterministic",
+            provider=last_provider,
+            model=last_model,
+            latency_ms=max(0, round((monotonic() - started_all) * 1000)),
+            error=("all eligible providers failed: " + "; ".join(failures))[:500],
+        )
+
     def public_status(self) -> dict[str, object]:
         providers: list[dict[str, object]] = []
         for provider_id in _PROVIDER_IDS:
             spec = self.spec(provider_id)
+            remaining = self._provider_remaining(provider_id)
             providers.append(
                 {
                     "id": provider_id,
@@ -56,6 +341,9 @@ class ProviderHub(_ProviderHub):
                     "key_configured": self._key_configured(spec) if spec.api_key_env else None,
                     "default_model": self.model_for(provider_id),
                     "usage": self.usage[provider_id].as_dict(),
+                    "tonmen_token_budget": self._provider_budget(provider_id),
+                    "tonmen_tokens_remaining": remaining,
+                    "healthy_for_mission": self._healthy(provider_id),
                     "secret_persisted_by_tonmen": False,
                     "secret_exposed_to_browser": False,
                     "probe_is_explicit": True,
@@ -65,10 +353,24 @@ class ProviderHub(_ProviderHub):
             role: (os.getenv(f"TONMEN_AI_ROUTE_{role.upper()}") or "").strip()
             for role in _ROLES
         }
+        mission_used = self._mission_tokens_used()
+        mission_remaining = (
+            max(0, self.mission_token_budget - mission_used)
+            if self.mission_token_budget
+            else None
+        )
         return {
-            "strategy": "weighted_least_usage",
+            "strategy": "quota_aware_failover",
             "pool": list(self.pool),
-            "token_budget": self.token_budget,
+            "token_budget": self.mission_token_budget,
+            "mission_token_budget": self.mission_token_budget,
+            "mission_tokens_used": mission_used,
+            "mission_tokens_remaining": mission_remaining,
+            "provider_token_budgets": dict(self.provider_token_budgets),
+            "provider_failure_limit": self.failure_limit,
+            "failover_enabled": self.failover_enabled,
+            "strict_routes": self.strict_routes,
+            "failover_events": self.failover_events,
             "provider_weights": {item: self.weights.get(item, 1.0) for item in self.pool},
             "role_routes": routes,
             "providers": providers,
