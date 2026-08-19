@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+from tonmen.ai import LeadAIOrchestrator
 from tonmen.evidence import GraphNode
 from tonmen.missions import MissionPlan, MissionRun, MissionRunState, StepExecutionState
 
@@ -29,20 +30,27 @@ _ROLES = (
 
 
 class AssessmentCouncil:
-    """Evidence-only subagent council.
+    """Lead-directed, evidence-only subagent council.
 
-    Council members never execute tools, expand Scope, issue approvals, or mutate the
-    mission plan. They only inspect already-recorded plan/run/evidence graph state and
-    add review provenance nodes to the graph.
+    One Lead AI sets each round's review focus and synthesis objective. Council
+    members never execute tools, expand Scope, issue approvals, or mutate the
+    mission plan. Lead recommendations are advisory and are never execution grants.
     """
 
-    def __init__(self, *, target_rounds: int = 8, agents_per_round: int = 4) -> None:
+    def __init__(
+        self,
+        *,
+        target_rounds: int = 8,
+        agents_per_round: int = 4,
+        lead_ai: LeadAIOrchestrator | None = None,
+    ) -> None:
         if not 7 <= int(target_rounds) <= 10:
             raise ValueError("assessment_rounds must be between 7 and 10")
         if not 3 <= int(agents_per_round) <= 5:
             raise ValueError("subagents_per_round must be between 3 and 5")
         self.target_rounds = int(target_rounds)
         self.agents_per_round = int(agents_per_round)
+        self.lead_ai = lead_ai or LeadAIOrchestrator()
 
     @staticmethod
     def _existing_rounds(run: MissionRun) -> int:
@@ -66,7 +74,14 @@ class AssessmentCouncil:
             return "finalize_report"
         return "continue_governed_plan"
 
-    def _summary(self, role: str, plan: MissionPlan, run: MissionRun, focus: str) -> tuple[str, tuple[str, ...], tuple[str, ...]]:
+    def _summary(
+        self,
+        role: str,
+        plan: MissionPlan,
+        run: MissionRun,
+        focus: str,
+        lead_objective: str,
+    ) -> tuple[str, tuple[str, ...], tuple[str, ...]]:
         evidence_ids = tuple(item.id for item in run.evidence)
         facts = self._fact_nodes(run)
         fact_ids = tuple(node.id for node in facts)
@@ -104,6 +119,8 @@ class AssessmentCouncil:
                 f"{focus}: remediation synthesis based on {len(findings)} findings, {len(failed)} failed/denied steps, "
                 f"and mission state {run.state.value}; recommendations must remain evidence-linked."
             )
+        if lead_objective:
+            summary = f"{summary} Lead objective: {lead_objective[:220]}"
         return summary, evidence_ids, fact_ids
 
     def record_round(
@@ -119,7 +136,15 @@ class AssessmentCouncil:
         if current >= self.target_rounds:
             return None
         round_number = current + 1
-        focus = _FOCI[round_number - 1]
+        default_focus = _FOCI[round_number - 1]
+        directive = self.lead_ai.direct(
+            plan,
+            run,
+            round_number=round_number,
+            phase=phase,
+            default_focus=default_focus,
+        )
+        focus = directive.focus
         round_id = uuid4().hex
         run.graph.add_node(
             GraphNode(
@@ -133,6 +158,11 @@ class AssessmentCouncil:
                     "agents": self.agents_per_round,
                     "session_id": session_id,
                     "decision_id": decision_id,
+                    "lead_directive_id": directive.id,
+                    "lead_source": directive.source,
+                    "lead_provider": directive.provider,
+                    "lead_model": directive.model,
+                    "lead_recommended_action": directive.recommended_action,
                 },
             )
         )
@@ -142,11 +172,22 @@ class AssessmentCouncil:
         if decision_id and decision_id in run.graph.nodes:
             run.graph.link(decision_id, "reviewed_by", round_id)
 
+        run.graph.add_node(
+            GraphNode(
+                id=directive.id,
+                kind="council.lead",
+                label=f"lead directive round {round_number}: {directive.objective}",
+                metadata=directive.metadata(),
+            )
+        )
+        run.graph.link(run.id, "orchestrated_by", directive.id)
+        run.graph.link(directive.id, "directs", round_id)
+
         start = (round_number - 1) % len(_ROLES)
         roles = tuple(_ROLES[(start + index) % len(_ROLES)] for index in range(self.agents_per_round))
-        action = self._recommended_action(run)
+        action = directive.recommended_action or self._recommended_action(run)
         for role in roles:
-            summary, evidence_ids, fact_ids = self._summary(role, plan, run, focus)
+            summary, evidence_ids, fact_ids = self._summary(role, plan, run, focus, directive.objective)
             agent_id = uuid4().hex
             run.graph.add_node(
                 GraphNode(
@@ -160,6 +201,7 @@ class AssessmentCouncil:
                         "phase": phase,
                         "summary": summary,
                         "recommended_action": action,
+                        "lead_directive_id": directive.id,
                         "evidence_ids": list(evidence_ids),
                         "fact_ids": list(fact_ids),
                         "execution_authority": False,
@@ -167,6 +209,7 @@ class AssessmentCouncil:
                 )
             )
             run.graph.link(round_id, "contains_subagent", agent_id)
+            run.graph.link(directive.id, "briefs", agent_id)
             for evidence_id in evidence_ids[-8:]:
                 if evidence_id in run.graph.nodes:
                     run.graph.link(evidence_id, "reviewed_by", agent_id)
