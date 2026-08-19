@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Mapping
@@ -149,8 +150,7 @@ class WorkerService:
         if envelope.control_decision == Decision.ALLOW.value and envelope.approval_granted:
             raise PermissionError("signed dispatch contains an inconsistent approval claim")
 
-        current = envelope.issued_at if now is not None else __import__("time").time()
-        current_int = int(current)
+        current_int = int(time.time() if now is None else now)
         with self._lock:
             self._prune(current_int)
             cached = self._completed.get(envelope.job_id)
@@ -177,17 +177,21 @@ class WorkerService:
             )
             adapter = self.registry.get(request.tool)
             adapter.validate(request)
-            readiness = adapter.readiness()
-            if not readiness.ready:
-                raise RuntimeError(f"worker tool preflight blocked: {readiness.detail}")
             local_decision = self.policy.evaluate(adapter.spec, request)
             if local_decision.decision is Decision.DENY:
                 raise PermissionError(local_decision.reason)
+            if local_decision.decision is Decision.REQUIRE_APPROVAL and not envelope.approval_granted:
+                raise PermissionError("worker policy requires a control-plane approval grant")
+
+            readiness = adapter.readiness()
+            if not readiness.ready:
+                raise RuntimeError(f"worker tool preflight blocked: {readiness.detail}")
+
             local_token = None
             if local_decision.decision is Decision.REQUIRE_APPROVAL:
-                if not envelope.approval_granted:
-                    raise PermissionError("worker policy requires a control-plane approval grant")
-                local_token = self.approvals.issue(tool=request.tool, target=str(request.target), ttl_seconds=60).token
+                if request.target is None:
+                    raise PermissionError("approval-bound worker request requires a target")
+                local_token = self.approvals.issue(tool=request.tool, target=request.target, ttl_seconds=60).token
             outcome = self.executor.execute(request, approval_token=local_token)
             response = self._outcome_payload(
                 outcome,
