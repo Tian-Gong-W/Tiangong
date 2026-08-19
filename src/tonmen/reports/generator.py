@@ -134,8 +134,41 @@ def _council(run: MissionRun) -> list[dict[str, Any]]:
             agent = run.graph.nodes.get(edge.target)
             if agent is not None:
                 agents.append(_node(agent))
-        result.append({**_node(round_node), "subagents": agents})
+        lead_id = str(round_node.metadata.get("lead_directive_id") or "")
+        lead = run.graph.nodes.get(lead_id) if lead_id else None
+        result.append({**_node(round_node), "lead": _node(lead) if lead is not None else None, "subagents": agents})
     return result
+
+
+def _lead_ai_summary(run: MissionRun) -> dict[str, Any]:
+    directives = [_node(node) for node in run.graph.nodes.values() if node.kind == "council.lead"]
+    model = [item for item in directives if item["metadata"].get("source") == "model"]
+    fallback = [item for item in directives if item["metadata"].get("source") != "model"]
+    latencies = [
+        int(item["metadata"]["latency_ms"])
+        for item in directives
+        if isinstance(item["metadata"].get("latency_ms"), int)
+    ]
+    def total(name: str) -> int:
+        return sum(
+            int(item["metadata"][name])
+            for item in directives
+            if isinstance(item["metadata"].get(name), int)
+        )
+    return {
+        "directives": directives,
+        "directive_count": len(directives),
+        "model_calls": len(model),
+        "fallback_calls": len(fallback),
+        "input_tokens": total("input_tokens"),
+        "output_tokens": total("output_tokens"),
+        "total_tokens": total("total_tokens"),
+        "latency_ms_total": sum(latencies),
+        "latency_ms_average": round(sum(latencies) / len(latencies)) if latencies else None,
+        "raw_evidence_sent": False,
+        "approval_tokens_sent": False,
+        "execution_authority": False,
+    }
 
 
 def _loop_policy(run: MissionRun) -> dict[str, Any]:
@@ -191,6 +224,7 @@ def build_report(plan: MissionPlan, run: MissionRun) -> dict[str, Any]:
     reasoning = [_node(node) for node in run.graph.nodes.values() if node.kind.startswith("reasoning.")]
     loop = [_node(node) for node in run.graph.nodes.values() if node.kind.startswith("loop.")]
     council = _council(run)
+    lead_ai = _lead_ai_summary(run)
     findings = [node for node in intelligence if node["kind"] == "intelligence.finding"]
     aggregated_findings = aggregate_nuclei_findings(payloads)
     approval_steps = [step for step in steps if step["requires_approval"]]
@@ -240,6 +274,10 @@ def build_report(plan: MissionPlan, run: MissionRun) -> dict[str, Any]:
             "backend_divergences": backend_divergences,
             "assessment_rounds": len(council),
             "subagent_reviews": sum(len(item["subagents"]) for item in council),
+            "lead_directives": lead_ai["directive_count"],
+            "lead_model_calls": lead_ai["model_calls"],
+            "lead_fallback_calls": lead_ai["fallback_calls"],
+            "lead_total_tokens": lead_ai["total_tokens"],
         },
         "governance": {
             "execution_model": "Scope -> Guard -> Approval -> structured adapter -> shell=False Executor",
@@ -248,6 +286,7 @@ def build_report(plan: MissionPlan, run: MissionRun) -> dict[str, Any]:
             "policy": _loop_policy(run),
             "approval_steps": approval_steps,
         },
+        "lead_ai": lead_ai,
         "asset_correlation": {
             "nmap": addresses,
             "affected_backends": affected_backends,
@@ -293,6 +332,7 @@ def _fenced(text: Any, language: str = "text") -> str:
 def render_markdown(report: dict[str, Any]) -> str:
     mission = report["mission"]
     summary = report["summary"]
+    lead_ai = report.get("lead_ai", {})
     lines = [
         f"# TONMEN Mission Report — {mission['target']}",
         "",
@@ -320,6 +360,9 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- Executed request/payload records: {summary['executed_payloads']}",
         f"- Assessment rounds: {summary['assessment_rounds']}",
         f"- Subagent reviews: {summary['subagent_reviews']}",
+        f"- Lead AI directives: {summary.get('lead_directives', 0)}",
+        f"- Lead AI model/fallback calls: {summary.get('lead_model_calls', 0)} / {summary.get('lead_fallback_calls', 0)}",
+        f"- Lead AI total tokens: {summary.get('lead_total_tokens', 0)}",
         "",
         "## Verification Semantics",
         "",
@@ -333,9 +376,37 @@ def render_markdown(report: dict[str, Any]) -> str:
         "- Approval tokens persisted: no",
         "- Arbitrary shell: disabled",
         "",
-        "## Execution Steps",
+        "## Lead AI Orchestration",
+        "",
+        f"- Directives: {lead_ai.get('directive_count', 0)}",
+        f"- Model calls: {lead_ai.get('model_calls', 0)}",
+        f"- Deterministic fallbacks: {lead_ai.get('fallback_calls', 0)}",
+        f"- Input / output / total tokens: {lead_ai.get('input_tokens', 0)} / {lead_ai.get('output_tokens', 0)} / {lead_ai.get('total_tokens', 0)}",
+        f"- Average model latency: {lead_ai.get('latency_ms_average') if lead_ai.get('latency_ms_average') is not None else '—'} ms",
+        "- Raw evidence sent to Lead AI: no",
+        "- Approval tokens sent to Lead AI: no",
+        "- Lead execution authority: no",
         "",
     ]
+    for directive in lead_ai.get("directives", []):
+        md = directive.get("metadata", {})
+        lines.extend(
+            [
+                f"### Lead Round {md.get('round', '—')} — {md.get('focus', '—')}",
+                "",
+                f"- Source: `{md.get('source', 'deterministic')}`",
+                f"- Provider/model: `{md.get('provider') or '—'} / {md.get('model') or '—'}`",
+                f"- Objective: {md.get('objective') or '—'}",
+                f"- Recommended action: `{md.get('recommended_action') or '—'}`",
+                f"- Confidence: `{md.get('confidence', '—')}`",
+                f"- Latency: `{md.get('latency_ms') if md.get('latency_ms') is not None else '—'} ms`",
+                f"- Tokens: `{md.get('input_tokens') or 0}/{md.get('output_tokens') or 0}/{md.get('total_tokens') or 0}`",
+                f"- Error/fallback reason: {md.get('error') or '—'}",
+                "",
+            ]
+        )
+
+    lines.extend(["## Execution Steps", ""])
     for index, step in enumerate(report["steps"], start=1):
         lines.extend(
             [
@@ -447,11 +518,14 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.extend(["## Assessment Council", ""])
     for round_item in report["assessment_council"]:
         rm = round_item.get("metadata", {})
+        lead = round_item.get("lead") or {}
+        lm = lead.get("metadata", {})
         lines.extend(
             [
                 f"### Round {rm.get('round')} — {rm.get('focus')}",
                 "",
                 f"Phase: `{rm.get('phase')}` · Subagents: {len(round_item.get('subagents', []))}",
+                f"Lead: `{lm.get('source', '—')}` · `{lm.get('recommended_action', '—')}` · confidence `{lm.get('confidence', '—')}`",
                 "",
             ]
         )

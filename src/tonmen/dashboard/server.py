@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from tonmen import __version__
 from tonmen.agents import MissionPlanner, MissionPlanningDenied, MissionRunDenied
+from tonmen.ai import LeadAIOrchestrator
 from tonmen.chronicle import ChronicleStore
 from tonmen.core.config import DEFAULT_ALLOWED_TARGETS, TonmenConfig
 from tonmen.core.runtime import TonmenRuntime
@@ -25,7 +26,7 @@ from tonmen.reports import ReportStore
 from tonmen.tools.base import RiskLevel
 
 _LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
-_APP_ROUTES = {"/", "/missions", "/scope", "/guard", "/tools", "/intelligence", "/reasoner", "/loop", "/chronicle", "/approval", "/settings"}
+_APP_ROUTES = {"/", "/missions", "/scope", "/guard", "/tools", "/intelligence", "/reasoner", "/lead", "/loop", "/chronicle", "/approval", "/settings"}
 _TERMINAL_MISSION_STATES = {MissionRunState.SUCCEEDED, MissionRunState.FAILED, MissionRunState.DENIED}
 _STATIC_TYPES = {
     "app.css": "text/css; charset=utf-8",
@@ -34,6 +35,7 @@ _STATIC_TYPES = {
     "events.css": "text/css; charset=utf-8",
     "history-delete.css": "text/css; charset=utf-8",
     "reports.css": "text/css; charset=utf-8",
+    "lead-ai.css": "text/css; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",
     "deck.js": "text/javascript; charset=utf-8",
     "module-pages.js": "text/javascript; charset=utf-8",
@@ -145,6 +147,8 @@ class DashboardState:
                     payloads=report["summary"]["executed_payloads"],
                     assessment_rounds=report["summary"]["assessment_rounds"],
                     subagent_reviews=report["summary"]["subagent_reviews"],
+                    lead_directives=report["summary"].get("lead_directives", 0),
+                    lead_model_calls=report["summary"].get("lead_model_calls", 0),
                 )
 
     def _tool_readiness(self, tool: str):
@@ -184,6 +188,96 @@ class DashboardState:
         latest = events[-1].cursor if events else max(int(cursor), self.events.cursor)
         return {"cursor": latest, "events": [event.as_dict() for event in events]}
 
+    def lead_ai(self) -> dict[str, Any]:
+        """Return public Lead AI state without ever exposing the configured secret."""
+        with self._lock:
+            lead = LeadAIOrchestrator()
+            config = lead.public_status()
+            entries = list(self.chronicle.list())
+            ordered = [item for item in entries if item.state in {MissionRunState.RUNNING, MissionRunState.WAITING_APPROVAL}]
+            ordered.extend(item for item in entries if item not in ordered)
+
+            selected = None
+            for entry in ordered[:40]:
+                try:
+                    plan, run = self.chronicle.load(entry.run_id)
+                except (FileNotFoundError, ValueError, OSError):
+                    continue
+                directives = [node for node in run.graph.nodes.values() if node.kind == "council.lead"]
+                if not directives:
+                    continue
+                latest = directives[-1]
+                latest_md = dict(latest.metadata)
+                round_id = next(
+                    (
+                        node.id
+                        for node in run.graph.nodes.values()
+                        if node.kind == "council.round" and node.metadata.get("lead_directive_id") == latest.id
+                    ),
+                    None,
+                )
+                subagents = [
+                    _node_payload(node)
+                    for node in run.graph.nodes.values()
+                    if node.kind == "council.subagent" and node.metadata.get("lead_directive_id") == latest.id
+                ]
+                sessions = [node for node in run.graph.nodes.values() if node.kind == "loop.session"]
+                policy = dict(sessions[-1].metadata) if sessions else {"assessment_rounds": 8, "subagents_per_round": 4}
+                latencies = [
+                    int(node.metadata["latency_ms"])
+                    for node in directives
+                    if isinstance(node.metadata.get("latency_ms"), int)
+                ]
+                def token_total(name: str) -> int:
+                    return sum(
+                        int(node.metadata[name])
+                        for node in directives
+                        if isinstance(node.metadata.get(name), int)
+                    )
+                selected = {
+                    "mission": {
+                        "id": run.id,
+                        "plan_id": plan.id,
+                        "target": run.target,
+                        "state": run.state.value,
+                    },
+                    "latest_directive": _node_payload(latest),
+                    "current_round_id": round_id,
+                    "subagents": subagents,
+                    "rounds_completed": len([node for node in run.graph.nodes.values() if node.kind == "council.round"]),
+                    "target_rounds": int(policy.get("assessment_rounds", 8)),
+                    "subagents_per_round": int(policy.get("subagents_per_round", 4)),
+                    "telemetry": {
+                        "directives": len(directives),
+                        "model_calls": sum(1 for node in directives if node.metadata.get("source") == "model"),
+                        "fallback_calls": sum(1 for node in directives if node.metadata.get("source") != "model"),
+                        "input_tokens": token_total("input_tokens"),
+                        "output_tokens": token_total("output_tokens"),
+                        "total_tokens": token_total("total_tokens"),
+                        "latency_ms_total": sum(latencies),
+                        "latency_ms_average": round(sum(latencies) / len(latencies)) if latencies else None,
+                        "last_latency_ms": latest_md.get("latency_ms"),
+                    },
+                }
+                break
+
+            return {
+                "config": config,
+                "current": selected,
+                "privacy": {
+                    "secret_persisted": False,
+                    "secret_exposed_to_browser": False,
+                    "raw_evidence_sent": False,
+                    "approval_tokens_sent": False,
+                },
+                "authority": {
+                    "execution": False,
+                    "approval": False,
+                    "scope": False,
+                    "plan_mutation": False,
+                },
+            }
+
     def status(self) -> dict[str, Any]:
         with self._lock:
             report = run_doctor(self.config)
@@ -204,6 +298,7 @@ class DashboardState:
                 "workspace": str(self.config.workspace),
                 "config_path": str(self.config.config_path) if self.config.config_path else None,
                 "event_cursor": self.events.cursor,
+                "lead_ai": self.lead_ai()["config"],
             }
 
     def scope(self) -> dict[str, Any]:
@@ -448,13 +543,14 @@ class TonmenDashboardHandler(BaseHTTPRequestHandler):
                 if content_type is None: self._error(404, "asset not found"); return
                 payload = self._asset(name)
                 if name == "app.js": payload += b"\n" + self._asset("deck.js") + b"\n" + self._asset("module-pages.js") + b"\n" + self._asset("events.js") + b"\n" + self._asset("history-delete.js") + b"\n" + self._asset("reports.js")
-                if name == "viewport.css": payload += b"\n" + self._asset("module-pages.css") + b"\n" + self._asset("events.css") + b"\n" + self._asset("history-delete.css") + b"\n" + self._asset("reports.css")
+                if name == "viewport.css": payload += b"\n" + self._asset("module-pages.css") + b"\n" + self._asset("events.css") + b"\n" + self._asset("history-delete.css") + b"\n" + self._asset("reports.css") + b"\n" + self._asset("lead-ai.css")
                 self._send_bytes(200, content_type, payload, cache="no-store"); return
             if path == "/api/events":
                 query = parse_qs(parsed.query)
                 cursor = int(query.get("cursor", ["0"])[0]); timeout = float(query.get("timeout", ["20"])[0]); limit = int(query.get("limit", ["200"])[0])
                 self._json(200, self.server.state.event_stream(cursor, timeout, limit)); return
             if path == "/api/status": self._json(200, self.server.state.status()); return
+            if path == "/api/ai/lead": self._json(200, self.server.state.lead_ai()); return
             if path == "/api/scope": self._json(200, self.server.state.scope()); return
             if path == "/api/tools": self._json(200, self.server.state.tools()); return
             if path == "/api/guard": self._json(200, self.server.state.guard()); return

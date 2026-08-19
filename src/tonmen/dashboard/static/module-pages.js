@@ -14,7 +14,7 @@
   const pageState = { route: null, busy: false, selectedRun: null, cache: {} };
   const routeMap = [
     ["儀表總覽", "/"], ["任務", "/missions"], ["天域", "/scope"], ["天律", "/guard"],
-    ["天工", "/tools"], ["天鑑", "/intelligence"], ["天策", "/reasoner"], ["天衡", "/loop"],
+    ["天工", "/tools"], ["天鑑", "/intelligence"], ["天策", "/reasoner"], ["主導", "/lead"], ["天衡", "/loop"],
     ["天冊", "/chronicle"], ["審批", "/approval"], ["設定", "/settings"]
   ];
   const titles = {
@@ -24,6 +24,7 @@
     "/tools": ["天工", "Tools", "Registry 中已注册能力、安装状态、风险与能力声明。"],
     "/intelligence": ["天鑑", "Intelligence", "从 Evidence 确定解析出的 Host / Service / Web / Finding。"],
     "/reasoner": ["天策", "Reasoner", "每次决策、依据 Fact、下一步与是否需要人工介入。"],
+    "/lead": ["主導", "Lead AI", "单一主导智能层：为每轮 Council 定焦、统筹 3–5 子代理并记录模型调用状态；没有执行、审批或扩 Scope 权限。"],
     "/loop": ["天衡", "Mission Loop", "循环 Session、Iteration、Stop 原因、预算与当前执行状态。"],
     "/chronicle": ["天冊", "Chronicle", "跨任务历史、执行审计、Evidence 与时间线。"],
     "/approval": ["審批", "Approval", "所有等待人工审批的步骤集中处理，并在批准前查看证据。"],
@@ -71,7 +72,7 @@
 
   function pageShell(route, body, actions = "") {
     const [zh, en, description] = titles[route];
-    return `<div class="module-page-head"><div><span class="kicker">DETAILED WORKSPACE</span><h1>${esc(zh)} <small>/ ${esc(en)}</small></h1><p>${esc(description)}</p></div><div class="module-live"><i></i><span>LIVE · 2.5s · <b id="module-updated">${nowText()}</b></span></div></div>${actions}${body}`;
+    return `<div class="module-page-head"><div><span class="kicker">DETAILED WORKSPACE</span><h1>${esc(zh)} <small>/ ${esc(en)}</small></h1><p>${esc(description)}</p></div><div class="module-live"><i></i><span>EVENT STREAM · 2.5s fallback · <b id="module-updated">${nowText()}</b></span></div></div>${actions}${body}`;
   }
 
   function setPage(route, body, actions = "") {
@@ -173,6 +174,38 @@
     bindOpenRun();
   }
 
+  async function renderLead() {
+    const route = "/lead";
+    const data = await api("/api/ai/lead");
+    const cfg = data.config || {};
+    const current = data.current;
+    const providerTone = cfg.active ? "ok" : cfg.provider === "openai" ? "warn" : "blue";
+    const configError = cfg.error ? `<div class="lead-alert">${esc(cfg.error)}</div>` : "";
+    const configCard = `<section class="module-card lead-config-card"><div class="module-card-head"><h2>Lead Runtime</h2><span class="module-badge ${providerTone}">${cfg.active ? "MODEL ACTIVE" : cfg.provider === "openai" ? "FALLBACK" : "DISABLED"}</span></div><div class="module-card-body"><div class="lead-kv"><span>Provider</span><strong>${esc(cfg.provider || "disabled")}</strong><span>Model</span><strong>${esc(cfg.model || "—")}</strong><span>Key configured</span><strong>${cfg.key_configured ? "yes" : "no"}</strong><span>Key env</span><code>${esc(cfg.key_env || "OPENAI_API_KEY")}</code><span>Secret persisted</span><strong>no</strong><span>Raw evidence sent</span><strong>no</strong></div>${configError}${!cfg.active ? `<pre class="lead-setup">export TONMEN_AI_PROVIDER=openai\nexport OPENAI_API_KEY=...\nexport TONMEN_AI_MODEL=${esc(cfg.model || "gpt-5.6")}</pre>` : ""}</div></section>`;
+
+    if (!current) {
+      setPage(route, `<div class="module-stat-grid"><div class="module-stat"><span>Lead state</span><strong>${cfg.active ? "ACTIVE" : "FALLBACK"}</strong></div><div class="module-stat"><span>Provider</span><strong>${esc(cfg.provider || "disabled")}</strong></div><div class="module-stat"><span>Model</span><strong>${esc(cfg.model || "—")}</strong></div><div class="module-stat"><span>Current mission</span><strong>NONE</strong></div></div><div style="height:10px"></div>${configCard}<div style="height:10px"></div><section class="module-card"><div class="module-empty"><b>尚无 Lead Directive</b>新任务进入 Assessment Council 后，这里会显示每轮主导目标和子代理编排。</div></section>`, actionToolbar());
+      return;
+    }
+
+    const mission = current.mission || {};
+    const directive = current.latest_directive || {};
+    const md = directive.metadata || {};
+    const telemetry = current.telemetry || {};
+    const agents = current.subagents || [];
+    const pct = Math.min(100, Math.round(((current.rounds_completed || 0) / Math.max(1, current.target_rounds || 8)) * 100));
+    const sourceTone = md.source === "model" ? "ok" : md.error ? "warn" : "blue";
+    const agentRows = agents.map(agent => { const am = agent.metadata || {}; return `<tr><td><strong>${esc(am.role || "subagent")}</strong></td><td>${esc(am.focus || md.focus || "—")}</td><td>${esc(am.recommended_action || "—")}</td><td>${esc((am.summary || agent.label || "").slice(0,500))}</td></tr>`; }).join("");
+    const directiveCard = `<section class="module-card lead-directive-card"><div class="module-card-head"><div><h2>当前主导指令 / Current Directive</h2><small>Round ${esc(md.round || current.rounds_completed || "—")} · ${esc(md.phase || "—")}</small></div><span class="module-badge ${sourceTone}">${esc((md.source || "deterministic").toUpperCase())}</span></div><div class="module-card-body"><div class="lead-directive-head"><div><span>Focus</span><strong>${esc(md.focus || "—")}</strong></div><div><span>Recommended action</span><strong>${esc(md.recommended_action || "—")}</strong></div><div><span>Confidence</span><strong>${esc(md.confidence ?? "—")}</strong></div></div><h3>Objective</h3><p>${esc(md.objective || "—")}</p><h3>Rationale</h3><p>${esc(md.rationale || "—")}</p>${md.error ? `<div class="lead-alert">Fallback / error: ${esc(md.error)}</div>` : ""}</div></section>`;
+    const progress = `<section class="module-card"><div class="module-card-head"><h2>Council Progress</h2><small>${current.rounds_completed || 0}/${current.target_rounds || 8} rounds · ${current.subagents_per_round || 4} subagents/round</small></div><div class="module-card-body"><div class="lead-progress"><i style="width:${pct}%"></i></div><div class="lead-progress-label"><span>${pct}% reviewed</span><span>Mission ${esc(short(mission.id))} · ${esc(stateName(mission.state))}</span></div></div></section>`;
+    const telemetryCard = `<section class="module-card"><div class="module-card-head"><h2>调用遥测 / Telemetry</h2><small>不含 API Key</small></div><div class="module-card-body"><div class="lead-metric-grid"><div><span>Directives</span><strong>${telemetry.directives || 0}</strong></div><div><span>Model calls</span><strong>${telemetry.model_calls || 0}</strong></div><div><span>Fallbacks</span><strong>${telemetry.fallback_calls || 0}</strong></div><div><span>Total tokens</span><strong>${telemetry.total_tokens || 0}</strong></div><div><span>Last latency</span><strong>${telemetry.last_latency_ms ?? "—"} ms</strong></div><div><span>Avg latency</span><strong>${telemetry.latency_ms_average ?? "—"} ms</strong></div></div><div class="lead-token-line">input ${telemetry.input_tokens || 0} · output ${telemetry.output_tokens || 0} · total ${telemetry.total_tokens || 0}</div></div></section>`;
+    const boundaries = `<section class="module-card"><div class="module-card-head"><h2>Authority Boundary</h2><span class="module-badge ok">GOVERNED</span></div><div class="module-card-body"><div class="lead-boundaries"><span>执行权 <b>NO</b></span><span>审批权 <b>NO</b></span><span>扩 Scope <b>NO</b></span><span>改计划 <b>NO</b></span><span>Raw Evidence <b>LOCAL</b></span><span>API Key <b>SERVER ONLY</b></span></div></div></section>`;
+    const agentsCard = `<section class="module-card lead-agents-card"><div class="module-card-head"><h2>本轮子代理 / Subagents</h2><small>Lead → Council → ${agents.length} reviewers</small></div><div class="module-table-wrap"><table class="module-table"><thead><tr><th>Role</th><th>Focus</th><th>Recommendation</th><th>Review</th></tr></thead><tbody>${agentRows || `<tr><td colspan="4">当前轮次暂无子代理记录。</td></tr>`}</tbody></table></div></section>`;
+
+    setPage(route, `<div class="module-stat-grid"><div class="module-stat"><span>Lead</span><strong>${md.source === "model" ? "MODEL" : "FALLBACK"}</strong></div><div class="module-stat"><span>Mission</span><strong>${esc(short(mission.id))}</strong></div><div class="module-stat"><span>Round</span><strong>${current.rounds_completed || 0}/${current.target_rounds || 8}</strong></div><div class="module-stat"><span>Subagents</span><strong>${agents.length}</strong></div></div><div style="height:10px"></div><div class="lead-console-grid">${configCard}${progress}${directiveCard}${telemetryCard}${boundaries}${agentsCard}</div>`, actionToolbar(`<button class="ghost" data-open-run="${esc(mission.id)}">查看当前任务</button>`));
+    bindOpenRun();
+  }
+
   async function renderLoop() {
     const route = "/loop";
     const details = await recentDetails(15);
@@ -211,10 +244,10 @@
     const [settings, status] = await Promise.all([api("/api/settings"), api("/api/status")]);
     const fields = Object.entries(settings).map(([key,value]) => `<dt>${esc(key)}</dt><dd>${esc(Array.isArray(value) ? value.join(", ") : value)}</dd>`).join("");
     const checks = (status.doctor?.checks || []).map(check => `<div class="fact-item"><h3>${esc(check.name)} <span class="module-badge ${check.ok ? "ok" : "bad"}">${check.ok ? "OK" : "MISS"}</span></h3><p>${esc(check.detail)}</p></div>`).join("");
-    setPage(route, `<div class="module-grid two"><section class="module-card"><div class="module-card-head"><h2>Project Configuration</h2><small>当前运行值</small></div><div class="module-card-body"><dl class="settings-grid">${fields}</dl></div></section><section class="module-card"><div class="module-card-head"><h2>Doctor / Runtime Readiness</h2><span class="module-badge ${status.doctor?.ready ? "ok" : "warn"}">${status.doctor?.ready ? "READY" : "CHECK"}</span></div><div class="module-card-body"><div class="fact-list">${checks}</div></div></section></div>`, actionToolbar());
+    setPage(route, `<div class="module-grid two"><section class="module-card"><div class="module-card-head"><h2>Project Configuration</h2><small>当前运行值</small></div><div class="module-card-body"><dl class="settings-grid">${fields}</dl></div></section><section class="module-card"><div class="module-card-head"><h2>Doctor / Runtime Readiness</h2><span class="module-badge ${status.doctor?.ready ? "ok" : "warn"}">${status.doctor?.ready ? "READY" : "CHECK"}</span></div><div class="module-card-body"><div class="fact-list">${checks}</div></div></section></div>`, actionToolbar(`<button class="ghost" data-route-go="/lead">查看 Lead AI</button>`));
   }
 
-  const renderers = {"/missions":renderMissions,"/scope":renderScope,"/guard":renderGuard,"/tools":renderTools,"/intelligence":renderIntelligence,"/reasoner":renderReasoner,"/loop":renderLoop,"/chronicle":renderChronicle,"/approval":renderApproval,"/settings":renderSettings};
+  const renderers = {"/missions":renderMissions,"/scope":renderScope,"/guard":renderGuard,"/tools":renderTools,"/intelligence":renderIntelligence,"/reasoner":renderReasoner,"/lead":renderLead,"/loop":renderLoop,"/chronicle":renderChronicle,"/approval":renderApproval,"/settings":renderSettings};
 
   async function renderRoute(force = false) {
     const route = normalizeRoute(location.pathname);
