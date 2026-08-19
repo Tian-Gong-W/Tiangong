@@ -38,6 +38,18 @@ def _response_text(payload: Mapping[str, Any]) -> str:
     raise RuntimeError("OpenAI response did not contain output text")
 
 
+def _usage(payload: Mapping[str, Any]) -> dict[str, int]:
+    raw = payload.get("usage")
+    if not isinstance(raw, dict):
+        return {}
+    result: dict[str, int] = {}
+    for key in ("input_tokens", "output_tokens", "total_tokens"):
+        value = raw.get(key)
+        if isinstance(value, int) and value >= 0:
+            result[key] = value
+    return result
+
+
 class OpenAIResponsesProvider:
     """Tiny server-side Responses API client with an injectable transport for tests."""
 
@@ -46,6 +58,8 @@ class OpenAIResponsesProvider:
             raise ValueError("OpenAIResponsesProvider requires provider='openai'")
         self.config = config
         self._requester = requester
+        self.last_usage: dict[str, int] = {}
+        self.last_response_id: str | None = None
 
     def complete_json(self, *, system: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         request_body = {
@@ -69,6 +83,9 @@ class OpenAIResponsesProvider:
             json.dumps(request_body, ensure_ascii=False).encode("utf-8"),
             self.config.timeout_seconds,
         )
+        self.last_usage = _usage(raw)
+        response_id = raw.get("id")
+        self.last_response_id = str(response_id)[:120] if response_id else None
         text = _response_text(raw)
         try:
             result = json.loads(text)
