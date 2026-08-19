@@ -60,6 +60,33 @@ def test_api_key_does_not_auto_enable_provider_or_leak(monkeypatch):
     assert "sk-test-super-secret" not in repr(enabled)
 
 
+def test_openai_base_url_accepts_official_regional_host_and_rejects_third_party(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-region-test")
+    monkeypatch.setenv("TONMEN_AI_PROVIDER", "openai")
+    monkeypatch.setenv("TONMEN_OPENAI_BASE_URL", "https://ae.api.openai.com/v1")
+    regional = LeadAIConfig.from_env()
+    assert regional.base_url == "https://ae.api.openai.com/v1"
+
+    monkeypatch.setenv("TONMEN_OPENAI_BASE_URL", "https://example.invalid/v1")
+    try:
+        LeadAIConfig.from_env()
+    except ValueError as exc:
+        assert "official" in str(exc)
+    else:
+        raise AssertionError("OpenAI key must not be deliverable to a third-party host")
+
+    # Optional AI configuration errors must not stop the governed runtime.
+    lead = LeadAIOrchestrator()
+    status = lead.public_status()
+    assert lead.enabled is False
+    assert status["error"] and "official" in str(status["error"])
+    plan = MissionPlan.create("app.example.test", [])
+    run = MissionRun.create(plan)
+    directive = lead.direct(plan, run, round_number=1, phase="live", default_focus="scope_and_plan")
+    assert directive.source == "deterministic"
+    assert directive.error and "official" in directive.error
+
+
 def test_openai_responses_provider_uses_server_side_bearer_key(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-provider-secret")
     captured = {}
