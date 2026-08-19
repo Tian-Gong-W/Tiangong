@@ -7,11 +7,15 @@ from typing import Iterable
 from tonmen.evidence import EvidenceRecord
 
 from .model import FactKind, IntelligenceFact, Severity
+from .verification import verify_nuclei_record
 
 _NMAP_SERVICE = re.compile(
     r"^(?P<port>\d+)\/(?P<protocol>tcp|udp)\s+open\s+(?P<service>\S+)(?:\s+(?P<detail>.*\S))?\s*$",
     re.IGNORECASE,
 )
+_NMAP_REPORT_IP = re.compile(r"^Nmap scan report for .+ \((?P<ip>[^)]+)\)$", re.IGNORECASE)
+_NMAP_REPORT_BARE = re.compile(r"^Nmap scan report for (?P<ip>(?:\d{1,3}\.){3}\d{1,3})$", re.IGNORECASE)
+_NMAP_OTHER = re.compile(r"^Other addresses for .+ \(not scanned\):\s*(?P<addresses>.+)$", re.IGNORECASE)
 _HTTPX_URL = re.compile(r"^(?P<url>https?://\S+)")
 _HTTPX_GROUP = re.compile(r"\[([^\]]*)\]")
 
@@ -33,8 +37,19 @@ def _nonempty_lines(text: str) -> Iterable[str]:
 
 def _parse_nmap(evidence: EvidenceRecord) -> list[IntelligenceFact]:
     facts: list[IntelligenceFact] = []
+    lines = list(_nonempty_lines(evidence.stdout))
+    scanned_address = None
+    other_addresses: list[str] = []
+    for line in lines:
+        report = _NMAP_REPORT_IP.match(line) or _NMAP_REPORT_BARE.match(line)
+        if report and not scanned_address:
+            scanned_address = report.group("ip")
+        other = _NMAP_OTHER.match(line)
+        if other:
+            other_addresses.extend(part for part in other.group("addresses").split() if part)
+
     host_seen = False
-    for line in _nonempty_lines(evidence.stdout):
+    for line in lines:
         if not host_seen and ("Host is up" in line or line.startswith("Nmap scan report for ")):
             host_seen = True
             facts.append(
@@ -44,7 +59,11 @@ def _parse_nmap(evidence: EvidenceRecord) -> list[IntelligenceFact]:
                     target=evidence.target,
                     title=f"Host observed: {evidence.target}",
                     evidence_id=evidence.id,
-                    data={"state": "observed"},
+                    data={
+                        "state": "observed",
+                        "scanned_address": scanned_address,
+                        "other_resolved_addresses_not_scanned": other_addresses,
+                    },
                 )
             )
         match = _NMAP_SERVICE.match(line)
@@ -70,6 +89,7 @@ def _parse_nmap(evidence: EvidenceRecord) -> list[IntelligenceFact]:
                     "state": "open",
                     "service": service,
                     "detail": detail,
+                    "scanned_address": scanned_address,
                 },
             )
         )
@@ -132,6 +152,7 @@ def _parse_nuclei(evidence: EvidenceRecord) -> list[IntelligenceFact]:
         severity = _SEVERITY.get(severity_text, Severity.UNKNOWN)
         matched = item.get("matched-at") or item.get("matched") or item.get("host") or evidence.target
         template_id = item.get("template-id") or item.get("templateID")
+        verification = verify_nuclei_record(item)
         facts.append(
             IntelligenceFact.create(
                 kind=FactKind.FINDING,
@@ -139,12 +160,15 @@ def _parse_nuclei(evidence: EvidenceRecord) -> list[IntelligenceFact]:
                 target=str(matched) if matched is not None else evidence.target,
                 title=name,
                 evidence_id=evidence.id,
+                confidence=float(verification["confidence"]),
                 severity=severity,
                 data={
                     "template_id": template_id,
                     "matched_at": matched,
                     "type": item.get("type"),
                     "matcher_name": item.get("matcher-name") or item.get("matcher_name"),
+                    "observed_ip": item.get("ip"),
+                    "verification": verification,
                 },
             )
         )
