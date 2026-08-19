@@ -5,6 +5,7 @@ import re
 from datetime import timezone
 from typing import Any
 
+from tonmen.intelligence import aggregate_nuclei_findings
 from tonmen.intelligence.verification import verify_nuclei_record
 from tonmen.missions import MissionPlan, MissionRun
 
@@ -105,6 +106,7 @@ def _nuclei_payloads(evidence, addresses: dict[str, Any]) -> list[dict[str, Any]
                 "port": data.get("port"),
                 "scheme": data.get("scheme"),
                 "url": data.get("url"),
+                "type": data.get("type"),
                 "matcher_status": data.get("matcher-status"),
                 "matcher_name": data.get("matcher-name") or data.get("matcher_name"),
                 "request": data.get("request"),
@@ -190,6 +192,7 @@ def build_report(plan: MissionPlan, run: MissionRun) -> dict[str, Any]:
     loop = [_node(node) for node in run.graph.nodes.values() if node.kind.startswith("loop.")]
     council = _council(run)
     findings = [node for node in intelligence if node["kind"] == "intelligence.finding"]
+    aggregated_findings = aggregate_nuclei_findings(payloads)
     approval_steps = [step for step in steps if step["requires_approval"]]
     failures = [step for step in steps if step["state"] in {"failed", "denied"}]
     degraded = [step for step in steps if step["state"] == "degraded"]
@@ -197,9 +200,17 @@ def build_report(plan: MissionPlan, run: MissionRun) -> dict[str, Any]:
     backend_divergences = sum(
         1 for item in payloads if item["backend_correlation"]["status"] in {"different_backend", "different_resolved_backend"}
     )
+    affected_backends = sorted(
+        {
+            backend["backend"]
+            for aggregate in aggregated_findings
+            for backend in aggregate.get("affected_backends", [])
+            if backend.get("backend") and backend.get("backend") != "unknown"
+        }
+    )
 
     return {
-        "schema": 2,
+        "schema": 3,
         "report_type": "final" if run.state.value in {"succeeded", "failed", "denied"} else "interim",
         "mission": {
             "run_id": run.id,
@@ -214,6 +225,10 @@ def build_report(plan: MissionPlan, run: MissionRun) -> dict[str, Any]:
             "evidence_records": len(evidence),
             "intelligence_facts": len(intelligence),
             "findings": len(findings),
+            "unique_findings": len(aggregated_findings),
+            "finding_instances": len(payloads),
+            "duplicate_finding_instances": max(0, len(payloads) - len(aggregated_findings)),
+            "affected_backends": len(affected_backends),
             "approval_gated_steps": len(approval_steps),
             "failed_or_denied_steps": len(failures),
             "degraded_steps": len(degraded),
@@ -235,8 +250,9 @@ def build_report(plan: MissionPlan, run: MissionRun) -> dict[str, Any]:
         },
         "asset_correlation": {
             "nmap": addresses,
+            "affected_backends": affected_backends,
             "backend_divergences": backend_divergences,
-            "note": "DNS-resolved backends are not assumed equivalent. A finding is scoped to the backend actually evidenced by the validation record.",
+            "note": "DNS-resolved backends are not assumed equivalent. Aggregated findings preserve the exact backends that produced validation evidence.",
         },
         "steps": steps,
         "observations": [
@@ -253,6 +269,7 @@ def build_report(plan: MissionPlan, run: MissionRun) -> dict[str, Any]:
         ],
         "intelligence": intelligence,
         "findings": findings,
+        "aggregated_findings": aggregated_findings,
         "reasoning": reasoning,
         "loop": loop,
         "assessment_council": council,
@@ -290,7 +307,11 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- Steps: {summary['steps']}",
         f"- Evidence records: {summary['evidence_records']}",
         f"- Intelligence facts: {summary['intelligence_facts']}",
-        f"- Findings: {summary['findings']}",
+        f"- Raw finding facts: {summary['findings']}",
+        f"- Unique aggregated findings: {summary['unique_findings']}",
+        f"- Finding instances: {summary['finding_instances']}",
+        f"- Duplicate finding instances collapsed: {summary['duplicate_finding_instances']}",
+        f"- Affected backends evidenced: {summary['affected_backends']}",
         f"- Template matches: {summary['template_matches']}",
         f"- Strong evidence confirmations: {summary['evidence_confirmed']}",
         f"- Attribution supported: {summary['attribution_supported']}",
@@ -303,6 +324,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         "## Verification Semantics",
         "",
         "Template Matched, Evidence Confirmed, and CVE/root-cause Attribution are separate claims.",
+        "Repeated observations are collapsed into one logical finding while preserving backend-specific evidence.",
         "A multi-address hostname is not treated as one homogeneous backend without evidence.",
         "",
         "## Governance",
@@ -329,7 +351,44 @@ def render_markdown(report: dict[str, Any]) -> str:
             ]
         )
 
-    lines.extend(["## Evidence-backed Findings", ""])
+    lines.extend(["## Aggregated Findings", ""])
+    if report.get("aggregated_findings"):
+        for aggregate in report["aggregated_findings"]:
+            lines.extend(
+                [
+                    f"### {aggregate.get('name') or aggregate.get('template_id') or aggregate['identity']}",
+                    "",
+                    f"- Aggregate ID: `{aggregate['id']}`",
+                    f"- Template: `{aggregate.get('template_id') or aggregate['identity']}`",
+                    f"- Severity: **{aggregate.get('severity', 'unknown')}**",
+                    f"- Instances: `{aggregate.get('instance_count', 0)}`",
+                    f"- Duplicate instances collapsed: `{aggregate.get('duplicate_instance_count', 0)}`",
+                    f"- Unique backends: `{aggregate.get('unique_backend_count', 0)}`",
+                    f"- Evidence: **{aggregate.get('evidence_status', 'unknown')}** ({aggregate.get('evidence_strength', 'unknown')})",
+                    f"- Attribution: **{aggregate.get('attribution_status', 'unknown')}**",
+                    f"- Confidence: `{aggregate.get('confidence', 0)}`",
+                    f"- Backend variance: `{aggregate.get('backend_variance', False)}`",
+                    "",
+                ]
+            )
+            for backend in aggregate.get("affected_backends", []):
+                lines.extend(
+                    [
+                        f"#### Backend {backend.get('backend', 'unknown')}",
+                        "",
+                        f"- Instances: `{backend.get('instance_count', 0)}`",
+                        f"- Evidence IDs: `{', '.join(backend.get('evidence_ids', [])) or '—'}`",
+                        f"- Matched locations: `{', '.join(backend.get('matched_locations', [])) or '—'}`",
+                        f"- Observed Server: `{', '.join(backend.get('observed_servers', [])) or '—'}`",
+                        f"- Evidence: **{backend.get('evidence_status', 'unknown')}** ({backend.get('evidence_strength', 'unknown')})",
+                        f"- Attribution: **{backend.get('attribution_status', 'unknown')}**",
+                        "",
+                    ]
+                )
+    else:
+        lines.extend(["No aggregated Nuclei findings were produced.", ""])
+
+    lines.extend(["## Evidence-backed Finding Facts", ""])
     if report["findings"]:
         for finding in report["findings"]:
             md = finding.get("metadata", {})

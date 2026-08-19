@@ -26,7 +26,7 @@
   function toneFor(status) {
     if (["confirmed", "supported", "same_backend", "matched"].includes(status)) return "ok";
     if (["contradicted", "not_confirmed", "different_backend", "different_resolved_backend"].includes(status)) return "bad";
-    if (["observed", "unverified", "matched_only", "uncompared"].includes(status)) return "warn";
+    if (["observed", "unverified", "matched_only", "uncompared", "mixed"].includes(status)) return "warn";
     return "blue";
   }
 
@@ -84,10 +84,23 @@
     </details>`;
   }
 
+  function aggregateBlock(item, index = 0) {
+    const backends = item.affected_backends || [];
+    const backendRows = backends.map(backend => `<tr><td><code>${esc(backend.backend || "unknown")}</code></td><td>${backend.instance_count || 0}</td><td>${esc((backend.observed_servers || []).join(", ") || "—")}</td><td>${badge("Evidence", backend.evidence_status)}</td><td>${badge("Attribution", backend.attribution_status)}</td><td>${esc((backend.evidence_ids || []).map(short).join(", ") || "—")}</td></tr>`).join("");
+    return `<details class="report-aggregate" ${index === 0 ? "open" : ""}>
+      <summary><strong>${esc(item.name || item.template_id || item.identity)}</strong><span>${esc(item.severity || "unknown")}</span><code>${item.instance_count || 0} instances · ${item.unique_backend_count || 0} backends</code></summary>
+      <div class="fact-meta" style="padding:9px 0">${badge("Template", item.template_status)}${badge("Evidence", item.evidence_status)}${badge("Attribution", item.attribution_status)}<span class="module-badge">confidence ${esc(item.confidence ?? "—")}</span><span class="module-badge ${item.backend_variance ? "warn" : "blue"}">variance ${item.backend_variance ? "yes" : "no"}</span></div>
+      <div class="report-kv"><span>Aggregate ID</span><code>${esc(item.id)}</code><span>Template</span><code>${esc(item.template_id || item.identity)}</code><span>Instances collapsed</span><code>${esc(item.duplicate_instance_count || 0)}</code><span>Evidence IDs</span><code>${esc((item.evidence_ids || []).map(short).join(", ") || "—")}</code></div>
+      <p class="aggregate-scope-note">${esc(item.scope_note || "")}</p>
+      <div class="module-table-wrap"><table class="module-table aggregate-backend-table"><thead><tr><th>Backend</th><th>Instances</th><th>Server</th><th>Evidence</th><th>Attribution</th><th>Evidence IDs</th></tr></thead><tbody>${backendRows || `<tr><td colspan="6">No backend instances.</td></tr>`}</tbody></table></div>
+    </details>`;
+  }
+
   function reportHtml(report) {
     const mission = report.mission || {};
     const summary = report.summary || {};
     const findings = report.findings || [];
+    const aggregates = report.aggregated_findings || [];
     const rounds = report.assessment_council || [];
     const payloads = report.executed_payloads || [];
     const steps = report.steps || [];
@@ -101,8 +114,8 @@
       return `<article class="report-finding"><div><strong>${esc(item.label)}</strong><span class="module-badge ${["critical","high"].includes(md.severity) ? "bad" : md.severity === "medium" ? "warn" : "blue"}">${esc(md.severity || "unknown")}</span></div><small>Evidence ${esc(short(md.evidence_id))} · confidence ${esc(md.confidence ?? "—")} · affected IP ${esc(verify.observed_ip || "—")}</small><div class="fact-meta" style="margin-top:7px">${badge("Template", verify.template_status)}${badge("Evidence", verify.evidence_status)}${badge("Attribution", verify.attribution_status)}</div><code>${esc((verify.attribution_reasons || []).join(" · ") || verify.note || "")}</code></article>`;
     }).join("") : `<div class="module-empty">没有 Evidence-backed Finding。</div>`;
 
+    const aggregateHtml = aggregates.length ? aggregates.map(aggregateBlock).join("") : `<div class="module-empty">没有可聚合的 Nuclei Finding。</div>`;
     const stepHtml = steps.map((step, index) => `<tr><td>${index + 1}</td><td>${esc(step.tool)}</td><td>${esc(step.target)}</td><td>L${esc(step.risk)}</td><td>${step.requires_approval ? "yes" : "no"}</td><td>${esc(step.state)}</td><td>${esc(step.metadata?.exit_code ?? "—")}</td></tr>`).join("");
-
     const councilHtml = rounds.map(round => {
       const md = round.metadata || {};
       const agents = (round.subagents || []).map(agent => {
@@ -111,18 +124,17 @@
       }).join("");
       return `<details class="report-round"><summary>Round ${esc(md.round)} · ${esc(md.focus)} <span>${esc(md.phase)} · ${(round.subagents || []).length} agents</span></summary><ul>${agents}</ul></details>`;
     }).join("");
-
     const evidenceHtml = evidence.map(item => `<details class="report-evidence"><summary><strong>${esc(item.tool)}</strong><code>${esc(short(item.id))}</code><span>exit ${esc(item.exit_code)}</span></summary><div class="report-command">$ ${esc((item.argv || []).join(" "))}</div><h4>stdout</h4><pre>${esc(item.stdout || "(empty)")}</pre><h4>stderr</h4><pre>${esc(item.stderr || "(empty)")}</pre></details>`).join("");
-
     const reasoningHtml = reasoning.slice().reverse().map(item => `<div class="report-reason"><strong>${esc(item.metadata?.action || item.kind)}</strong><span>${esc(item.label)}</span><small>facts ${(item.metadata?.basis_fact_ids || []).length} · human ${item.metadata?.requires_human ? "yes" : "no"}</small></div>`).join("");
 
     return `<section class="report-summary">
-      <div><span>Target</span><strong>${esc(mission.target)}</strong></div><div><span>State</span><strong>${esc(mission.state)}</strong></div><div><span>Report</span><strong>${esc(report.report_type)}</strong></div><div><span>Findings</span><strong>${summary.findings || 0}</strong></div><div><span>Evidence confirmed</span><strong>${summary.evidence_confirmed || 0}</strong></div><div><span>Attribution supported</span><strong>${summary.attribution_supported || 0}</strong></div><div><span>Attribution contradicted</span><strong>${summary.attribution_contradicted || 0}</strong></div><div><span>Backend divergences</span><strong>${summary.backend_divergences || 0}</strong></div><div><span>Rounds</span><strong>${summary.assessment_rounds || 0}</strong></div><div><span>Subagent reviews</span><strong>${summary.subagent_reviews || 0}</strong></div>
+      <div><span>Target</span><strong>${esc(mission.target)}</strong></div><div><span>State</span><strong>${esc(mission.state)}</strong></div><div><span>Unique findings</span><strong>${summary.unique_findings || 0}</strong></div><div><span>Finding instances</span><strong>${summary.finding_instances || 0}</strong></div><div><span>Duplicates collapsed</span><strong>${summary.duplicate_finding_instances || 0}</strong></div><div><span>Affected backends</span><strong>${summary.affected_backends || 0}</strong></div><div><span>Evidence confirmed</span><strong>${summary.evidence_confirmed || 0}</strong></div><div><span>Attribution contradicted</span><strong>${summary.attribution_contradicted || 0}</strong></div><div><span>Rounds</span><strong>${summary.assessment_rounds || 0}</strong></div><div><span>Subagent reviews</span><strong>${summary.subagent_reviews || 0}</strong></div>
     </section>
+    <section class="report-section"><h3>Finding Aggregation</h3><p>同一模板的重复命中合并成一个逻辑 Finding；每个 IP、Evidence、Server 指纹和归因状态仍按 backend instance 单独保留。</p>${aggregateHtml}</section>
     <section class="report-section"><h3>Finding Verification</h3><p>Template Matched、Evidence Confirmed、CVE/Root-cause Attribution 是三个独立结论；多 IP 域名不会自动视为同一后端。</p></section>
     <section class="report-section"><h3>治理 / Governance</h3><p>${esc(report.governance?.execution_model || "")}</p><div class="report-governance">Assessment target: ${esc(report.governance?.policy?.assessment_rounds || 8)} rounds · ${esc(report.governance?.policy?.subagents_per_round || 4)} subagents/round · approval tokens persisted: no · arbitrary shell: disabled</div></section>
     <section class="report-section"><h3>执行步骤 / Steps</h3><div class="module-table-wrap"><table class="module-table"><thead><tr><th>#</th><th>Tool</th><th>Target</th><th>Risk</th><th>Approval</th><th>State</th><th>Exit</th></tr></thead><tbody>${stepHtml}</tbody></table></div></section>
-    <section class="report-section"><h3>漏洞与事实 / Findings</h3>${findingHtml}</section>
+    <section class="report-section"><h3>原始 Finding Facts</h3>${findingHtml}</section>
     <section class="report-section"><h3>已执行 Payload / Request / Response</h3>${payloads.length ? payloads.map(payloadBlock).join("") : `<div class="module-empty">当前报告没有结构化 Nuclei request/response payload。</div>`}</section>
     <section class="report-section"><h3>Assessment Council · 7–10 rounds</h3>${councilHtml || `<div class="module-empty">Council 尚未产生轮次。</div>`}</section>
     <section class="report-section"><h3>Reasoning</h3>${reasoningHtml || `<div class="module-empty">暂无 Reasoning。</div>`}</section>
@@ -153,11 +165,11 @@
         } catch (error) { toast(error.message || String(error), true); }
       };
       dialog.querySelector("[data-report-copy-summary]").onclick = async () => {
-        const summaryText = `${report.mission?.target || ""} · ${report.mission?.state || ""} · ${report.summary?.findings || 0} findings · ${report.summary?.evidence_confirmed || 0} evidence-confirmed · ${report.summary?.attribution_supported || 0} attribution-supported · ${report.summary?.backend_divergences || 0} backend divergences`;
+        const summaryText = `${report.mission?.target || ""} · ${report.mission?.state || ""} · ${report.summary?.unique_findings || 0} unique findings · ${report.summary?.finding_instances || 0} instances · ${report.summary?.duplicate_finding_instances || 0} duplicates collapsed · ${report.summary?.affected_backends || 0} affected backends`;
         try { await navigator.clipboard.writeText(summaryText); toast("报告摘要已复制"); }
         catch (_) { window.prompt("复制报告摘要", summaryText); }
       };
-      if (auto) toast(`任务执行结束：完整报告已生成（${report.summary?.assessment_rounds || 0} 轮 / ${report.summary?.subagent_reviews || 0} 子代理复核）`);
+      if (auto) toast(`任务执行结束：${report.summary?.finding_instances || 0} 次命中聚合为 ${report.summary?.unique_findings || 0} 个 Finding`);
     } catch (error) {
       body.innerHTML = `<div class="module-error">${esc(error.message || error)}</div>`;
     }
@@ -187,15 +199,15 @@
       const listResponse = await fetch("/api/missions", {cache:"no-store"});
       const listPayload = await listResponse.json();
       const runs = (listPayload.missions || []).slice(0, 20);
-      const details = await Promise.all(runs.map(async run => {
+      const reports = await Promise.all(runs.map(async run => {
         try {
-          const response = await fetch(`/api/missions/${encodeURIComponent(run.id)}`, {cache:"no-store"});
-          return response.ok ? await response.json() : null;
+          const response = await fetch(`/api/missions/${encodeURIComponent(run.id)}/report`, {cache:"no-store"});
+          if (!response.ok) return null;
+          const report = await response.json();
+          return {...report, run_id:run.id, run_target:run.target};
         } catch (_) { return null; }
       }));
-      const findings = details.filter(Boolean).flatMap(run => (run.intelligence || [])
-        .filter(node => node.kind === "intelligence.finding")
-        .map(node => ({...node, run_id:run.id, run_target:run.target})));
+      const aggregates = reports.filter(Boolean).flatMap(report => (report.aggregated_findings || []).map(item => ({...item, run_id:report.run_id, run_target:report.run_target})));
       let panel = document.getElementById("finding-verification-matrix");
       if (!panel) {
         panel = document.createElement("section");
@@ -203,18 +215,17 @@
         panel.className = "module-card";
         head.insertAdjacentElement("afterend", panel);
       }
-      const rows = findings.slice().reverse().map(node => {
-        const md = node.metadata || {};
-        const verify = md.data?.verification || {};
-        return `<article class="fact-item"><h3>${esc(node.label)} <span class="module-badge ${["critical","high"].includes(md.severity) ? "bad" : "warn"}">${esc(md.severity || "unknown")}</span></h3><p>${esc(node.run_target)} · affected IP ${esc(verify.observed_ip || "—")} · Server ${esc(verify.observed_server || "—")}</p><div class="fact-meta">${badge("Template", verify.template_status)}${badge("Evidence", verify.evidence_status)}${badge("Attribution", verify.attribution_status)}<span class="module-badge">confidence ${esc(md.confidence ?? "—")}</span><button class="ghost small" data-open-run="${esc(node.run_id)}">Run ${esc(short(node.run_id))}</button></div></article>`;
+      const rows = aggregates.slice().reverse().map(item => {
+        const backends = (item.affected_backends || []).map(backend => `${backend.backend} (${backend.instance_count})`).join(", ");
+        return `<article class="fact-item aggregate-fact"><h3>${esc(item.name || item.template_id || item.identity)} <span class="module-badge ${["critical","high"].includes(item.severity) ? "bad" : item.severity === "medium" ? "warn" : "blue"}">${esc(item.severity || "unknown")}</span></h3><p>${esc(item.run_target)} · ${item.instance_count || 0} instances → ${item.unique_backend_count || 0} backends · ${esc(backends || "unknown backend")}</p><div class="fact-meta">${badge("Template", item.template_status)}${badge("Evidence", item.evidence_status)}${badge("Attribution", item.attribution_status)}<span class="module-badge">confidence ${esc(item.confidence ?? "—")}</span><span class="module-badge ${item.backend_variance ? "warn" : "blue"}">variance ${item.backend_variance ? "yes" : "no"}</span><button class="ghost small" data-open-run="${esc(item.run_id)}">Run ${esc(short(item.run_id))}</button></div></article>`;
       }).join("");
-      panel.innerHTML = `<div class="module-card-head"><h2>Finding Verification Matrix</h2><small>Template ≠ Evidence ≠ Attribution</small></div><div class="module-card-body"><div class="fact-list">${rows || `<div class="module-empty"><b>暂无需要验证的 Finding</b>Nuclei 结构化命中后会在这里分层显示可信度。</div>`}</div></div>`;
+      panel.innerHTML = `<div class="module-card-head"><h2>Finding Aggregation & Verification</h2><small>deduplicated Finding · backend instances · Template ≠ Evidence ≠ Attribution</small></div><div class="module-card-body"><div class="fact-list">${rows || `<div class="module-empty"><b>暂无可聚合 Finding</b>Nuclei 结构化命中后会按模板和后端分层显示。</div>`}</div></div>`;
       panel.querySelectorAll("[data-open-run]").forEach(button => button.addEventListener("click", () => {
         history.pushState({}, "", `/missions?run=${encodeURIComponent(button.dataset.openRun)}`);
         window.dispatchEvent(new PopStateEvent("popstate"));
       }));
     } catch (_) {
-      // Existing Intelligence workspace remains usable if enrichment fails.
+      // Existing Intelligence workspace remains usable if aggregation enrichment fails.
     } finally {
       intelligenceBusy = false;
     }
