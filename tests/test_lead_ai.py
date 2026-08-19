@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from tonmen.ai import LeadAIConfig, LeadAIOrchestrator, OpenAIResponsesProvider
 from tonmen.council import AssessmentCouncil
-from tonmen.evidence import EvidenceRecord
+from tonmen.evidence import EvidenceRecord, GraphNode
 from tonmen.missions import MissionPlan, MissionRun
 
 
@@ -149,6 +149,7 @@ def test_unsupported_model_action_falls_back_without_authority():
 def test_council_has_one_lead_directive_over_three_to_five_subagents():
     plan = MissionPlan.create("app.example.test", [])
     run = MissionRun.create(plan)
+    run.graph.add_node(GraphNode(id=run.id, kind="mission", label="mission:app.example.test"))
     fake = FakeLeadProvider(
         {
             "focus": "network_surface",
