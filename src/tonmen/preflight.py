@@ -105,7 +105,8 @@ def build_mission_preflight(
     metadata = dict(plan.metadata or {})
     asset_set = dict(metadata.get("resolved_assets") or {})
     coverage = dict(metadata.get("coverage_plan") or {})
-    resolved_addresses = list(asset_set.get("addresses") or [])
+    asset_records = [item for item in asset_set.get("assets", []) if isinstance(item, dict)]
+    resolved_addresses = [str(item.get("address")) for item in asset_records if item.get("address")]
     needs_scope = list(asset_set.get("needs_scope") or coverage.get("needs_scope") or [])
     authorized_addresses = list(asset_set.get("authorized_addresses") or [])
 
