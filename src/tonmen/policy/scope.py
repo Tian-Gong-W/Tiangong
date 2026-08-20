@@ -13,7 +13,12 @@ _HOST_RULE = re.compile(
 
 
 def _host_from_target(target: str) -> str:
-    parsed = urlparse(target if "://" in target else f"scheme://{target}")
+    raw = str(target).strip()
+    try:
+        return str(ipaddress.ip_address(raw.split("%", 1)[0]))
+    except ValueError:
+        pass
+    parsed = urlparse(raw if "://" in raw else f"scheme://{raw}")
     host = parsed.hostname
     if not host:
         raise ValueError("target has no host")
