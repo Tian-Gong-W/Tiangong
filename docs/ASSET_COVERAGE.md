@@ -21,6 +21,10 @@ export TONMEN_RESOLVED_IP_COVERAGE=1
 
 Even with the switch enabled, TONMEN adds an extra Nmap step only for addresses whose concrete IP is already allowed by Scope. A `needs_scope` address never becomes an execution step.
 
+The fan-out is bounded. A standard web Mission reserves three execution slots for hostname Nmap, HTTPx and approval-gated Nuclei, so at most 13 additional independently authorized resolved IPs are added to the same Mission. Further eligible addresses are preserved as `deferred_due_to_execution_bound` instead of being silently dropped.
+
+When resolved-IP coverage is explicitly enabled, the default MissionLoop budget becomes 16 iterations / 16 executions, which matches the existing hard execution ceiling. Without the coverage switch, defaults remain 8 iterations / 3 executions. Explicit CLI `--max-iterations` and `--max-executions` values always override these defaults.
+
 Example:
 
 ```toml
@@ -39,10 +43,10 @@ HTTPx and Nuclei continue to use the hostname rather than directly fan out to re
 Mission Graph records:
 
 - `asset.resolved` nodes for A/AAAA observations and Scope classification.
-- `coverage.plan` for eligible/planned direct Nmap targets and the hostname-preserving web rule.
+- `coverage.plan` for eligible/planned/deferred direct Nmap targets and the hostname-preserving web rule.
 
 Chronicle persists the Plan metadata and Graph. Final reports expose `asset_coverage` and keep Nmap-observed `resolved_not_scanned` addresses distinct from scanned addresses.
 
 ## Time semantics
 
-TONMEN canonical structured timestamps are UTC. Raw Evidence is kept verbatim and can contain tool-specific timezone text such as HKT. Reports label the canonical timezone explicitly instead of rewriting raw tool output.
+TONMEN canonical structured timestamps are UTC. Raw Evidence is kept verbatim and can contain tool-specific timezone text such as HKT. The Console shows browser-local time together with the canonical UTC reference instead of rewriting raw tool output.
