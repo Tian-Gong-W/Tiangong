@@ -219,14 +219,44 @@ class MissionCoordinator:
                     self._emit("evidence.created", mission_run, step_id=step.id, tool=step.tool, evidence_id=job.outcome.evidence.id, exit_code=job.outcome.evidence.exit_code)
                     execution.error = job.error or job.outcome.result.summary
                     timed_out = bool(job.outcome.result.evidence.get("timed_out"))
-                    if timed_out and step.risk <= int(RiskLevel.DISCOVERY):
-                        execution.state = StepExecutionState.DEGRADED
+                    if timed_out:
+                        timeout_seconds = job.outcome.result.evidence.get("timeout_seconds")
                         execution.metadata["timed_out"] = True
-                        execution.metadata["timeout_seconds"] = job.outcome.result.evidence.get("timeout_seconds")
-                        execution.metadata["degraded_reason"] = "discovery_timeout"
-                        mission_run.state = MissionRunState.RUNNING
-                        self._emit("step.degraded", mission_run, step_id=step.id, tool=step.tool, error=execution.error, reason="discovery_timeout", evidence_id=job.outcome.evidence.id)
-                        return mission_run
+                        execution.metadata["timeout_seconds"] = timeout_seconds
+                        execution.metadata["timeout_attempts"] = int(execution.metadata.get("timeout_attempts") or 0) + 1
+                        if step.requires_approval:
+                            execution.state = StepExecutionState.WAITING_APPROVAL
+                            execution.error = f"{execution.error}; fresh approval grant required to retry"
+                            execution.metadata["approval_retry_required"] = True
+                            execution.metadata["degraded_reason"] = "approval_gated_timeout"
+                            mission_run.state = MissionRunState.WAITING_APPROVAL
+                            self._emit(
+                                "step.timeout_waiting_approval",
+                                mission_run,
+                                step_id=step.id,
+                                tool=step.tool,
+                                error=execution.error,
+                                timeout_seconds=timeout_seconds,
+                                evidence_id=job.outcome.evidence.id,
+                                fresh_approval_required=True,
+                            )
+                            self._emit(
+                                "approval.required",
+                                mission_run,
+                                step_id=step.id,
+                                tool=step.tool,
+                                step_target=step.target,
+                                risk=step.risk,
+                                reason="approval_gated_timeout_retry",
+                                previous_evidence_id=job.outcome.evidence.id,
+                            )
+                            return mission_run
+                        if step.risk <= int(RiskLevel.DISCOVERY):
+                            execution.state = StepExecutionState.DEGRADED
+                            execution.metadata["degraded_reason"] = "discovery_timeout"
+                            mission_run.state = MissionRunState.RUNNING
+                            self._emit("step.degraded", mission_run, step_id=step.id, tool=step.tool, error=execution.error, reason="discovery_timeout", evidence_id=job.outcome.evidence.id)
+                            return mission_run
                 else:
                     execution.error = job.error or "execution failed"
                 mission_run.finish(MissionRunState.FAILED)
@@ -250,6 +280,7 @@ class MissionCoordinator:
             execution.state = StepExecutionState.SUCCEEDED
             execution.observation_id = observation.id
             execution.metadata["fact_ids"] = [fact.id for fact in facts]
+            execution.metadata.pop("approval_retry_required", None)
             mission_run.graph.add_node(GraphNode(id=observation.id, kind="observation", label=observation.summary, metadata={"source": observation.source, "target": observation.target, **{key: value for key, value in observation_metadata.items() if key.startswith("worker_") or key in {"remote_job_id", "remote_execution"}}}))
             mission_run.graph.link(evidence.id, "supports", observation.id)
             mission_run.graph.link(mission_run.id, "observed", observation.id)

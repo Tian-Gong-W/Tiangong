@@ -44,6 +44,7 @@ class TonmenRuntime:
             runtime.registry,
             runtime.policy,
             timeout_seconds=runtime.config.command_timeout_seconds,
+            tool_timeouts=dict(runtime.config.tool_timeouts),
             events=events,
         )
         runtime.jobs = JobManager(runtime.executor)
@@ -69,6 +70,7 @@ class TonmenRuntime:
                 runtime.policy,
                 runtime.workers,
                 timeout_seconds=config.command_timeout_seconds,
+                tool_timeouts=dict(config.tool_timeouts),
                 approvals=runtime.approvals,
                 audit=runtime.audit,
                 events=events,
@@ -78,6 +80,7 @@ class TonmenRuntime:
                 runtime.registry,
                 runtime.policy,
                 timeout_seconds=config.command_timeout_seconds,
+                tool_timeouts=dict(config.tool_timeouts),
                 approvals=runtime.approvals,
                 audit=runtime.audit,
                 events=events,
@@ -104,6 +107,7 @@ class TonmenRuntime:
         else:
             executor_state = "○ Not loaded"
 
+        timeout_text = ", ".join(f"{tool}={seconds}s" for tool, seconds in self.config.tool_timeouts)
         return "\n".join(
             [
                 "天樞 Core        ● Online",
@@ -113,6 +117,7 @@ class TonmenRuntime:
                 f"天契 Approval    {'● Ready' if self.approvals else '○ Not loaded'}",
                 f"天錄 Audit       {'● Persistent' if self.audit else '○ Not loaded'}",
                 f"天行 Executor    {executor_state}",
+                f"天時 Timeouts    ● default={self.config.command_timeout_seconds}s ({timeout_text})",
                 "天機 Planner      ● Ready",
                 "天鑑 Intelligence ● Ready",
                 "天策 Reasoner     ● Ready",

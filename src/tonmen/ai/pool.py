@@ -56,11 +56,17 @@ def _enabled(name: str, default: bool = True) -> bool:
     return raw not in {"0", "false", "no", "off"}
 
 
+def _confidence(value: float) -> float:
+    return round(max(0.0, min(1.0, float(value))), 2)
+
+
 class ProviderHub(_ProviderHub):
     """Explicit provider pool with quota-aware failover and safe public status.
 
-    Multi-provider subagent calls require TONMEN_AI_POOL. Merely enabling Lead AI
-    never turns on model-backed subagents. Browser-login probes remain explicit.
+    Multi-provider subagent calls require TONMEN_AI_POOL. `TONMEN_AI_POOL=auto` is
+    an explicit opt-in that selects providers which are locally ready (API key set
+    or official CLI installed). Merely enabling Lead AI still does not silently
+    multiply model calls.
 
     Budgets are TONMEN-local guardrails, not claims about a provider account's real
     billing balance. A provider that fails repeatedly is avoided for the remainder
@@ -69,18 +75,30 @@ class ProviderHub(_ProviderHub):
     """
 
     def __init__(self, pool: tuple[str, ...] | None = None) -> None:
+        self.pool_mode = "explicit"
         if pool is None:
-            values: list[str] = []
-            for item in (os.getenv("TONMEN_AI_POOL") or "").split(","):
-                provider_id = item.strip().lower()
-                if not provider_id or provider_id in values:
-                    continue
-                try:
-                    self.spec(provider_id)
-                except ValueError:
-                    continue
-                values.append(provider_id)
-            pool = tuple(values)
+            raw_pool = (os.getenv("TONMEN_AI_POOL") or "").strip()
+            tokens = [item.strip().lower() for item in raw_pool.split(",") if item.strip()]
+            if "auto" in tokens:
+                self.pool_mode = "auto"
+                values = []
+                for provider_id in _PROVIDER_IDS:
+                    spec = self.spec(provider_id)
+                    ready = self._key_configured(spec) if spec.auth_mode == "api_key" else self._installed(spec)
+                    if ready:
+                        values.append(provider_id)
+                pool = tuple(values)
+            else:
+                values = []
+                for provider_id in tokens:
+                    if provider_id == "auto" or provider_id in values:
+                        continue
+                    try:
+                        self.spec(provider_id)
+                    except ValueError:
+                        continue
+                    values.append(provider_id)
+                pool = tuple(values)
         super().__init__(pool=pool)
 
         legacy_budget = self.token_budget
@@ -230,24 +248,30 @@ class ProviderHub(_ProviderHub):
         payload: Mapping[str, Any],
         fallback_summary: str,
         fallback_action: str,
+        fallback_confidence: float = 0.5,
     ) -> RoutedReview:
+        fallback_confidence = _confidence(fallback_confidence)
         if self.mission_token_budget and self._mission_tokens_used() >= self.mission_token_budget:
             return RoutedReview(
                 summary=fallback_summary,
                 recommended_action=fallback_action,
-                confidence=0.5,
+                confidence=_confidence(min(fallback_confidence, 0.45)),
                 source="deterministic",
                 error="TONMEN mission AI token budget exhausted",
             )
 
         candidates = self.ordered_candidates(role)
         if not candidates:
+            if not self.pool:
+                error = "AI subagent pool disabled; set TONMEN_AI_POOL=auto or an explicit provider list"
+            else:
+                error = "no ready provider within TONMEN mission/provider budgets"
             return RoutedReview(
                 summary=fallback_summary,
                 recommended_action=fallback_action,
-                confidence=0.5,
+                confidence=fallback_confidence,
                 source="deterministic",
-                error="no ready provider within TONMEN mission/provider budgets",
+                error=error,
             )
 
         failures: list[str] = []
@@ -306,14 +330,12 @@ class ProviderHub(_ProviderHub):
                 failures.append(f"{provider_id}: {str(exc)[:140]}")
                 if not self.failover_enabled or index + 1 >= len(candidates):
                     break
-                # The next candidate is chosen from the pre-ranked safe pool. A failed
-                # provider cannot gain execution/approval authority through failover.
                 _ = started
 
         return RoutedReview(
             summary=fallback_summary,
             recommended_action=fallback_action,
-            confidence=0.5,
+            confidence=_confidence(max(0.15, fallback_confidence - 0.1)),
             source="deterministic",
             provider=last_provider,
             model=last_model,
@@ -359,9 +381,14 @@ class ProviderHub(_ProviderHub):
             if self.mission_token_budget
             else None
         )
+        warning = None
+        if not self.pool:
+            warning = "Council model pool is disabled. Set TONMEN_AI_POOL=auto or a comma-separated provider list to enable model-backed subagents."
         return {
             "strategy": "quota_aware_failover",
             "pool": list(self.pool),
+            "pool_mode": self.pool_mode,
+            "configuration_warning": warning,
             "token_budget": self.mission_token_budget,
             "mission_token_budget": self.mission_token_budget,
             "mission_tokens_used": mission_used,

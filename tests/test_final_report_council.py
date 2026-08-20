@@ -78,17 +78,23 @@ def test_assessment_policy_is_bounded_to_requested_ranges():
         MissionLoopPolicy(subagents_per_round=6)
 
 
-def test_terminal_mission_has_eight_rounds_and_four_evidence_only_subagents(tmp_path):
+def test_terminal_mission_converges_before_max_rounds_when_evidence_is_unchanged(tmp_path):
     _, _, run = _completed_run(tmp_path, rounds=8, agents=4)
 
     rounds = [node for node in run.graph.nodes.values() if node.kind == "council.round"]
     agents = [node for node in run.graph.nodes.values() if node.kind == "council.subagent"]
+    convergence = [node for node in run.graph.nodes.values() if node.kind == "council.convergence"]
 
-    assert len(rounds) == 8
-    assert len(agents) == 32
-    assert [node.metadata["round"] for node in rounds] == list(range(1, 9))
+    assert 1 <= len(rounds) < 8
+    assert len(agents) == len(rounds) * 4
+    assert [node.metadata["round"] for node in rounds] == list(range(1, len(rounds) + 1))
     assert all(node.metadata["execution_authority"] is False for node in agents)
     assert all(node.metadata["recommended_action"] for node in agents)
+    assert convergence
+    assert convergence[-1].metadata["max_rounds"] == 8
+    assert convergence[-1].metadata["reason"] == "no_new_evidence_or_fact_state"
+    confidences = {node.metadata["confidence"] for node in agents}
+    assert confidences != {0.5}
 
 
 def test_complete_report_contains_executed_payload_request_response_and_council(tmp_path):
@@ -97,8 +103,8 @@ def test_complete_report_contains_executed_payload_request_response_and_council(
     report = build_report(plan, run)
 
     assert report["report_type"] == "final"
-    assert report["summary"]["assessment_rounds"] == 8
-    assert report["summary"]["subagent_reviews"] == 32
+    assert 1 <= report["summary"]["assessment_rounds"] < 8
+    assert report["summary"]["subagent_reviews"] == report["summary"]["assessment_rounds"] * 4
     assert report["summary"]["executed_payloads"] == 1
     payload = report["executed_payloads"][0]
     assert payload["template_id"] == "CVE-2014-2323"
@@ -168,7 +174,7 @@ def test_dashboard_terminal_checkpoint_publishes_final_report_event(tmp_path):
 
     report = state.report(result.run.id)
     assert report["report_type"] == "final"
-    assert report["summary"]["assessment_rounds"] == 8
+    assert 1 <= report["summary"]["assessment_rounds"] < 8
     events = state.event_stream(0, timeout=0, limit=500)["events"]
     ready = [event for event in events if event["type"] == "report.ready"]
     assert ready

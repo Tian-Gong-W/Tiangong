@@ -4,7 +4,7 @@ import subprocess
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Callable
+from typing import Callable, Mapping
 from uuid import uuid4
 
 from tonmen.audit import AuditLog
@@ -36,13 +36,25 @@ def _timeout_text(value: object | None) -> str:
 class ToolExecutor:
     """Executes adapter argv with shell=False after scope, risk and approval checks."""
 
-    def __init__(self, registry: ToolRegistry, policy: PolicyEngine, timeout_seconds: int = 120,
-                 runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
-                 approvals: ApprovalStore | None = None, audit: AuditLog | None = None,
-                 events: EventBus | None = None) -> None:
+    def __init__(
+        self,
+        registry: ToolRegistry,
+        policy: PolicyEngine,
+        timeout_seconds: int = 120,
+        runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+        approvals: ApprovalStore | None = None,
+        audit: AuditLog | None = None,
+        events: EventBus | None = None,
+        tool_timeouts: Mapping[str, int] | None = None,
+    ) -> None:
         self.registry = registry
         self.policy = policy
-        self.timeout_seconds = timeout_seconds
+        self.timeout_seconds = int(timeout_seconds)
+        self.tool_timeouts = {
+            str(name).strip().lower(): int(seconds)
+            for name, seconds in (tool_timeouts or {}).items()
+            if str(name).strip() and int(seconds) > 0
+        }
         self._runner = runner
         self.approvals = approvals
         self.audit = audit
@@ -52,6 +64,9 @@ class ToolExecutor:
     def uses_local_subprocess(self) -> bool:
         """True when this executor will invoke local binaries through the production backend."""
         return self._runner is subprocess.run
+
+    def timeout_for(self, tool: str) -> int:
+        return int(self.tool_timeouts.get(str(tool).strip().lower(), self.timeout_seconds))
 
     def _emit(self, event_type: str, request: ToolRequest, **data: object) -> None:
         if self.events is not None:
@@ -64,7 +79,13 @@ class ToolExecutor:
             self.audit.append(action="tool.execute", tool=request.tool, target=request.target,
                               decision=decision, message=message, evidence_id=evidence_id)
 
-    def _run_streaming(self, argv: tuple[str, ...], request: ToolRequest) -> subprocess.CompletedProcess[str]:
+    def _run_streaming(
+        self,
+        argv: tuple[str, ...],
+        request: ToolRequest,
+        *,
+        timeout_seconds: int,
+    ) -> subprocess.CompletedProcess[str]:
         process = subprocess.Popen(list(argv), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                    text=True, bufsize=1, shell=False)
         stdout_parts: list[str] = []
@@ -89,7 +110,7 @@ class ToolExecutor:
         stderr_thread = threading.Thread(target=drain, args=(process.stderr, "stderr", stderr_parts), daemon=True)
         stdout_thread.start(); stderr_thread.start()
         try:
-            returncode = process.wait(timeout=self.timeout_seconds)
+            returncode = process.wait(timeout=timeout_seconds)
         except subprocess.TimeoutExpired as exc:
             process.kill(); process.wait()
             stdout_thread.join(timeout=1.0); stderr_thread.join(timeout=1.0)
@@ -117,17 +138,18 @@ class ToolExecutor:
         if not argv or any(not value for value in argv):
             raise ValueError("adapter produced invalid argv")
 
+        effective_timeout = self.timeout_for(adapter.spec.name)
         started = datetime.now(timezone.utc)
-        self._emit("tool.started", request, argv=list(argv), timeout_seconds=self.timeout_seconds)
+        self._emit("tool.started", request, argv=list(argv), timeout_seconds=effective_timeout)
         try:
             if self._runner is subprocess.run:
-                completed = self._run_streaming(argv, request)
+                completed = self._run_streaming(argv, request, timeout_seconds=effective_timeout)
             else:
                 completed = self._runner(list(argv), capture_output=True, text=True,
-                                         timeout=self.timeout_seconds, check=False, shell=False)
+                                         timeout=effective_timeout, check=False, shell=False)
         except subprocess.TimeoutExpired as exc:
             finished = datetime.now(timezone.utc)
-            timeout_seconds = int(exc.timeout) if exc.timeout is not None else self.timeout_seconds
+            timeout_seconds = int(exc.timeout) if exc.timeout is not None else effective_timeout
             stdout, stderr = _timeout_text(exc.output), _timeout_text(exc.stderr)
             timeout_message = f"execution timed out after {timeout_seconds} seconds"
             stderr = f"{stderr.rstrip()}\n{timeout_message}\n" if stderr else timeout_message + "\n"
@@ -149,8 +171,10 @@ class ToolExecutor:
         success = completed.returncode == 0
         result = ToolResult(tool=adapter.spec.name, success=success,
                             summary="execution completed" if success else f"execution exited with code {completed.returncode}",
-                            evidence={"id": evidence.id, "exit_code": evidence.exit_code, "timed_out": False})
+                            evidence={"id": evidence.id, "exit_code": evidence.exit_code, "timed_out": False,
+                                      "timeout_seconds": effective_timeout})
         self._audit(request, "allow" if success else "error", result.summary, evidence.id)
         self._emit("tool.completed" if success else "tool.failed", request,
-                   evidence_id=evidence.id, exit_code=evidence.exit_code, success=success)
+                   evidence_id=evidence.id, exit_code=evidence.exit_code, success=success,
+                   timeout_seconds=effective_timeout)
         return ExecutionOutcome(result=result, evidence=evidence, policy=decision)
