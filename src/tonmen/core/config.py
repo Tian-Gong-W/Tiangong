@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -12,6 +13,8 @@ except ModuleNotFoundError:  # Python 3.10
 
 CONFIG_FILENAME = "tonmen.toml"
 DEFAULT_ALLOWED_TARGETS = ("127.0.0.1", "::1", "localhost")
+DEFAULT_TOOL_TIMEOUTS = (("nmap", 300), ("httpx", 120), ("nuclei", 900))
+_TOOL_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 
 
 def _normalize_rules(values) -> tuple[str, ...]:
@@ -29,6 +32,19 @@ def _toml_array(values: tuple[str, ...]) -> str:
     return "[" + ", ".join(json.dumps(item, ensure_ascii=False) for item in values) + "]"
 
 
+def _normalize_tool_timeouts(values) -> tuple[tuple[str, int], ...]:
+    merged = {name: seconds for name, seconds in DEFAULT_TOOL_TIMEOUTS}
+    for raw_name, raw_seconds in values:
+        name = str(raw_name).strip().lower()
+        if not _TOOL_NAME.fullmatch(name):
+            raise ValueError(f"invalid tool timeout name: {raw_name}")
+        seconds = int(raw_seconds)
+        if not 1 <= seconds <= 7200:
+            raise ValueError(f"tool timeout for {name} must be within 1-7200 seconds")
+        merged[name] = seconds
+    return tuple(sorted(merged.items()))
+
+
 @dataclass(frozen=True, slots=True)
 class TonmenConfig:
     """Runtime configuration with deny-by-default external scope."""
@@ -38,9 +54,22 @@ class TonmenConfig:
     bind_port: int = 8888
     allow_arbitrary_shell: bool = False
     command_timeout_seconds: int = 120
+    tool_timeouts: tuple[tuple[str, int], ...] = DEFAULT_TOOL_TIMEOUTS
     allowed_targets: tuple[str, ...] = DEFAULT_ALLOWED_TARGETS
     denied_targets: tuple[str, ...] = ()
     config_path: Path | None = None
+
+    def timeout_for(self, tool: str) -> int:
+        name = str(tool).strip().lower()
+        for configured_tool, seconds in self.tool_timeouts:
+            if configured_tool == name:
+                return int(seconds)
+        return int(self.command_timeout_seconds)
+
+    @property
+    def max_command_timeout_seconds(self) -> int:
+        values = [int(self.command_timeout_seconds), *(int(seconds) for _, seconds in self.tool_timeouts)]
+        return max(values)
 
     @classmethod
     def default(cls, config_path: Path | str | None = None) -> "TonmenConfig":
@@ -56,8 +85,9 @@ class TonmenConfig:
         data = tomllib.loads(config_path.read_text(encoding="utf-8"))
         runtime = data.get("tonmen", {})
         scope = data.get("scope", {})
-        if not isinstance(runtime, dict) or not isinstance(scope, dict):
-            raise ValueError("tonmen.toml sections must be tables")
+        timeouts = data.get("timeouts", {})
+        if not isinstance(runtime, dict) or not isinstance(scope, dict) or not isinstance(timeouts, dict):
+            raise ValueError("tonmen.toml tonmen/scope/timeouts sections must be tables")
 
         allow_arbitrary_shell = bool(runtime.get("allow_arbitrary_shell", False))
         if allow_arbitrary_shell:
@@ -77,10 +107,11 @@ class TonmenConfig:
 
         timeout = int(runtime.get("command_timeout_seconds", 120))
         bind_port = int(runtime.get("bind_port", 8888))
-        if timeout <= 0:
-            raise ValueError("command_timeout_seconds must be positive")
+        if not 1 <= timeout <= 7200:
+            raise ValueError("command_timeout_seconds must be within 1-7200 seconds")
         if not 1 <= bind_port <= 65535:
             raise ValueError("bind_port must be within 1-65535")
+        tool_timeouts = _normalize_tool_timeouts(timeouts.items())
 
         return cls(
             workspace=workspace,
@@ -88,6 +119,7 @@ class TonmenConfig:
             bind_port=bind_port,
             allow_arbitrary_shell=False,
             command_timeout_seconds=timeout,
+            tool_timeouts=tool_timeouts,
             allowed_targets=allowed,
             denied_targets=denied,
             config_path=config_path,
@@ -114,6 +146,8 @@ class TonmenConfig:
         except ValueError:
             workspace_text = str(self.workspace.resolve())
 
+        normalized_timeouts = _normalize_tool_timeouts(self.tool_timeouts)
+        timeout_lines = [f"{name} = {seconds}" for name, seconds in normalized_timeouts]
         content = "\n".join(
             [
                 "# TONMEN project configuration",
@@ -125,6 +159,11 @@ class TonmenConfig:
                 f"bind_port = {self.bind_port}",
                 f"command_timeout_seconds = {self.command_timeout_seconds}",
                 "allow_arbitrary_shell = false",
+                "",
+                "# Per-tool execution ceilings override command_timeout_seconds.",
+                "# Keep mission time budgets above the longest enabled tool timeout.",
+                "[timeouts]",
+                *timeout_lines,
                 "",
                 "[scope]",
                 f"allowed_targets = {_toml_array(_normalize_rules(self.allowed_targets))}",
