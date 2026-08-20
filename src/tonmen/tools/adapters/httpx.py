@@ -28,6 +28,7 @@ class HttpxAdapter(ToolAdapter):
             "httpx",
             "-u", str(request.target),
             "-silent",
+            "-no-color",
             "-status-code",
             "-title",
             "-tech-detect",
