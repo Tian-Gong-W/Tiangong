@@ -43,6 +43,7 @@ class RemoteWorkerExecutor:
         pool: WorkerPool,
         *,
         timeout_seconds: int = 120,
+        tool_timeouts: Mapping[str, int] | None = None,
         approvals: ApprovalStore | None = None,
         audit: AuditLog | None = None,
         events: EventBus | None = None,
@@ -55,10 +56,16 @@ class RemoteWorkerExecutor:
         self.policy = policy
         self.pool = pool
         self.timeout_seconds = int(timeout_seconds)
+        self.tool_timeouts = {
+            str(name).strip().lower(): int(seconds)
+            for name, seconds in (tool_timeouts or {}).items()
+            if str(name).strip() and int(seconds) > 0
+        }
         self.approvals = approvals
         self.audit = audit
         self.events = events
-        self.transport = transport or WorkerHTTPTransport(timeout_seconds=max(15, self.timeout_seconds + 30))
+        longest_timeout = max([self.timeout_seconds, *self.tool_timeouts.values()])
+        self.transport = transport or WorkerHTTPTransport(timeout_seconds=max(15, longest_timeout + 30))
         self.probe_before_dispatch = os.getenv("TONMEN_WORKER_PROBE_BEFORE_DISPATCH", "1").strip() != "0"
         self.job_ttl_seconds = max(5, min(300, int(os.getenv("TONMEN_WORKER_JOB_TTL_SECONDS", "60") or "60")))
         queue_timeout = float(os.getenv("TONMEN_WORKER_QUEUE_TIMEOUT_SECONDS", "30") or "30")
@@ -80,6 +87,9 @@ class RemoteWorkerExecutor:
     @property
     def worker_count(self) -> int:
         return len(self.pool.workers)
+
+    def timeout_for(self, tool: str) -> int:
+        return int(self.tool_timeouts.get(str(tool).strip().lower(), self.timeout_seconds))
 
     def _emit(self, event_type: str, request: ToolRequest, **data: object) -> None:
         if self.events is None:
@@ -259,6 +269,7 @@ class RemoteWorkerExecutor:
                 secret=spec.secret(),
                 ttl_seconds=self.job_ttl_seconds,
             )
+            effective_timeout = self.timeout_for(request.tool)
             self._emit(
                 "worker.dispatch_started",
                 request,
@@ -267,6 +278,7 @@ class RemoteWorkerExecutor:
                 remote_job_id=envelope.job_id,
                 approval_forwarded=False,
                 argv_forwarded=False,
+                timeout_seconds=effective_timeout,
             )
             try:
                 payload = self.transport.dispatch(spec, envelope)
