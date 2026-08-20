@@ -24,18 +24,25 @@ BANNER = """\
 
 
 def _add_loop_budget_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--max-iterations", type=int, default=8)
-    parser.add_argument("--max-executions", type=int, default=3)
-    parser.add_argument("--max-repeat-decisions", type=int, default=2)
-    parser.add_argument("--max-duration", type=int, default=300, dest="max_duration_seconds")
+    # None means inherit MissionLoopPolicy's runtime default. This keeps CLI and
+    # Console aligned, including the explicit resolved-IP coverage budget.
+    parser.add_argument("--max-iterations", type=int, default=None)
+    parser.add_argument("--max-executions", type=int, default=None)
+    parser.add_argument("--max-repeat-decisions", type=int, default=None)
+    parser.add_argument("--max-duration", type=int, default=None, dest="max_duration_seconds")
 
 
 def _loop_policy(args) -> MissionLoopPolicy:
+    defaults = MissionLoopPolicy()
     return MissionLoopPolicy(
-        max_iterations=args.max_iterations,
-        max_executions=args.max_executions,
-        max_repeat_decisions=args.max_repeat_decisions,
-        max_duration_seconds=args.max_duration_seconds,
+        max_iterations=args.max_iterations if args.max_iterations is not None else defaults.max_iterations,
+        max_executions=args.max_executions if args.max_executions is not None else defaults.max_executions,
+        max_repeat_decisions=(
+            args.max_repeat_decisions if args.max_repeat_decisions is not None else defaults.max_repeat_decisions
+        ),
+        max_duration_seconds=(
+            args.max_duration_seconds if args.max_duration_seconds is not None else defaults.max_duration_seconds
+        ),
     )
 
 
