@@ -18,6 +18,7 @@ _NMAP_REPORT_BARE = re.compile(r"^Nmap scan report for (?P<ip>(?:\d{1,3}\.){3}\d
 _NMAP_OTHER = re.compile(r"^Other addresses for .+ \(not scanned\):\s*(?P<addresses>.+)$", re.IGNORECASE)
 _HTTPX_URL = re.compile(r"^(?P<url>https?://\S+)")
 _HTTPX_GROUP = re.compile(r"\[([^\]]*)\]")
+_ANSI_ESCAPE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
 
 _SEVERITY = {
     "info": Severity.INFO,
@@ -28,9 +29,13 @@ _SEVERITY = {
 }
 
 
+def _strip_ansi(text: str) -> str:
+    return _ANSI_ESCAPE.sub("", text)
+
+
 def _nonempty_lines(text: str) -> Iterable[str]:
     for line in text.splitlines():
-        value = line.strip()
+        value = _strip_ansi(line).strip()
         if value:
             yield value
 
@@ -103,7 +108,7 @@ def _parse_httpx(evidence: EvidenceRecord) -> list[IntelligenceFact]:
         if not match:
             continue
         url = match.group("url")
-        groups = [item.strip() for item in _HTTPX_GROUP.findall(line)]
+        groups = [_strip_ansi(item).strip() for item in _HTTPX_GROUP.findall(line)]
         status = None
         title = None
         technologies: list[str] = []
