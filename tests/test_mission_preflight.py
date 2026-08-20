@@ -49,6 +49,7 @@ def test_preflight_reports_timeout_assets_and_empty_ai_pool(monkeypatch, tmp_pat
     assert payload["side_effects"]["provider_model_called"] is False
     assert any(item["code"] == "ai_provider_pool_empty" for item in payload["warnings"])
     assert all(step["timeout_seconds"] == runtime.config.timeout_for(step["tool"]) for step in payload["steps"])
+    assert payload["assets"]["resolved_addresses"]
 
 
 def test_preflight_blocks_missing_autonomous_tool_but_only_warns_for_future_approval_tool(monkeypatch, tmp_path):
@@ -108,7 +109,10 @@ def test_preflight_never_serializes_provider_or_worker_secret(monkeypatch, tmp_p
     assert payload["ai"]["approval_tokens_sent"] is False
 
 
-def test_preflight_assets_are_packaged_and_injected_into_console(tmp_path):
+def test_preflight_assets_are_packaged_and_injected_into_console(monkeypatch, tmp_path):
+    monkeypatch.delenv("TONMEN_EXECUTION_MODE", raising=False)
+    monkeypatch.delenv("TONMEN_AI_POOL", raising=False)
+    monkeypatch.delenv("TONMEN_AI_PROVIDER", raising=False)
     static = resources.files("tonmen.dashboard.static")
     js = static.joinpath("mission-preflight.js").read_text(encoding="utf-8")
     css = static.joinpath("mission-preflight.css").read_text(encoding="utf-8")
