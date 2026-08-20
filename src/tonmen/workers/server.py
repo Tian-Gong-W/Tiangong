@@ -76,6 +76,7 @@ class WorkerService:
             self.registry,
             self.policy,
             timeout_seconds=config.command_timeout_seconds,
+            tool_timeouts=dict(config.tool_timeouts),
             approvals=self.approvals,
             audit=self.audit,
         )
