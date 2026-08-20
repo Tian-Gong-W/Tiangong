@@ -27,6 +27,13 @@ def _runtime(tmp_path):
     )
 
 
+def test_target_scope_accepts_bare_ipv6_targets():
+    scope = TargetScope(("::1/128", "2001:db8::/32"))
+    assert scope.is_allowed("::1") is True
+    assert scope.is_allowed("2001:db8::10") is True
+    assert scope.is_allowed("2001:db9::10") is False
+
+
 def test_resolved_asset_set_separates_dns_observation_from_scope():
     scope = TargetScope(("example.test", "203.0.113.0/24"))
 
@@ -115,4 +122,4 @@ def test_report_exposes_asset_coverage_and_explicit_time_semantics(tmp_path, mon
     assert report["time_semantics"]["canonical_timezone"] == "UTC"
     assert "## Resolved Asset Coverage" in markdown
     assert "## Time Semantics" in markdown
-    assert "NEEDS_SCOPE" not in markdown or "needs_scope" in markdown
+    assert "needs_scope" in markdown
