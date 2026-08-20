@@ -6,7 +6,7 @@ from pathlib import Path
 
 from tonmen.missions import MissionPlan, MissionRun
 
-from .generator import build_report, render_markdown
+from .presentation import build_report, render_markdown
 
 
 class ReportStore:

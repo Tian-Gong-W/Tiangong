@@ -5,6 +5,13 @@
     "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
   }[ch]));
   const short = value => String(value || "").slice(0, 8);
+  const timePair = value => {
+    if (!value) return "—";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    const utc = date.toISOString().replace(".000Z", "Z");
+    return `${date.toLocaleString()} · UTC ${utc}`;
+  };
   let intelligenceBusy = false;
   let intelligenceLastAt = 0;
 
@@ -24,9 +31,9 @@
   }
 
   function toneFor(status) {
-    if (["confirmed", "supported", "same_backend", "matched"].includes(status)) return "ok";
+    if (["confirmed", "supported", "same_backend", "matched", "authorized", "scanned"].includes(status)) return "ok";
     if (["contradicted", "not_confirmed", "different_backend", "different_resolved_backend"].includes(status)) return "bad";
-    if (["observed", "unverified", "matched_only", "uncompared", "mixed"].includes(status)) return "warn";
+    if (["observed", "unverified", "matched_only", "uncompared", "mixed", "needs_scope", "authorized_uncovered"].includes(status)) return "warn";
     return "blue";
   }
 
@@ -106,6 +113,9 @@
     const steps = report.steps || [];
     const evidence = report.evidence || [];
     const reasoning = report.reasoning || [];
+    const coverage = report.asset_coverage || {};
+    const coverageSummary = coverage.summary || {};
+    const assets = coverage.assets || [];
 
     const findingHtml = findings.length ? findings.map(item => {
       const md = item.metadata || {};
@@ -116,6 +126,7 @@
 
     const aggregateHtml = aggregates.length ? aggregates.map(aggregateBlock).join("") : `<div class="module-empty">没有可聚合的 Nuclei Finding。</div>`;
     const stepHtml = steps.map((step, index) => `<tr><td>${index + 1}</td><td>${esc(step.tool)}</td><td>${esc(step.target)}</td><td>L${esc(step.risk)}</td><td>${step.requires_approval ? "yes" : "no"}</td><td>${esc(step.state)}</td><td>${esc(step.metadata?.exit_code ?? "—")}</td></tr>`).join("");
+    const assetRows = assets.map(item => `<tr><td><code>${esc(item.address || "—")}</code></td><td>${esc(item.family || "—")}</td><td>${badge("Scope", item.scope_status)}</td><td>${item.planned_direct_nmap ? "yes" : "no"}</td><td>${item.scanned ? "yes" : "no"}</td><td>${badge("Coverage", item.coverage_status)}</td></tr>`).join("");
     const councilHtml = rounds.map(round => {
       const md = round.metadata || {};
       const agents = (round.subagents || []).map(agent => {
@@ -128,15 +139,17 @@
     const reasoningHtml = reasoning.slice().reverse().map(item => `<div class="report-reason"><strong>${esc(item.metadata?.action || item.kind)}</strong><span>${esc(item.label)}</span><small>facts ${(item.metadata?.basis_fact_ids || []).length} · human ${item.metadata?.requires_human ? "yes" : "no"}</small></div>`).join("");
 
     return `<section class="report-summary">
-      <div><span>Target</span><strong>${esc(mission.target)}</strong></div><div><span>State</span><strong>${esc(mission.state)}</strong></div><div><span>Unique findings</span><strong>${summary.unique_findings || 0}</strong></div><div><span>Finding instances</span><strong>${summary.finding_instances || 0}</strong></div><div><span>Duplicates collapsed</span><strong>${summary.duplicate_finding_instances || 0}</strong></div><div><span>Affected backends</span><strong>${summary.affected_backends || 0}</strong></div><div><span>Evidence confirmed</span><strong>${summary.evidence_confirmed || 0}</strong></div><div><span>Attribution contradicted</span><strong>${summary.attribution_contradicted || 0}</strong></div><div><span>Rounds</span><strong>${summary.assessment_rounds || 0}</strong></div><div><span>Subagent reviews</span><strong>${summary.subagent_reviews || 0}</strong></div>
+      <div><span>Target</span><strong>${esc(mission.target)}</strong></div><div><span>State</span><strong>${esc(mission.state)}</strong></div><div><span>Started · Local / UTC</span><strong>${esc(timePair(mission.started_at))}</strong></div><div><span>Finished · Local / UTC</span><strong>${esc(timePair(mission.finished_at))}</strong></div><div><span>Resolved assets</span><strong>${coverageSummary.resolved_assets || 0}</strong></div><div><span>Needs Scope</span><strong>${coverageSummary.needs_scope || 0}</strong></div><div><span>Unique findings</span><strong>${summary.unique_findings || 0}</strong></div><div><span>Finding instances</span><strong>${summary.finding_instances || 0}</strong></div><div><span>Duplicates collapsed</span><strong>${summary.duplicate_finding_instances || 0}</strong></div><div><span>Affected backends</span><strong>${summary.affected_backends || 0}</strong></div><div><span>Evidence confirmed</span><strong>${summary.evidence_confirmed || 0}</strong></div><div><span>Attribution contradicted</span><strong>${summary.attribution_contradicted || 0}</strong></div><div><span>Rounds</span><strong>${summary.assessment_rounds || 0}</strong></div><div><span>Subagent reviews</span><strong>${summary.subagent_reviews || 0}</strong></div>
     </section>
     <section class="report-section"><h3>Finding Aggregation</h3><p>同一模板的重复命中合并成一个逻辑 Finding；每个 IP、Evidence、Server 指纹和归因状态仍按 backend instance 单独保留。</p>${aggregateHtml}</section>
     <section class="report-section"><h3>Finding Verification</h3><p>Template Matched、Evidence Confirmed、CVE/Root-cause Attribution 是三个独立结论；多 IP 域名不会自动视为同一后端。</p></section>
+    <section class="report-section"><h3>Resolved Asset Coverage / 解析资产覆盖</h3><p>${esc(coverage.note || "DNS resolution is observation only; it does not grant Scope.")}</p><div class="report-governance">Resolved ${coverageSummary.resolved_assets || 0} · authorized ${coverageSummary.authorized_assets || 0} · needs Scope ${coverageSummary.needs_scope || 0} · direct Nmap planned ${coverageSummary.direct_nmap_planned || 0} · scanned ${coverageSummary.scanned_addresses || 0}</div><div class="module-table-wrap"><table class="module-table"><thead><tr><th>Address</th><th>Family</th><th>Scope</th><th>Direct Nmap</th><th>Scanned</th><th>Coverage</th></tr></thead><tbody>${assetRows || `<tr><td colspan="6">No resolved asset metadata.</td></tr>`}</tbody></table></div><p><strong>Scope action:</strong> ${esc(coverage.scope_action || "—")}</p></section>
+    <section class="report-section"><h3>时间 / Time Semantics</h3><p>TONMEN canonical timestamps use UTC. Console shows browser-local time together with the UTC reference. Raw tool Evidence is preserved verbatim and may contain its own timezone such as HKT.</p></section>
     <section class="report-section"><h3>治理 / Governance</h3><p>${esc(report.governance?.execution_model || "")}</p><div class="report-governance">Assessment target: ${esc(report.governance?.policy?.assessment_rounds || 8)} rounds · ${esc(report.governance?.policy?.subagents_per_round || 4)} subagents/round · approval tokens persisted: no · arbitrary shell: disabled</div></section>
     <section class="report-section"><h3>执行步骤 / Steps</h3><div class="module-table-wrap"><table class="module-table"><thead><tr><th>#</th><th>Tool</th><th>Target</th><th>Risk</th><th>Approval</th><th>State</th><th>Exit</th></tr></thead><tbody>${stepHtml}</tbody></table></div></section>
     <section class="report-section"><h3>原始 Finding Facts</h3>${findingHtml}</section>
     <section class="report-section"><h3>已执行 Payload / Request / Response</h3>${payloads.length ? payloads.map(payloadBlock).join("") : `<div class="module-empty">当前报告没有结构化 Nuclei request/response payload。</div>`}</section>
-    <section class="report-section"><h3>Assessment Council · 7–10 rounds</h3>${councilHtml || `<div class="module-empty">Council 尚未产生轮次。</div>`}</section>
+    <section class="report-section"><h3>Assessment Council · bounded review</h3>${councilHtml || `<div class="module-empty">Council 尚未产生轮次。</div>`}</section>
     <section class="report-section"><h3>Reasoning</h3>${reasoningHtml || `<div class="module-empty">暂无 Reasoning。</div>`}</section>
     <section class="report-section"><h3>Raw Evidence</h3>${evidenceHtml || `<div class="module-empty">暂无 Evidence。</div>`}</section>`;
   }

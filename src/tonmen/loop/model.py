@@ -1,10 +1,23 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
 from enum import Enum
 
 from tonmen.missions import MissionRun
 from tonmen.reasoning import ReasoningDecision
+
+
+def _resolved_ip_coverage_enabled() -> bool:
+    return (os.getenv("TONMEN_RESOLVED_IP_COVERAGE") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _default_max_iterations() -> int:
+    return 16 if _resolved_ip_coverage_enabled() else 8
+
+
+def _default_max_executions() -> int:
+    return 16 if _resolved_ip_coverage_enabled() else 3
 
 
 class LoopStopReason(str, Enum):
@@ -20,8 +33,8 @@ class LoopStopReason(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class MissionLoopPolicy:
-    max_iterations: int = 8
-    max_executions: int = 3
+    max_iterations: int = field(default_factory=_default_max_iterations)
+    max_executions: int = field(default_factory=_default_max_executions)
     max_repeat_decisions: int = 2
     max_duration_seconds: int = 1200
     assessment_rounds: int = 8

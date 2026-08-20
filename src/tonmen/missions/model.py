@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Mapping
 from uuid import uuid4
@@ -50,7 +50,14 @@ class MissionPlan:
     id: str
     target: str
     steps: tuple[MissionStep, ...]
+    metadata: Mapping[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def create(cls, target: str, steps: list[MissionStep]) -> "MissionPlan":
-        return cls(id=uuid4().hex, target=target, steps=tuple(steps))
+    def create(
+        cls,
+        target: str,
+        steps: list[MissionStep],
+        *,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> "MissionPlan":
+        return cls(id=uuid4().hex, target=target, steps=tuple(steps), metadata=dict(metadata or {}))

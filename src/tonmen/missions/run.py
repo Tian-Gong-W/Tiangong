@@ -6,7 +6,7 @@ from enum import Enum
 from typing import Any
 from uuid import uuid4
 
-from tonmen.evidence import EvidenceGraph, EvidenceRecord
+from tonmen.evidence import EvidenceGraph, EvidenceRecord, GraphNode
 from tonmen.missions.model import MissionPlan
 from tonmen.observations import Observation
 
@@ -59,15 +59,66 @@ class MissionRun:
 
     @classmethod
     def create(cls, plan: MissionPlan) -> "MissionRun":
+        run_id = uuid4().hex
+        graph = EvidenceGraph()
+        graph.add_node(GraphNode(id=run_id, kind="mission", label=f"mission:{plan.target}", metadata={"plan_id": plan.id}))
+
+        for step in plan.steps:
+            graph.add_node(
+                GraphNode(
+                    id=step.id,
+                    kind="step",
+                    label=f"{step.tool}:{step.target}",
+                    metadata={"risk": step.risk, "requires_approval": step.requires_approval},
+                )
+            )
+            graph.link(run_id, "contains", step.id)
+
+        resolved = plan.metadata.get("resolved_assets") if isinstance(plan.metadata, dict) else None
+        if isinstance(resolved, dict):
+            for index, asset in enumerate(resolved.get("assets", [])):
+                if not isinstance(asset, dict) or not asset.get("address"):
+                    continue
+                node_id = f"asset:{run_id}:{index}"
+                graph.add_node(
+                    GraphNode(
+                        id=node_id,
+                        kind="asset.resolved",
+                        label=str(asset.get("address")),
+                        metadata={
+                            "address": str(asset.get("address")),
+                            "family": str(asset.get("family") or "unknown"),
+                            "source": str(asset.get("source") or "dns"),
+                            "authorized": bool(asset.get("authorized")),
+                            "scope_status": str(asset.get("scope_status") or "needs_scope"),
+                            "execution_authority": False,
+                        },
+                    )
+                )
+                graph.link(run_id, "resolved_to", node_id)
+
+        coverage = plan.metadata.get("coverage_plan") if isinstance(plan.metadata, dict) else None
+        if isinstance(coverage, dict):
+            coverage_id = f"coverage:{run_id}"
+            graph.add_node(
+                GraphNode(
+                    id=coverage_id,
+                    kind="coverage.plan",
+                    label="scope-aware resolved asset coverage",
+                    metadata=dict(coverage),
+                )
+            )
+            graph.link(run_id, "governed_by", coverage_id)
+
         return cls(
-            id=uuid4().hex,
+            id=run_id,
             plan_id=plan.id,
             target=plan.target,
             state=MissionRunState.CREATED,
             steps=[StepExecution(step_id=step.id, tool=step.tool, target=step.target) for step in plan.steps],
             observations=[],
             evidence=[],
-            graph=EvidenceGraph(),
+            graph=graph,
             started_at=datetime.now(timezone.utc),
         )
 
