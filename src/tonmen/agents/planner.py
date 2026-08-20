@@ -30,8 +30,9 @@ class MissionPlanner:
     """Build governed plans from capabilities plus passive asset observations.
 
     DNS resolution never grants execution authority. Direct resolved-IP fanout is
-    also explicit: TONMEN_RESOLVED_IP_COVERAGE=1 must be set, and every concrete IP
-    must already be independently allowed by TargetScope.
+    explicit and bounded: TONMEN_RESOLVED_IP_COVERAGE=1 must be set, every concrete
+    IP must already be independently allowed by TargetScope, and one Mission never
+    expands beyond the existing 16-execution loop ceiling.
     """
 
     def __init__(
@@ -71,7 +72,13 @@ class MissionPlanner:
         ]
         eligible_direct_targets = [item for item in authorized_addresses if item != host]
         coverage_enabled = _resolved_ip_coverage_enabled()
-        direct_coverage_targets = eligible_direct_targets if coverage_enabled else []
+
+        # Base web mission consumes three execution slots: hostname Nmap, HTTPx and
+        # approval-gated Nuclei. Keep total generated steps within the existing
+        # MissionLoop max_executions hard ceiling of 16.
+        max_extra_backends = 13
+        direct_coverage_targets = eligible_direct_targets[:max_extra_backends] if coverage_enabled else []
+        deferred_due_to_bound = eligible_direct_targets[max_extra_backends:] if coverage_enabled else []
 
         for adapter in sorted(self.runtime.registry, key=lambda item: order.get(item.spec.name, 100)):
             parameters = defaults.get(adapter.spec.name, {})
@@ -105,17 +112,21 @@ class MissionPlanner:
                     )
                 )
 
+        recommended_max_executions = min(16, max(3, len(steps)))
         coverage = {
             "primary_hostname": host,
             "web_target": target,
             "resolved_ip_coverage_enabled": coverage_enabled,
             "eligible_direct_nmap_targets": eligible_direct_targets,
             "direct_nmap_targets": direct_coverage_targets,
+            "deferred_due_to_execution_bound": deferred_due_to_bound,
+            "recommended_max_executions": recommended_max_executions,
             "needs_scope": list(asset_set.get("needs_scope", [])),
             "web_backend_fanout": False,
             "note": (
                 "DNS answers are observations only. Direct resolved-IP Nmap coverage requires both independent IP/CIDR Scope "
-                "and TONMEN_RESOLVED_IP_COVERAGE=1. HTTPx/Nuclei stay on the hostname to preserve Host/SNI routing."
+                "and TONMEN_RESOLVED_IP_COVERAGE=1. Fanout is bounded so the generated Mission stays within 16 executions. "
+                "HTTPx/Nuclei stay on the hostname to preserve Host/SNI routing."
             ),
         }
         return MissionPlan.create(
