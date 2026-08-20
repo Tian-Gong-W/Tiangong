@@ -23,7 +23,7 @@ class MissionLoopPolicy:
     max_iterations: int = 8
     max_executions: int = 3
     max_repeat_decisions: int = 2
-    max_duration_seconds: int = 300
+    max_duration_seconds: int = 1200
     assessment_rounds: int = 8
     subagents_per_round: int = 4
 
@@ -34,8 +34,8 @@ class MissionLoopPolicy:
             raise ValueError("max_executions must be between 1 and 16")
         if not 1 <= self.max_repeat_decisions <= 8:
             raise ValueError("max_repeat_decisions must be between 1 and 8")
-        if not 1 <= self.max_duration_seconds <= 3600:
-            raise ValueError("max_duration_seconds must be between 1 and 3600")
+        if not 1 <= self.max_duration_seconds <= 10800:
+            raise ValueError("max_duration_seconds must be between 1 and 10800")
         if not 7 <= self.assessment_rounds <= 10:
             raise ValueError("assessment_rounds must be between 7 and 10")
         if not 3 <= self.subagents_per_round <= 5:
