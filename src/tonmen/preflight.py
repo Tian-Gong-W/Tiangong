@@ -43,7 +43,6 @@ def build_mission_preflight(
     for step in plan.steps:
         timeout_seconds = runtime.config.timeout_for(step.tool)
         longest_step_timeout = max(longest_step_timeout, timeout_seconds)
-        readiness = runtime.registry.get(step.tool).readiness()
         if worker_mode:
             readiness_payload = {
                 "ready": None,
@@ -53,6 +52,7 @@ def build_mission_preflight(
                 "scope": "worker",
             }
         else:
+            readiness = runtime.registry.get(step.tool).readiness()
             readiness_payload = {
                 "ready": readiness.ready,
                 "code": readiness.code,
@@ -223,6 +223,7 @@ def build_mission_preflight(
             "council": {
                 "pool": list(provider_hub.pool),
                 "ready_providers": ready_provider_ids,
+                "readiness_scope": "local_only",
                 "strategy": provider_status.get("strategy"),
                 "mission_token_budget": provider_status.get("mission_token_budget"),
                 "model_backed": bool(ready_provider_ids),
