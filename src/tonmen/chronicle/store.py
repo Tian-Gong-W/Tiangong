@@ -124,6 +124,7 @@ class ChronicleStore:
         return {
             "id": plan.id,
             "target": plan.target,
+            "metadata": dict(plan.metadata),
             "steps": [
                 {
                     "id": step.id,
@@ -154,7 +155,12 @@ class ChronicleStore:
             )
             for step in data["steps"]
         )
-        return MissionPlan(id=data["id"], target=data["target"], steps=steps)
+        return MissionPlan(
+            id=data["id"],
+            target=data["target"],
+            steps=steps,
+            metadata=dict(data.get("metadata", {})),
+        )
 
     @staticmethod
     def _run_to_dict(run: MissionRun) -> dict[str, Any]:
