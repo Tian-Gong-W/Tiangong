@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from uuid import uuid4
 
 from tonmen.ai import LeadAIOrchestrator, ProviderHub
@@ -41,13 +43,12 @@ confidence must be a number from 0 to 1. Keep summary concise and evidence-groun
 
 
 class AssessmentCouncil:
-    """Lead-directed, evidence-only subagent council.
+    """Lead-directed, evidence-only subagent council with evidence convergence.
 
-    One Lead AI sets each round's review focus and synthesis objective. Council
-    members never execute tools, expand Scope, issue approvals, or mutate the
-    mission plan. When TONMEN_AI_POOL is explicitly configured, subagent review
-    summaries may be distributed across multiple model providers; failures always
-    degrade to the deterministic evidence summary.
+    `target_rounds` is a hard maximum in the 7-10 governance range, not a mandate
+    to manufacture identical review text. Terminal review stops early when the
+    evidence/fact/step fingerprint remains unchanged. Council members never execute
+    tools, expand Scope, issue approvals, or mutate the mission plan.
     """
 
     def __init__(
@@ -72,12 +73,48 @@ class AssessmentCouncil:
         return sum(1 for node in run.graph.nodes.values() if node.kind == "council.round")
 
     @staticmethod
+    def _round_nodes(run: MissionRun):
+        return sorted(
+            (node for node in run.graph.nodes.values() if node.kind == "council.round"),
+            key=lambda node: int(node.metadata.get("round", 0)),
+        )
+
+    @staticmethod
     def _fact_nodes(run: MissionRun):
         return [node for node in run.graph.nodes.values() if node.kind.startswith("intelligence.")]
 
     @staticmethod
     def _finding_nodes(run: MissionRun):
         return [node for node in run.graph.nodes.values() if node.kind == "intelligence.finding"]
+
+    @classmethod
+    def _review_fingerprint(cls, run: MissionRun) -> str:
+        facts = sorted(
+            (
+                node.id,
+                node.kind,
+                node.metadata.get("severity"),
+                node.metadata.get("confidence"),
+                node.metadata.get("evidence_id"),
+            )
+            for node in cls._fact_nodes(run)
+        )
+        payload = {
+            "state": run.state.value,
+            "steps": [
+                {
+                    "id": step.step_id,
+                    "state": step.state.value,
+                    "evidence_id": step.evidence_id,
+                    "error": step.error,
+                }
+                for step in run.steps
+            ],
+            "evidence": [(item.id, item.tool, item.exit_code) for item in run.evidence],
+            "facts": facts,
+        }
+        encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()[:20]
 
     @staticmethod
     def _recommended_action(run: MissionRun) -> str:
@@ -88,6 +125,27 @@ class AssessmentCouncil:
         if run.state is MissionRunState.SUCCEEDED:
             return "finalize_report"
         return "continue_governed_plan"
+
+    @classmethod
+    def _fallback_confidence(cls, role: str, run: MissionRun) -> float:
+        evidence_count = len(run.evidence)
+        fact_count = len(cls._fact_nodes(run))
+        finding_count = len(cls._finding_nodes(run))
+        failed = sum(1 for step in run.steps if step.state in {StepExecutionState.FAILED, StepExecutionState.DENIED})
+        degraded = sum(1 for step in run.steps if step.state is StepExecutionState.DEGRADED)
+        value = 0.28
+        value += min(0.24, evidence_count * 0.08)
+        value += min(0.18, fact_count * 0.03)
+        if role == "evidence_verifier" and evidence_count:
+            value += 0.08
+        elif role == "vulnerability_analyst":
+            value += 0.10 if finding_count else -0.05
+        elif role == "governance_reviewer" and run.state is MissionRunState.WAITING_APPROVAL:
+            value += 0.10
+        elif role == "remediation_editor" and finding_count:
+            value += 0.06
+        value -= min(0.12, failed * 0.06 + degraded * 0.03)
+        return round(max(0.20, min(0.85, value)), 2)
 
     def _summary(
         self,
@@ -216,8 +274,12 @@ class AssessmentCouncil:
         current = self._existing_rounds(run)
         if current >= self.target_rounds:
             return None
+        self.provider_hub.prime_usage_from_run(run)
         round_number = current + 1
         default_focus = _FOCI[round_number - 1]
+        fingerprint = self._review_fingerprint(run)
+        previous = self._round_nodes(run)
+        evidence_changed = not previous or previous[-1].metadata.get("evidence_fingerprint") != fingerprint
         directive = self.lead_ai.direct(
             plan,
             run,
@@ -245,7 +307,9 @@ class AssessmentCouncil:
                     "lead_model": directive.model,
                     "lead_recommended_action": directive.recommended_action,
                     "provider_pool": list(self.provider_hub.pool),
-                    "routing_strategy": "weighted_least_usage",
+                    "routing_strategy": "quota_aware_failover",
+                    "evidence_fingerprint": fingerprint,
+                    "evidence_changed": evidence_changed,
                 },
             )
         )
@@ -286,6 +350,7 @@ class AssessmentCouncil:
                 ),
                 fallback_summary=deterministic,
                 fallback_action=action,
+                fallback_confidence=self._fallback_confidence(role, run),
             )
             agent_id = uuid4().hex
             run.graph.add_node(
@@ -330,17 +395,54 @@ class AssessmentCouncil:
                     run.graph.link(fact_id, "reviewed_by", agent_id)
         return round_id
 
-    def complete_terminal_review(self, plan: MissionPlan, run: MissionRun, *, session_id: str) -> int:
-        """Fill remaining review rounds only after a terminal mission state.
+    def _terminal_stale_rounds(self, run: MissionRun, fingerprint: str) -> int:
+        stale = 0
+        for node in reversed(self._round_nodes(run)):
+            if node.metadata.get("evidence_fingerprint") != fingerprint:
+                break
+            stale += 1
+        return stale
 
-        This satisfies the 7-10 round assessment contract without repeating network
-        or validation commands after the mission has already reached a terminal state.
+    def complete_terminal_review(self, plan: MissionPlan, run: MissionRun, *, session_id: str) -> int:
+        """Add bounded post-execution review until evidence reaches convergence.
+
+        With no model-backed provider pool, one unchanged terminal round is enough to
+        record deterministic synthesis. With a model pool, two unchanged rounds are
+        allowed for cross-model review. No network/tool command is repeated here.
         """
         if run.state not in {MissionRunState.SUCCEEDED, MissionRunState.FAILED, MissionRunState.DENIED}:
             return 0
         added = 0
-        while self._existing_rounds(run) < self.target_rounds:
+        fingerprint = self._review_fingerprint(run)
+        stale_limit = 2 if self.provider_hub.pool else 1
+        stale = self._terminal_stale_rounds(run, fingerprint)
+        while self._existing_rounds(run) < self.target_rounds and stale < stale_limit:
+            before = self._review_fingerprint(run)
             if self.record_round(plan, run, session_id=session_id, phase="post_execution") is None:
                 break
             added += 1
+            after = self._review_fingerprint(run)
+            stale = stale + 1 if after == before else 0
+
+        actual = self._existing_rounds(run)
+        if actual < self.target_rounds:
+            convergence_id = uuid4().hex
+            run.graph.add_node(
+                GraphNode(
+                    id=convergence_id,
+                    kind="council.convergence",
+                    label=f"assessment converged after {actual} rounds",
+                    metadata={
+                        "actual_rounds": actual,
+                        "max_rounds": self.target_rounds,
+                        "stale_rounds": stale,
+                        "stale_limit": stale_limit,
+                        "evidence_fingerprint": fingerprint,
+                        "provider_pool_empty": not bool(self.provider_hub.pool),
+                        "reason": "no_new_evidence_or_fact_state",
+                        "execution_authority": False,
+                    },
+                )
+            )
+            run.graph.link(run.id, "assessment_converged", convergence_id)
         return added
