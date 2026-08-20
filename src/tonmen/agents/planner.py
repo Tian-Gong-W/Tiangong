@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Callable
 from urllib.parse import urlparse
 
@@ -21,11 +22,16 @@ def _host_target(target: str) -> str:
     return parsed.hostname
 
 
+def _resolved_ip_coverage_enabled() -> bool:
+    return (os.getenv("TONMEN_RESOLVED_IP_COVERAGE") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 class MissionPlanner:
     """Build governed plans from capabilities plus passive asset observations.
 
-    DNS resolution never grants execution authority. Direct coverage of a resolved
-    IP is added only when that concrete IP is already allowed by TargetScope.
+    DNS resolution never grants execution authority. Direct resolved-IP fanout is
+    also explicit: TONMEN_RESOLVED_IP_COVERAGE=1 must be set, and every concrete IP
+    must already be independently allowed by TargetScope.
     """
 
     def __init__(
@@ -45,9 +51,6 @@ class MissionPlanner:
         if not isinstance(asset_set, dict):
             raise MissionPlanningDenied("asset resolver returned invalid data")
 
-        # Web missions start with bounded TCP reachability. The hostname remains the
-        # primary target so DNS/CDN behavior is observed as deployed. Resolved IPs are
-        # only added as extra Nmap coverage when they are independently in Scope.
         defaults = {
             "nmap": {"ports": "80,443", "service_detection": False},
             "httpx": {"follow_redirects": False, "timeout": 10},
@@ -66,14 +69,13 @@ class MissionPlanner:
             for item in asset_set.get("authorized_addresses", [])
             if isinstance(item, str) and item.strip()
         ]
-        direct_coverage_targets = [item for item in authorized_addresses if item != host]
+        eligible_direct_targets = [item for item in authorized_addresses if item != host]
+        coverage_enabled = _resolved_ip_coverage_enabled()
+        direct_coverage_targets = eligible_direct_targets if coverage_enabled else []
 
         for adapter in sorted(self.runtime.registry, key=lambda item: order.get(item.spec.name, 100)):
             parameters = defaults.get(adapter.spec.name, {})
-            if adapter.spec.name == "nmap":
-                targets = [host, *direct_coverage_targets]
-            else:
-                targets = [target]
+            targets = [host, *direct_coverage_targets] if adapter.spec.name == "nmap" else [target]
 
             seen_targets: set[str] = set()
             for step_target in targets:
@@ -106,12 +108,14 @@ class MissionPlanner:
         coverage = {
             "primary_hostname": host,
             "web_target": target,
+            "resolved_ip_coverage_enabled": coverage_enabled,
+            "eligible_direct_nmap_targets": eligible_direct_targets,
             "direct_nmap_targets": direct_coverage_targets,
             "needs_scope": list(asset_set.get("needs_scope", [])),
             "web_backend_fanout": False,
             "note": (
-                "Resolved addresses become direct coverage targets only when independently authorized. "
-                "HTTPx/Nuclei remain on the hostname to preserve Host/SNI and application-routing semantics."
+                "DNS answers are observations only. Direct resolved-IP Nmap coverage requires both independent IP/CIDR Scope "
+                "and TONMEN_RESOLVED_IP_COVERAGE=1. HTTPx/Nuclei stay on the hostname to preserve Host/SNI routing."
             ),
         }
         return MissionPlan.create(
