@@ -29,6 +29,7 @@
   }
 
   function state(worker) {
+    if (worker.draining || worker.scheduler?.draining) return ["DRAINING", "warn"];
     const probe = worker.last_probe;
     if (probe?.ready) return ["READY", "ready"];
     if (!worker.secret_configured) return ["SECRET MISSING", "bad"];
@@ -39,11 +40,15 @@
   function renderSummary(data) {
     const history = data.historical || {};
     const workers = data.workers || [];
+    const scheduler = data.scheduler || {};
     const ready = workers.filter(item => item.last_probe?.ready).length;
+    const inflight = workers.reduce((sum,item) => sum + Number(item.scheduler?.inflight ?? item.inflight ?? 0), 0);
     const cards = [
       ["Execution mode", data.execution_mode || "local"],
       ["Workers configured", workers.length],
       ["Workers ready", ready],
+      ["Inflight", inflight],
+      ["Queue depth", scheduler.queue_depth || 0],
       ["Remote steps", history.remote_steps || 0],
       ["Remote evidence", history.evidence_records || 0],
     ];
@@ -58,14 +63,24 @@
     const history = worker.history || {};
     const probe = worker.last_probe;
     const tools = probe?.tools || {};
+    const sched = worker.scheduler || {};
+    const inflight = sched.inflight ?? worker.inflight ?? 0;
+    const max = sched.max_concurrency ?? worker.max_concurrency ?? 1;
+    const available = sched.available_slots ?? worker.available_slots ?? Math.max(0, max - inflight);
+    const utilization = sched.utilization_percent ?? worker.utilization_percent ?? 0;
+    const draining = Boolean(sched.draining ?? worker.draining);
+    const remoteCapacity = probe?.capacity;
     const toolBadges = Object.entries(tools).map(([name,info]) => `<span class="${info.ready ? "ready" : "bad"}">${esc(name)} ${info.ready ? "✓" : "×"}</span>`).join("");
     return `<article class="worker-card ${worker.secret_configured ? "active" : ""}">
       <div class="worker-card-head"><h3>${esc(worker.id)}<small>${esc(worker.region || "default")} · ${(worker.tags || []).map(esc).join(" · ") || "no tags"}</small></h3><span class="worker-state ${tone}">${esc(label)}</span></div>
-      <div class="worker-meta"><span>Endpoint</span><code>${esc(worker.url)}</code><span>Weight</span><strong>${esc(worker.weight)}</strong><span>Secret env</span><code>${esc(worker.secret_env)}</code><span>Secret configured</span><strong>${worker.secret_configured ? "yes" : "no"}</strong></div>
+      <div class="worker-meta"><span>Endpoint</span><code>${esc(worker.url)}</code><span>Weight</span><strong>${esc(worker.weight)}</strong><span>Concurrency</span><strong>${esc(inflight)} / ${esc(max)}</strong><span>Available</span><strong>${esc(available)}</strong><span>Utilization</span><strong>${esc(utilization)}%</strong><span>Secret env</span><code>${esc(worker.secret_env)}</code><span>Secret configured</span><strong>${worker.secret_configured ? "yes" : "no"}</strong></div>
       <div class="worker-history"><span>steps <b>${esc(history.steps || 0)}</b></span><span>success <b>${esc(history.succeeded || 0)}</b></span><span>failed <b>${esc(history.failed || 0)}</b></span><span>evidence <b>${esc(history.evidence || 0)}</b></span></div>
       ${toolBadges ? `<div class="worker-tools">${toolBadges}</div>` : ""}
-      <div class="worker-actions"><button class="ghost" type="button" data-worker-probe="${esc(worker.id)}">检查 Worker</button></div>
-      ${probe ? `<div class="worker-probe">${probe.ready ? "✓" : "△"} ${esc(probe.detail || "")} · ${esc(probe.ready_tools ?? 0)}/${esc(probe.total_tools ?? 0)} tools ready</div>` : ""}
+      <div class="worker-actions">
+        <button class="ghost" type="button" data-worker-probe="${esc(worker.id)}">检查 Worker</button>
+        <button class="${draining ? "primary" : "ghost"}" type="button" data-worker-drain="${esc(worker.id)}" data-draining="${draining ? "1" : "0"}">${draining ? "恢复派发" : "Drain / 维护"}</button>
+      </div>
+      ${probe ? `<div class="worker-probe">${probe.ready ? "✓" : "△"} ${esc(probe.detail || "")} · ${esc(probe.ready_tools ?? 0)}/${esc(probe.total_tools ?? 0)} tools ready${remoteCapacity ? ` · remote ${esc(remoteCapacity.inflight)}/${esc(remoteCapacity.max_concurrency)}` : ""}</div>` : ""}
     </article>`;
   }
 
@@ -76,14 +91,20 @@
 
   function renderRouting(data) {
     const route = data.routing || {};
+    const scheduler = data.scheduler || {};
     $("#routing-state").innerHTML = `
-      <div>Strategy: <code>${esc(data.strategy || "health-gated weighted least-use")}</code></div>
+      <div>Strategy: <code>${esc(scheduler.strategy || data.strategy || "bounded weighted least-load with fair queue")}</code></div>
+      <div>Queue: <code>${esc(scheduler.queue_depth || 0)} / ${esc(scheduler.max_queue_size || route.max_queue_size || 128)}</code></div>
+      <div>Queue timeout: <code>${esc(scheduler.queue_timeout_seconds || route.queue_timeout_seconds || 30)}s</code></div>
+      <div>Peak queue: <code>${esc(scheduler.peak_queue_depth || 0)}</code></div>
+      <div>Average wait: <code>${esc(scheduler.average_wait_ms || 0)}ms</code></div>
+      <div>Timed out: <code>${esc(scheduler.total_timed_out || 0)}</code></div>
       <div>Probe before dispatch: <code>${route.probe_before_dispatch ? "yes" : "no"}</code></div>
       <div>Job TTL: <code>${esc(route.job_ttl_seconds || 60)}s</code></div>
       <div>Preferred worker: <code>${esc(route.worker_id || "AUTO")}</code></div>
       <div>Region: <code>${esc(route.region || "ANY")}</code></div>
       <div>Required tags: <code>${esc((route.tags || []).join(", ") || "ANY")}</code></div>
-      <div style="margin-top:8px">Dispatch timeout/connection ambiguity is fail-closed. TONMEN does not automatically run the same active job on a second worker after POST begins.</div>
+      <div style="margin-top:8px">Drain blocks new leases only; inflight jobs are not killed. Dispatch timeout/connection ambiguity remains fail-closed and never triggers an automatic second execution after POST starts.</div>
       <div style="margin-top:8px">Secret values: <code>NEVER EXPOSED</code> · Approval Token: <code>NEVER SENT</code> · raw shell/argv: <code>NEVER SENT</code></div>`;
   }
 
@@ -95,6 +116,20 @@
         busy = true; button.disabled = true;
         const result = await api(`/api/workers/${encodeURIComponent(id)}/probe`, {method:"POST"});
         toast(`${id}: ${result.detail}`, !result.ready);
+        await refresh();
+      } catch (error) { toast(error.message || String(error), true); }
+      finally { busy = false; button.disabled = false; }
+    }));
+
+    document.querySelectorAll("[data-worker-drain]").forEach(button => button.addEventListener("click", async () => {
+      if (busy) return;
+      const id = button.dataset.workerDrain;
+      const draining = button.dataset.draining === "1";
+      const action = draining ? "activate" : "drain";
+      try {
+        busy = true; button.disabled = true;
+        const result = await api(`/api/workers/${encodeURIComponent(id)}/${action}`, {method:"POST"});
+        toast(`${id}: ${result.draining ? "draining — no new jobs" : "active — scheduling resumed"}`);
         await refresh();
       } catch (error) { toast(error.message || String(error), true); }
       finally { busy = false; button.disabled = false; }

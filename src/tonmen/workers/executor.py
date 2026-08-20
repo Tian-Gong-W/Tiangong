@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime
 from typing import Any, Mapping
 
@@ -13,6 +14,7 @@ from tonmen.tools import ToolRegistry, ToolRequest, ToolResult
 
 from .pool import WorkerPool, WorkerSpec
 from .protocol import DispatchEnvelope
+from .scheduler import WorkerLease, WorkerScheduler
 from .transport import WorkerHTTPTransport, WorkerTransportError
 
 _SAFE_CONTEXT_KEYS = {
@@ -26,11 +28,12 @@ _SAFE_CONTEXT_KEYS = {
 
 
 class RemoteWorkerExecutor:
-    """Control-plane executor that keeps policy/approval central and dispatches typed jobs.
+    """Governed control-plane executor with bounded remote Worker scheduling.
 
-    Health-gated selection may choose another worker before dispatch. Once a POST is
-    attempted, transport ambiguity fails closed and TONMEN does not execute the same
-    job on a second worker automatically.
+    Scope / risk / Approval remain central. The scheduler only chooses an eligible
+    execution slot. Health-gated selection may choose another worker before POST.
+    Once POST starts, transport ambiguity fails closed: the same job is never
+    automatically executed on a second worker.
     """
 
     def __init__(
@@ -44,6 +47,7 @@ class RemoteWorkerExecutor:
         audit: AuditLog | None = None,
         events: EventBus | None = None,
         transport: WorkerHTTPTransport | None = None,
+        scheduler: WorkerScheduler | None = None,
     ) -> None:
         if not pool.workers:
             raise ValueError("worker execution mode requires at least one TONMEN_WORKERS entry")
@@ -57,6 +61,13 @@ class RemoteWorkerExecutor:
         self.transport = transport or WorkerHTTPTransport(timeout_seconds=max(15, self.timeout_seconds + 30))
         self.probe_before_dispatch = os.getenv("TONMEN_WORKER_PROBE_BEFORE_DISPATCH", "1").strip() != "0"
         self.job_ttl_seconds = max(5, min(300, int(os.getenv("TONMEN_WORKER_JOB_TTL_SECONDS", "60") or "60")))
+        queue_timeout = float(os.getenv("TONMEN_WORKER_QUEUE_TIMEOUT_SECONDS", "30") or "30")
+        max_queue = int(os.getenv("TONMEN_WORKER_MAX_QUEUE", "128") or "128")
+        self.scheduler = scheduler or WorkerScheduler(
+            pool,
+            queue_timeout_seconds=queue_timeout,
+            max_queue_size=max_queue,
+        )
 
     @property
     def uses_local_subprocess(self) -> bool:
@@ -99,6 +110,7 @@ class RemoteWorkerExecutor:
             self.pool.record_failure(spec.id, str(exc))
             self._emit("worker.unavailable", request, worker_id=spec.id, worker_region=spec.region, reason=str(exc)[:300])
             return False
+        self.pool.record_health(spec.id, health)
         worker = health.get("worker") if isinstance(health.get("worker"), dict) else {}
         if str(worker.get("id") or "").strip().lower() != spec.id:
             self.pool.record_failure(spec.id, "worker health identity mismatch")
@@ -106,22 +118,59 @@ class RemoteWorkerExecutor:
         tools = health.get("tools") if isinstance(health.get("tools"), dict) else {}
         tool_state = tools.get(request.tool) if isinstance(tools.get(request.tool), dict) else {}
         if not bool(tool_state.get("ready")):
-            self.pool.state[spec.id].last_health = health
             self._emit("worker.tool_unavailable", request, worker_id=spec.id, worker_region=spec.region)
             return False
-        self.pool.state[spec.id].last_health = health
+        capacity = health.get("capacity") if isinstance(health.get("capacity"), dict) else {}
+        if capacity and not bool(capacity.get("accepting_jobs", True)):
+            self._emit(
+                "worker.capacity_unavailable",
+                request,
+                worker_id=spec.id,
+                worker_region=spec.region,
+                inflight=int(capacity.get("inflight") or 0),
+                max_concurrency=int(capacity.get("max_concurrency") or spec.max_concurrency),
+            )
+            return False
         return True
 
-    def _select_worker(self, request: ToolRequest) -> WorkerSpec:
-        candidates = self.pool.candidates(request)
-        if not candidates:
-            raise RuntimeError("no worker matches the configured id/region/tag route with a valid secret")
-        if not self.probe_before_dispatch:
-            return candidates[0]
-        for spec in candidates:
-            if self._health_allows(spec, request):
-                return spec
-        raise RuntimeError("no healthy worker has the requested tool ready")
+    def _acquire_worker(self, request: ToolRequest) -> WorkerLease:
+        excluded: set[str] = set()
+        deadline = time.monotonic() + self.scheduler.queue_timeout_seconds
+        self._emit(
+            "worker.queue_entered",
+            request,
+            queue_depth=self.scheduler.public_status()["queue_depth"],
+        )
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError("timed out finding a healthy worker execution slot")
+            lease = self.scheduler.acquire(
+                request,
+                timeout_seconds=remaining,
+                exclude_worker_ids=excluded,
+            )
+            spec = lease.worker
+            if not self.probe_before_dispatch or self._health_allows(spec, request):
+                self._emit(
+                    "worker.slot_acquired",
+                    request,
+                    worker_id=spec.id,
+                    worker_region=spec.region,
+                    queued_ms=lease.queued_ms,
+                    inflight=self.pool.state[spec.id].inflight,
+                    max_concurrency=spec.max_concurrency,
+                )
+                return lease
+            self.scheduler.release(lease)
+            excluded.add(spec.id)
+            self._emit(
+                "worker.slot_rejected",
+                request,
+                worker_id=spec.id,
+                worker_region=spec.region,
+                reason="pre-dispatch health/readiness/capacity check failed",
+            )
 
     @staticmethod
     def _parse_datetime(value: object) -> datetime:
@@ -185,66 +234,78 @@ class RemoteWorkerExecutor:
             self._emit("tool.approval_required", request, reason=message)
             raise ExecutionDenied(message)
 
-        spec = self._select_worker(request)
-        approval_granted = False
-        if decision.decision is Decision.REQUIRE_APPROVAL:
-            grant = self.approvals.consume(approval_token, request) if self.approvals else None
-            if grant is None:
-                message = "higher-risk action requires a valid single-use approval grant"
-                self._audit(request, "deny", message)
-                self._emit("tool.approval_required", request, reason=message)
-                raise ExecutionDenied(message)
-            approval_granted = True
-
-        envelope = DispatchEnvelope.issue(
-            worker_id=spec.id,
-            tool=request.tool,
-            target=request.target,
-            parameters=request.parameters,
-            context=self._safe_context(request),
-            approval_granted=approval_granted,
-            control_decision=decision.decision.value,
-            control_reason=decision.reason,
-            secret=spec.secret(),
-            ttl_seconds=self.job_ttl_seconds,
-        )
-        self._emit(
-            "worker.dispatch_started",
-            request,
-            worker_id=spec.id,
-            worker_region=spec.region,
-            remote_job_id=envelope.job_id,
-            approval_forwarded=False,
-            argv_forwarded=False,
-        )
+        lease = self._acquire_worker(request)
+        spec = lease.worker
         try:
-            payload = self.transport.dispatch(spec, envelope)
-            outcome = self._outcome_from_payload(payload, decision)
-        except Exception as exc:
-            self.pool.record_failure(spec.id, str(exc))
-            message = str(exc)[:500]
-            self._audit(request, "error", f"worker {spec.id}: {message}")
+            approval_granted = False
+            if decision.decision is Decision.REQUIRE_APPROVAL:
+                grant = self.approvals.consume(approval_token, request) if self.approvals else None
+                if grant is None:
+                    message = "higher-risk action requires a valid single-use approval grant"
+                    self._audit(request, "deny", message)
+                    self._emit("tool.approval_required", request, reason=message)
+                    raise ExecutionDenied(message)
+                approval_granted = True
+
+            envelope = DispatchEnvelope.issue(
+                worker_id=spec.id,
+                tool=request.tool,
+                target=request.target,
+                parameters=request.parameters,
+                context=self._safe_context(request),
+                approval_granted=approval_granted,
+                control_decision=decision.decision.value,
+                control_reason=decision.reason,
+                secret=spec.secret(),
+                ttl_seconds=self.job_ttl_seconds,
+            )
             self._emit(
-                "worker.dispatch_failed",
+                "worker.dispatch_started",
                 request,
                 worker_id=spec.id,
                 worker_region=spec.region,
                 remote_job_id=envelope.job_id,
-                reason=message,
-                automatic_cross_worker_retry=False,
+                approval_forwarded=False,
+                argv_forwarded=False,
             )
-            raise
+            try:
+                payload = self.transport.dispatch(spec, envelope)
+                outcome = self._outcome_from_payload(payload, decision)
+            except Exception as exc:
+                self.pool.record_failure(spec.id, str(exc))
+                message = str(exc)[:500]
+                self._audit(request, "error", f"worker {spec.id}: {message}")
+                self._emit(
+                    "worker.dispatch_failed",
+                    request,
+                    worker_id=spec.id,
+                    worker_region=spec.region,
+                    remote_job_id=envelope.job_id,
+                    reason=message,
+                    automatic_cross_worker_retry=False,
+                )
+                raise
 
-        self.pool.record_success(spec.id)
-        self._audit(request, "allow" if outcome.result.success else "error", f"worker {spec.id}: {outcome.result.summary}", outcome.evidence.id)
-        self._emit(
-            "worker.dispatch_completed",
-            request,
-            worker_id=spec.id,
-            worker_region=spec.region,
-            remote_job_id=envelope.job_id,
-            evidence_id=outcome.evidence.id,
-            exit_code=outcome.evidence.exit_code,
-            success=outcome.result.success,
-        )
-        return outcome
+            self.pool.record_success(spec.id)
+            self._audit(request, "allow" if outcome.result.success else "error", f"worker {spec.id}: {outcome.result.summary}", outcome.evidence.id)
+            self._emit(
+                "worker.dispatch_completed",
+                request,
+                worker_id=spec.id,
+                worker_region=spec.region,
+                remote_job_id=envelope.job_id,
+                evidence_id=outcome.evidence.id,
+                exit_code=outcome.evidence.exit_code,
+                success=outcome.result.success,
+            )
+            return outcome
+        finally:
+            self.scheduler.release(lease)
+            self._emit(
+                "worker.slot_released",
+                request,
+                worker_id=spec.id,
+                worker_region=spec.region,
+                inflight=self.pool.state[spec.id].inflight,
+                max_concurrency=spec.max_concurrency,
+            )

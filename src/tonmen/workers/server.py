@@ -21,6 +21,10 @@ from .protocol import DispatchEnvelope, normalize_worker_id, require_worker_secr
 _LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 
 
+class WorkerBusy(RuntimeError):
+    pass
+
+
 def validate_worker_bind_host(host: str, *, allow_remote: bool = False) -> str:
     value = str(host).strip().lower()
     if value in _LOOPBACK_HOSTS:
@@ -33,11 +37,11 @@ def validate_worker_bind_host(host: str, *, allow_remote: bool = False) -> str:
 
 
 class WorkerService:
-    """Execution plane that accepts only short-lived signed typed tool requests.
+    """Execution plane accepting only short-lived signed typed tool requests.
 
-    The worker has its own Scope/PolicyEngine and rebuilds argv from the local adapter.
-    Approval tokens never cross the network; a signed approval_granted claim is used
-    only to mint a one-request local ApprovalGrant after the worker's own policy check.
+    The Worker independently rechecks Scope/Policy and rebuilds argv locally. Its
+    own concurrency ceiling is a hard backstop even when multiple control planes
+    or stale health information race for execution capacity.
     """
 
     def __init__(
@@ -48,14 +52,19 @@ class WorkerService:
         secret: str,
         region: str = "default",
         tags: tuple[str, ...] = (),
+        max_concurrency: int = 4,
     ) -> None:
         if config.allow_arbitrary_shell:
             raise ValueError("TONMEN forbids arbitrary shell execution")
+        concurrency = int(max_concurrency)
+        if concurrency < 1 or concurrency > 64:
+            raise ValueError("worker max_concurrency must be within 1-64")
         self.config = config
         self.worker_id = normalize_worker_id(worker_id)
         self.secret = require_worker_secret(secret)
         self.region = str(region or "default").strip().lower() or "default"
         self.tags = tuple(dict.fromkeys(str(item).strip().lower() for item in tags if str(item).strip()))
+        self.max_concurrency = concurrency
         self.registry = ToolRegistry()
         register_builtin_adapters(self.registry)
         self.scope = TargetScope(config.allowed_targets, config.denied_targets)
@@ -89,6 +98,8 @@ class WorkerService:
             readiness = adapter.readiness()
             tools[adapter.spec.name] = {"ready": readiness.ready, "code": readiness.code}
             ready_count += int(readiness.ready)
+        with self._lock:
+            inflight = len(self._inflight)
         return {
             "ok": True,
             "worker": {
@@ -101,12 +112,19 @@ class WorkerService:
             "ready_tools": ready_count,
             "total_tools": len(tools),
             "scope_rules": len(self.scope.allowed),
+            "capacity": {
+                "inflight": inflight,
+                "max_concurrency": self.max_concurrency,
+                "available_slots": max(0, self.max_concurrency - inflight),
+                "accepting_jobs": inflight < self.max_concurrency,
+            },
             "governance": {
                 "local_scope_check": True,
                 "local_policy_check": True,
                 "arbitrary_shell": False,
                 "approval_token_received": False,
                 "argv_received": False,
+                "hard_concurrency_limit": True,
             },
         }
 
@@ -163,6 +181,8 @@ class WorkerService:
                 return replay
             if envelope.job_id in self._inflight:
                 raise RuntimeError("worker job is already in progress")
+            if len(self._inflight) >= self.max_concurrency:
+                raise WorkerBusy("worker concurrency limit reached")
             if envelope.nonce in self._seen_nonces:
                 raise PermissionError("dispatch nonce has already been used")
             self._seen_nonces[envelope.nonce] = envelope.expires_at
@@ -265,6 +285,8 @@ class WorkerHandler(BaseHTTPRequestHandler):
             self._json(403, {"ok": False, "error": str(exc)[:500]})
         except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
             self._json(400, {"ok": False, "error": str(exc)[:500]})
+        except WorkerBusy as exc:
+            self._json(429, {"ok": False, "error": str(exc)[:500], "retryable_before_execution": True})
         except RuntimeError as exc:
             status = 409 if "already in progress" in str(exc) else 503
             self._json(status, {"ok": False, "error": str(exc)[:500]})
@@ -281,15 +303,23 @@ def serve_worker(
     port: int = 8890,
     region: str = "default",
     tags: tuple[str, ...] = (),
+    max_concurrency: int = 4,
     allow_remote_bind: bool = False,
 ) -> int:
     bind_host = validate_worker_bind_host(host, allow_remote=allow_remote_bind)
     if not 1 <= int(port) <= 65535:
         raise ValueError("worker port must be within 1-65535")
-    service = WorkerService(config, worker_id=worker_id, secret=secret, region=region, tags=tags)
+    service = WorkerService(
+        config,
+        worker_id=worker_id,
+        secret=secret,
+        region=region,
+        tags=tags,
+        max_concurrency=max_concurrency,
+    )
     server = WorkerHTTPServer((bind_host, int(port)), service)
     print(f"TONMEN Worker {service.worker_id}: http://{bind_host}:{server.server_address[1]}")
-    print("Worker accepts only signed typed adapter jobs; arbitrary shell is disabled.")
+    print(f"Concurrency: {service.max_concurrency}; signed typed adapter jobs only; arbitrary shell disabled.")
     if bind_host not in _LOOPBACK_HOSTS:
         print("Remote bind enabled: keep this listener on a private/firewalled encrypted network.")
     try:

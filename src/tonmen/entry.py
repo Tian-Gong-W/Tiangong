@@ -54,6 +54,7 @@ def _worker_main(argv: list[str]) -> int:
     worker.add_argument("--port", type=int, default=8890)
     worker.add_argument("--region", default="default")
     worker.add_argument("--tags", default="", help="comma-separated routing tags")
+    worker.add_argument("--max-concurrency", type=int, default=int(os.getenv("TONMEN_WORKER_MAX_CONCURRENCY", "4") or "4"), help="hard worker execution concurrency limit (1-64)")
     worker.add_argument("--secret-env", default="TONMEN_WORKER_SECRET", help="environment variable holding >=32-byte shared secret")
     worker.add_argument("--allow-remote-bind", action="store_true", help="allow a specific non-loopback bind address; never allows 0.0.0.0/::")
     args = parser.parse_args(argv)
@@ -70,6 +71,7 @@ def _worker_main(argv: list[str]) -> int:
             port=args.port,
             region=args.region,
             tags=tags,
+            max_concurrency=args.max_concurrency,
             allow_remote_bind=args.allow_remote_bind,
         )
     except (OSError, ValueError) as exc:
