@@ -13,6 +13,34 @@ from .protocol import normalize_worker_id, require_worker_secret
 _ENV_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
 
+def _public_health(health: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not health:
+        return None
+    worker = health.get("worker") if isinstance(health.get("worker"), dict) else {}
+    tools_raw = health.get("tools") if isinstance(health.get("tools"), dict) else {}
+    capacity_raw = health.get("capacity") if isinstance(health.get("capacity"), dict) else {}
+    return {
+        "ok": bool(health.get("ok")),
+        "worker": {
+            "id": str(worker.get("id") or ""),
+            "region": str(worker.get("region") or ""),
+            "tags": [str(item) for item in worker.get("tags", []) if str(item)],
+            "version": str(worker.get("version") or ""),
+        },
+        "tools": {
+            str(name): {"ready": bool(value.get("ready")), "code": str(value.get("code") or "")}
+            for name, value in tools_raw.items()
+            if isinstance(value, dict)
+        },
+        "capacity": {
+            "inflight": int(capacity_raw.get("inflight") or 0),
+            "max_concurrency": int(capacity_raw.get("max_concurrency") or 0),
+            "available_slots": int(capacity_raw.get("available_slots") or 0),
+            "accepting_jobs": bool(capacity_raw.get("accepting_jobs", True)),
+        },
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class WorkerSpec:
     id: str
@@ -183,8 +211,7 @@ class WorkerPool:
         return tuple(sorted(candidates, key=score))
 
     def record_health(self, worker_id: str, health: dict[str, Any]) -> None:
-        state = self.state[normalize_worker_id(worker_id)]
-        state.last_health = dict(health)
+        self.state[normalize_worker_id(worker_id)].last_health = dict(health)
 
     def record_success(self, worker_id: str, health: dict[str, Any] | None = None) -> None:
         state = self.state[normalize_worker_id(worker_id)]
@@ -210,7 +237,7 @@ class WorkerPool:
                     "calls": self.state[item.id].calls,
                     "failures": self.state[item.id].failures,
                     "last_error": self.state[item.id].last_error,
-                    "last_health": self.state[item.id].last_health,
+                    "last_health": _public_health(self.state[item.id].last_health),
                     "inflight": self.state[item.id].inflight,
                     "available_slots": max(0, item.max_concurrency - self.state[item.id].inflight),
                     "draining": self.state[item.id].draining,
