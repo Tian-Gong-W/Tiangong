@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from tonmen.agents import MissionPlanner
 from tonmen.assets import build_resolved_asset_set
 from tonmen.chronicle import ChronicleStore
 from tonmen.core.config import TonmenConfig
 from tonmen.core.runtime import TonmenRuntime
+from tonmen.loop import MissionLoopPolicy
 from tonmen.missions import MissionRun
 from tonmen.policy import TargetScope
 from tonmen.reports import build_report, render_markdown
@@ -57,6 +60,9 @@ def test_planner_observes_assets_but_does_not_fan_out_by_default(tmp_path, monke
     assert coverage["eligible_direct_nmap_targets"] == ["203.0.113.10"]
     assert coverage["direct_nmap_targets"] == []
     assert coverage["needs_scope"] == ["198.51.100.20", "2001:db8::10"]
+    policy = MissionLoopPolicy()
+    assert policy.max_iterations == 8
+    assert policy.max_executions == 3
 
 
 def test_planner_fans_out_only_to_independently_authorized_ips_when_enabled(tmp_path, monkeypatch):
@@ -72,6 +78,39 @@ def test_planner_fans_out_only_to_independently_authorized_ips_when_enabled(tmp_
         "https://example.test",
         "https://example.test",
     ]
+    policy = MissionLoopPolicy()
+    assert policy.max_iterations == 16
+    assert policy.max_executions == 16
+
+
+def test_resolved_ip_fanout_is_bounded_and_preserves_deferred_assets(tmp_path, monkeypatch):
+    monkeypatch.setenv("TONMEN_RESOLVED_IP_COVERAGE", "1")
+    runtime = _runtime(tmp_path)
+
+    def many_assets(target, scope):
+        return build_resolved_asset_set(
+            target,
+            scope,
+            resolver=lambda host: [f"203.0.113.{index}" for index in range(1, 21)],
+        )
+
+    plan = MissionPlanner(runtime, asset_resolver=many_assets).plan("https://example.test")
+    coverage = plan.metadata["coverage_plan"]
+    nmap_targets = [step.target for step in plan.steps if step.tool == "nmap"]
+
+    assert len(plan.steps) == 16
+    assert len(nmap_targets) == 14  # hostname + 13 independently authorized resolved IPs
+    assert len(coverage["direct_nmap_targets"]) == 13
+    assert coverage["deferred_due_to_execution_bound"] == [
+        "203.0.113.14",
+        "203.0.113.15",
+        "203.0.113.16",
+        "203.0.113.17",
+        "203.0.113.18",
+        "203.0.113.19",
+        "203.0.113.20",
+    ]
+    assert coverage["recommended_max_executions"] == 16
 
 
 def test_resolved_assets_and_coverage_are_graph_provenance(tmp_path, monkeypatch):
@@ -123,3 +162,12 @@ def test_report_exposes_asset_coverage_and_explicit_time_semantics(tmp_path, mon
     assert "## Resolved Asset Coverage" in markdown
     assert "## Time Semantics" in markdown
     assert "needs_scope" in markdown
+
+
+def test_report_console_shows_asset_coverage_and_local_plus_utc_time():
+    source = (Path(__file__).parents[1] / "src/tonmen/dashboard/static/reports.js").read_text(encoding="utf-8")
+    assert "Resolved Asset Coverage / 解析资产覆盖" in source
+    assert "Started · Local / UTC" in source
+    assert "Finished · Local / UTC" in source
+    assert "toLocaleString()" in source
+    assert "UTC ${utc}" in source
