@@ -1,0 +1,90 @@
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+from typing import Any, Mapping
+
+_ALLOWED_PROVIDERS = {"openai", "chatgpt", "google", "grok", "deepseek", "mistral"}
+
+
+def _settings_path() -> Path:
+    configured = (os.getenv("TONMEN_AI_SETTINGS_FILE") or "").strip()
+    return Path(configured).expanduser() if configured else Path.home() / ".tonmen" / "ai-settings.json"
+
+
+def _load(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    if path.is_symlink():
+        raise ValueError("AI settings file may not be a symlink")
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _write(path: Path, values: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(path.parent, 0o700)
+    except OSError:
+        pass
+    if path.exists() and path.is_symlink():
+        raise ValueError("AI settings file may not be a symlink")
+    temporary = path.with_name(f".{path.name}.tmp")
+    temporary.write_text(json.dumps(dict(values), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    try:
+        os.chmod(temporary, 0o600)
+    except OSError:
+        pass
+    os.replace(temporary, path)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
+def get_setting(name: str, default: Any = None) -> Any:
+    return _load(_settings_path()).get(name, default)
+
+
+def update_settings(*, lead_enabled: bool | None = None, lead_model: str | None = None, pool: list[str] | None = None) -> dict[str, Any]:
+    path = _settings_path()
+    values = _load(path)
+    if lead_enabled is not None:
+        values["lead_provider"] = "openai" if bool(lead_enabled) else "disabled"
+    if lead_model is not None:
+        model = str(lead_model).strip()
+        if not model or len(model) > 160:
+            raise ValueError("Lead model name must be 1-160 characters")
+        values["lead_model"] = model
+    if pool is not None:
+        clean: list[str] = []
+        for item in pool:
+            provider = str(item).strip().lower()
+            if provider == "auto":
+                clean = ["auto"]
+                break
+            if provider not in _ALLOWED_PROVIDERS:
+                raise ValueError(f"unsupported AI provider: {provider}")
+            if provider not in clean:
+                clean.append(provider)
+        values["pool"] = clean
+    _write(path, values)
+    return public_settings()
+
+
+def public_settings() -> dict[str, Any]:
+    values = _load(_settings_path())
+    pool = values.get("pool", [])
+    if not isinstance(pool, list):
+        pool = []
+    return {
+        "lead_provider": str(values.get("lead_provider") or "disabled"),
+        "lead_model": str(values.get("lead_model") or "gpt-5.6"),
+        "pool": [str(item) for item in pool],
+        "path": str(_settings_path()),
+        "secret_values_exposed": False,
+    }
