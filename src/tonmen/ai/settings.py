@@ -5,7 +5,10 @@ import os
 from pathlib import Path
 from typing import Any, Mapping
 
+from .secrets import get_secret
+
 _ALLOWED_PROVIDERS = {"openai", "chatgpt", "google", "grok", "deepseek", "mistral"}
+_SECRET_ENVS = ("OPENAI_API_KEY", "DEEPSEEK_API_KEY", "MISTRAL_API_KEY")
 
 
 def _settings_path() -> Path:
@@ -88,3 +91,22 @@ def public_settings() -> dict[str, Any]:
         "path": str(_settings_path()),
         "secret_values_exposed": False,
     }
+
+
+def apply_local_ai_environment() -> None:
+    """Hydrate local Console settings without overriding explicit process env."""
+    settings = public_settings()
+    if not os.getenv("TONMEN_AI_PROVIDER", "").strip():
+        os.environ["TONMEN_AI_PROVIDER"] = str(settings["lead_provider"])
+    if not os.getenv("TONMEN_AI_MODEL", "").strip():
+        os.environ["TONMEN_AI_MODEL"] = str(settings["lead_model"])
+    if not os.getenv("TONMEN_AI_POOL", "").strip():
+        pool = [str(item) for item in settings.get("pool", []) if str(item).strip()]
+        if pool:
+            os.environ["TONMEN_AI_POOL"] = ",".join(pool)
+    for env_name in _SECRET_ENVS:
+        if os.getenv(env_name, "").strip():
+            continue
+        value = get_secret(env_name)
+        if value:
+            os.environ[env_name] = value
