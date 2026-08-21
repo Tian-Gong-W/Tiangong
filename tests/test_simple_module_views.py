@@ -1,12 +1,14 @@
 from importlib import resources
 
 from tonmen.dashboard import DashboardState, serve_dashboard
+from tonmen.dashboard.mission_workspace_server import DashboardState as MissionWorkspaceDashboardState
 from tonmen.dashboard.simple_view_server import SimpleViewDashboardHandler
 from tonmen.dashboard.usability_server import DashboardState as UsabilityDashboardState
 
 
 def test_dashboard_keeps_existing_state_and_uses_simple_view_server():
-    assert DashboardState is UsabilityDashboardState
+    assert DashboardState is MissionWorkspaceDashboardState
+    assert issubclass(DashboardState, UsabilityDashboardState)
     assert callable(serve_dashboard)
     assert issubclass(SimpleViewDashboardHandler, object)
 
