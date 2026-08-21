@@ -27,6 +27,10 @@
   };
   const exactText = {
     "Total":"总数", "Running":"执行中", "Waiting approval":"等待批准", "Failed / denied":"失败 / 拒绝",
+    "待行":"等待执行", "运行":"执行中", "候旨":"等待批准", "完成":"已完成", "跳过":"已跳过", "拒绝":"已拒绝",
+    "allow":"允许", "approval":"需确认", "deny":"拒绝", "passive":"被动", "discovery":"探测",
+    "active":"主动", "validation":"验证", "intrusive":"侵入", "destructive":"破坏性",
+    "AVAILABLE":"可用", "MISSING":"不可用", "READY":"可用", "CHECK":"需检查", "MISS":"缺失", "OK":"正常",
     "Execution Content":"执行结果", "任务历史":"任务记录", "Allowed Scope":"已授权", "Denied Scope":"已拒绝",
     "Built-in loopback authority":"本机默认允许", "Project-authorized target":"项目已授权", "Explicit deny rule":"明确拒绝",
     "Mode":"模式", "Allowed rules":"允许规则", "Denied rules":"拒绝规则", "Pending approvals":"等待确认",
@@ -47,7 +51,8 @@
     "Evidence":"证据", "Attribution":"归因", "Evidence IDs":"证据 ID", "Template":"模板",
     "Observed Server":"检测服务", "Nmap scanned":"Nmap 已扫", "Other resolved/not scanned":"其他未扫地址",
     "Executed request / payload":"执行请求", "Response":"响应", "Aggregate ID":"合并 ID",
-    "Instances collapsed":"合并重复数", "Template Matched":"模板命中", "Evidence Confirmed":"证据确认"
+    "Instances collapsed":"合并重复数", "Template Matched":"模板命中", "Evidence Confirmed":"证据确认",
+    "NO DECISION":"暂无建议", "Single-use":"一次性", "Tool + Target":"工具 + 目标"
   };
   const phraseText = [
     ["Template: matched", "模板：已命中"], ["Template: unknown", "模板：未知"],
@@ -56,7 +61,9 @@
     ["Backend: same_backend", "地址：一致"], ["Backend: different_backend", "地址：不同"], ["Backend: different_resolved_backend", "地址：不同解析节点"],
     ["Scope: authorized", "授权：已允许"], ["Scope: needs_scope", "授权：需确认"],
     ["Coverage: scanned", "覆盖：已扫描"], ["Coverage: authorized_uncovered", "覆盖：已授权未扫描"],
-    ["confidence ", "可信度 "], ["variance yes", "节点差异 有"], ["variance no", "节点差异 无"]
+    ["confidence ", "可信度 "], ["variance yes", "节点差异 有"], ["variance no", "节点差异 无"],
+    [" runs", " 个任务"], [" facts", " 条依据"], [" agents", " 个子代理"],
+    ["deny overrides allow", "拒绝规则优先"], ["Built-in", "内置"], ["READY", "可用"], ["DISABLED", "未开启"]
   ];
 
   function toast(message, bad = false) {
@@ -192,6 +199,7 @@
     const selectors = [
       ".module-page-root h2", ".module-page-root h3", ".module-page-root th", ".module-page-root .module-stat span",
       ".module-page-root .module-card-head small", ".module-page-root .module-badge", ".module-page-root .scope-detailed-row small",
+      ".module-page-root .risk-level span", ".module-page-root .policy-rule strong", ".module-page-root .policy-rule .module-badge",
       ".mission-report-dialog h2", ".mission-report-dialog h3", ".mission-report-dialog h4", ".mission-report-dialog th",
       ".mission-report-dialog .report-summary span", ".mission-report-dialog .report-kv span", ".mission-report-dialog .module-badge"
     ];
