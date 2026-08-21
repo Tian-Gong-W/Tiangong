@@ -11,7 +11,7 @@ _SECRET = "dashboard-scheduler-secret-0123456789-ABCDEFG"
 
 def test_worker_fleet_js_exposes_capacity_queue_and_drain_controls():
     js = resources.files("tonmen.dashboard.static").joinpath("worker-fleet-page.js").read_text(encoding="utf-8")
-    assert "Queue depth" in js
+    assert "队列" in js
     assert "max_concurrency" in js
     assert "data-worker-drain" in js
     assert "/drain" not in js  # action is composed dynamically; no secret-bearing URL templates
