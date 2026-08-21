@@ -44,3 +44,41 @@ def test_settings_view_shows_small_summary_and_folds_full_config():
     js = resources.files("tonmen.dashboard.static").joinpath("module-simple-view.js").read_text(encoding="utf-8")
     for text in ("运行目录", "控制台", "命令超时", "授权目标", "全部设置", "检查详情"):
         assert text in js
+
+
+def test_final_cleanup_assets_cover_remaining_operator_pages():
+    static = resources.files("tonmen.dashboard.static")
+    js = static.joinpath("console-final-cleanup.js").read_text(encoding="utf-8")
+    css = static.joinpath("console-final-cleanup.css").read_text(encoding="utf-8")
+
+    for text in (
+        "判断记录",
+        "当前流程",
+        "流程记录",
+        "任务记录",
+        "操作记录",
+        "待确认",
+        "证据预览",
+        "批准并继续",
+        "风险等级",
+    ):
+        assert text in js
+    assert "Mission:\"任务\"" in js
+    assert "Observation:\"观察\"" in js
+    assert ".final-simple-details" in css
+    assert ".final-simple-hide" in css
+
+
+def test_final_cleanup_keeps_technical_content_collapsed_not_deleted():
+    js = resources.files("tonmen.dashboard.static").joinpath("console-final-cleanup.js").read_text(encoding="utf-8")
+    assert 'details("依据"' in js
+    assert 'details("详细信息"' in js
+    assert "final-evidence-preview" in js
+    assert "module-badge" in js
+
+
+def test_simple_view_server_serves_final_cleanup_assets():
+    from tonmen.dashboard.simple_view_server import _SIMPLE_ASSETS
+
+    assert _SIMPLE_ASSETS["console-final-cleanup.js"].startswith("text/javascript")
+    assert _SIMPLE_ASSETS["console-final-cleanup.css"].startswith("text/css")
