@@ -16,8 +16,9 @@ def test_provider_hub_console_assets_are_packaged():
     js = static.joinpath("provider-hub-page.js").read_text(encoding="utf-8")
     css = static.joinpath("provider-hub-page.css").read_text(encoding="utf-8")
 
-    assert "AI PROVIDER CONTROL PLANE" in html
-    assert "网页登录" in js
+    assert "AI 配置" in html
+    assert "AI PROVIDER CONTROL PLANE" not in html
+    assert "登录" in js
     assert "/api/ai/providers/" in js
     assert "data-provider-login" in js
     assert "password" not in html.lower()
