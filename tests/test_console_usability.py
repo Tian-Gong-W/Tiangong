@@ -133,7 +133,9 @@ def test_usability_assets_are_packaged():
     static = resources.files("tonmen.dashboard.static")
     main_js = static.joinpath("console-usability.js").read_text(encoding="utf-8")
     easy_js = static.joinpath("provider-easy-setup.js").read_text(encoding="utf-8")
-    assert "再次点击确认主动扫描" in main_js
+    assert "再次点击确认" in main_js
+    assert "批准并继续" in main_js
     assert "/approval-status" in main_js
     assert "/api/ai/config" in easy_js
-    assert "保存 Key" in easy_js
+    assert "粘贴 API Key" in easy_js
+    assert "AI 快速配置" in easy_js
