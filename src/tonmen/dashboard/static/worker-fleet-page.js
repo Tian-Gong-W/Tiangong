@@ -29,12 +29,12 @@
   }
 
   function state(worker) {
-    if (worker.draining || worker.scheduler?.draining) return ["DRAINING", "warn"];
+    if (worker.draining || worker.scheduler?.draining) return ["维护中", "warn"];
     const probe = worker.last_probe;
-    if (probe?.ready) return ["READY", "ready"];
-    if (!worker.secret_configured) return ["SECRET MISSING", "bad"];
-    if (probe && !probe.ready) return ["UNAVAILABLE", "bad"];
-    return ["NOT PROBED", "warn"];
+    if (probe?.ready) return ["可用", "ready"];
+    if (!worker.secret_configured) return ["未配置", "bad"];
+    if (probe && !probe.ready) return ["不可用", "bad"];
+    return ["未检查", "warn"];
   }
 
   function renderSummary(data) {
@@ -44,17 +44,16 @@
     const ready = workers.filter(item => item.last_probe?.ready).length;
     const inflight = workers.reduce((sum,item) => sum + Number(item.scheduler?.inflight ?? item.inflight ?? 0), 0);
     const cards = [
-      ["Execution mode", data.execution_mode || "local"],
-      ["Workers configured", workers.length],
-      ["Workers ready", ready],
-      ["Inflight", inflight],
-      ["Queue depth", scheduler.queue_depth || 0],
-      ["Remote steps", history.remote_steps || 0],
-      ["Remote evidence", history.evidence_records || 0],
+      ["执行方式", data.execution_mode === "worker" ? "远程节点" : "本机"],
+      ["节点", workers.length],
+      ["可用", ready],
+      ["执行中", inflight],
+      ["排队", scheduler.queue_depth || 0],
+      ["历史步骤", history.remote_steps || 0],
     ];
     $("#fleet-summary").innerHTML = cards.map(([label,value]) => `<div class="fleet-summary-card"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`).join("");
     const mode = $("#fleet-mode");
-    mode.textContent = (data.execution_mode || "local").toUpperCase();
+    mode.textContent = data.execution_mode === "worker" ? "远程节点" : "本机";
     mode.className = `module-badge ${data.execution_mode === "worker" ? "ok" : "blue"}`;
   }
 
@@ -67,45 +66,34 @@
     const inflight = sched.inflight ?? worker.inflight ?? 0;
     const max = sched.max_concurrency ?? worker.max_concurrency ?? 1;
     const available = sched.available_slots ?? worker.available_slots ?? Math.max(0, max - inflight);
-    const utilization = sched.utilization_percent ?? worker.utilization_percent ?? 0;
     const draining = Boolean(sched.draining ?? worker.draining);
-    const remoteCapacity = probe?.capacity;
     const toolBadges = Object.entries(tools).map(([name,info]) => `<span class="${info.ready ? "ready" : "bad"}">${esc(name)} ${info.ready ? "✓" : "×"}</span>`).join("");
     return `<article class="worker-card ${worker.secret_configured ? "active" : ""}">
-      <div class="worker-card-head"><h3>${esc(worker.id)}<small>${esc(worker.region || "default")} · ${(worker.tags || []).map(esc).join(" · ") || "no tags"}</small></h3><span class="worker-state ${tone}">${esc(label)}</span></div>
-      <div class="worker-meta"><span>Endpoint</span><code>${esc(worker.url)}</code><span>Weight</span><strong>${esc(worker.weight)}</strong><span>Concurrency</span><strong>${esc(inflight)} / ${esc(max)}</strong><span>Available</span><strong>${esc(available)}</strong><span>Utilization</span><strong>${esc(utilization)}%</strong><span>Secret env</span><code>${esc(worker.secret_env)}</code><span>Secret configured</span><strong>${worker.secret_configured ? "yes" : "no"}</strong></div>
-      <div class="worker-history"><span>steps <b>${esc(history.steps || 0)}</b></span><span>success <b>${esc(history.succeeded || 0)}</b></span><span>failed <b>${esc(history.failed || 0)}</b></span><span>evidence <b>${esc(history.evidence || 0)}</b></span></div>
+      <div class="worker-card-head"><h3>${esc(worker.id)}<small>${esc(worker.region || "default")} · ${(worker.tags || []).map(esc).join(" · ") || "通用"}</small></h3><span class="worker-state ${tone}">${esc(label)}</span></div>
+      <div class="worker-meta"><span>地址</span><code>${esc(worker.url)}</code><span>并发</span><strong>${esc(inflight)} / ${esc(max)}</strong><span>空闲</span><strong>${esc(available)}</strong><span>认证</span><strong>${worker.secret_configured ? "已配置" : "未配置"}</strong></div>
+      <div class="worker-history"><span>步骤 <b>${esc(history.steps || 0)}</b></span><span>成功 <b>${esc(history.succeeded || 0)}</b></span><span>失败 <b>${esc(history.failed || 0)}</b></span><span>证据 <b>${esc(history.evidence || 0)}</b></span></div>
       ${toolBadges ? `<div class="worker-tools">${toolBadges}</div>` : ""}
-      <div class="worker-actions">
-        <button class="ghost" type="button" data-worker-probe="${esc(worker.id)}">检查 Worker</button>
-        <button class="${draining ? "primary" : "ghost"}" type="button" data-worker-drain="${esc(worker.id)}" data-draining="${draining ? "1" : "0"}">${draining ? "恢复派发" : "Drain / 维护"}</button>
-      </div>
-      ${probe ? `<div class="worker-probe">${probe.ready ? "✓" : "△"} ${esc(probe.detail || "")} · ${esc(probe.ready_tools ?? 0)}/${esc(probe.total_tools ?? 0)} tools ready${remoteCapacity ? ` · remote ${esc(remoteCapacity.inflight)}/${esc(remoteCapacity.max_concurrency)}` : ""}</div>` : ""}
+      <div class="worker-actions"><button class="ghost" type="button" data-worker-probe="${esc(worker.id)}">检查</button><button class="${draining ? "primary" : "ghost"}" type="button" data-worker-drain="${esc(worker.id)}" data-draining="${draining ? "1" : "0"}">${draining ? "恢复" : "维护"}</button></div>
+      ${probe ? `<div class="worker-probe">${probe.ready ? "✓" : "△"} ${esc(probe.detail || "")} · ${esc(probe.ready_tools ?? 0)}/${esc(probe.total_tools ?? 0)} 工具可用</div>` : ""}
     </article>`;
   }
 
   function renderWorkers(data) {
     const workers = data.workers || [];
-    $("#worker-grid").innerHTML = workers.length ? workers.map(workerCard).join("") : `<div class="fleet-empty">尚未配置 TONMEN_WORKERS。当前仍由本机 Executor 执行。</div>`;
+    $("#worker-grid").innerHTML = workers.length ? workers.map(workerCard).join("") : `<div class="fleet-empty">还没有配置执行节点，当前使用本机执行。</div>`;
   }
 
   function renderRouting(data) {
     const route = data.routing || {};
     const scheduler = data.scheduler || {};
     $("#routing-state").innerHTML = `
-      <div>Strategy: <code>${esc(scheduler.strategy || data.strategy || "bounded weighted least-load with fair queue")}</code></div>
-      <div>Queue: <code>${esc(scheduler.queue_depth || 0)} / ${esc(scheduler.max_queue_size || route.max_queue_size || 128)}</code></div>
-      <div>Queue timeout: <code>${esc(scheduler.queue_timeout_seconds || route.queue_timeout_seconds || 30)}s</code></div>
-      <div>Peak queue: <code>${esc(scheduler.peak_queue_depth || 0)}</code></div>
-      <div>Average wait: <code>${esc(scheduler.average_wait_ms || 0)}ms</code></div>
-      <div>Timed out: <code>${esc(scheduler.total_timed_out || 0)}</code></div>
-      <div>Probe before dispatch: <code>${route.probe_before_dispatch ? "yes" : "no"}</code></div>
-      <div>Job TTL: <code>${esc(route.job_ttl_seconds || 60)}s</code></div>
-      <div>Preferred worker: <code>${esc(route.worker_id || "AUTO")}</code></div>
-      <div>Region: <code>${esc(route.region || "ANY")}</code></div>
-      <div>Required tags: <code>${esc((route.tags || []).join(", ") || "ANY")}</code></div>
-      <div style="margin-top:8px">Drain blocks new leases only; inflight jobs are not killed. Dispatch timeout/connection ambiguity remains fail-closed and never triggers an automatic second execution after POST starts.</div>
-      <div style="margin-top:8px">Secret values: <code>NEVER EXPOSED</code> · Approval Token: <code>NEVER SENT</code> · raw shell/argv: <code>NEVER SENT</code></div>`;
+      <div>队列 <code>${esc(scheduler.queue_depth || 0)} / ${esc(scheduler.max_queue_size || route.max_queue_size || 128)}</code></div>
+      <div>等待上限 <code>${esc(scheduler.queue_timeout_seconds || route.queue_timeout_seconds || 30)}s</code></div>
+      <div>平均等待 <code>${esc(scheduler.average_wait_ms || 0)}ms</code></div>
+      <div>指定节点 <code>${esc(route.worker_id || "自动")}</code></div>
+      <div>区域 <code>${esc(route.region || "不限")}</code></div>
+      <div>标签 <code>${esc((route.tags || []).join(", ") || "不限")}</code></div>
+      <div class="routing-note">维护只停止新任务，不会中断正在执行的任务。连接结果不确定时不会自动在另一节点重复执行。</div>`;
   }
 
   function bindActions() {
@@ -115,7 +103,7 @@
       try {
         busy = true; button.disabled = true;
         const result = await api(`/api/workers/${encodeURIComponent(id)}/probe`, {method:"POST"});
-        toast(`${id}: ${result.detail}`, !result.ready);
+        toast(result.ready ? `${id}: 可用` : `${id}: ${result.detail}`, !result.ready);
         await refresh();
       } catch (error) { toast(error.message || String(error), true); }
       finally { busy = false; button.disabled = false; }
@@ -129,7 +117,7 @@
       try {
         busy = true; button.disabled = true;
         const result = await api(`/api/workers/${encodeURIComponent(id)}/${action}`, {method:"POST"});
-        toast(`${id}: ${result.draining ? "draining — no new jobs" : "active — scheduling resumed"}`);
+        toast(`${id}: ${result.draining ? "已进入维护，不再接收新任务" : "已恢复接收任务"}`);
         await refresh();
       } catch (error) { toast(error.message || String(error), true); }
       finally { busy = false; button.disabled = false; }
