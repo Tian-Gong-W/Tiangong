@@ -98,6 +98,11 @@ def set_secret(env_name: str, value: str) -> None:
     values = _load(path)
     values[env_name] = clean
     _write(path, values)
+    # Keep the current Console process live without misclassifying this as an
+    # externally supplied environment secret. Explicit process env still wins.
+    if not os.getenv(env_name, "").strip() or env_name in _HYDRATED_ENV:
+        os.environ[env_name] = clean
+        _HYDRATED_ENV.add(env_name)
 
 
 def clear_secret(env_name: str) -> bool:
@@ -106,6 +111,7 @@ def clear_secret(env_name: str) -> bool:
     removed = values.pop(env_name, None) is not None
     if removed:
         _write(path, values)
+    clear_hydrated_secret_environment(env_name)
     return removed
 
 
