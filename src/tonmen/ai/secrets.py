@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 from typing import Mapping
 
+_HYDRATED_ENV: set[str] = set()
+
 
 def _secret_path() -> Path:
     configured = (os.getenv("TONMEN_AI_SECRETS_FILE") or "").strip()
@@ -58,11 +60,32 @@ def get_secret(env_name: str) -> str:
 
 
 def secret_source(env_name: str) -> str | None:
-    if os.getenv(env_name, "").strip():
+    env_value = os.getenv(env_name, "").strip()
+    stored = _load(_secret_path()).get(env_name, "").strip()
+    if env_value and env_name not in _HYDRATED_ENV:
         return "environment"
-    if _load(_secret_path()).get(env_name, "").strip():
+    if stored:
         return "local_store"
+    if env_value:
+        return "environment"
     return None
+
+
+def hydrate_secret_environment(env_name: str) -> bool:
+    if os.getenv(env_name, "").strip() and env_name not in _HYDRATED_ENV:
+        return False
+    value = _load(_secret_path()).get(env_name, "").strip()
+    if not value:
+        return False
+    os.environ[env_name] = value
+    _HYDRATED_ENV.add(env_name)
+    return True
+
+
+def clear_hydrated_secret_environment(env_name: str) -> None:
+    if env_name in _HYDRATED_ENV:
+        os.environ.pop(env_name, None)
+        _HYDRATED_ENV.discard(env_name)
 
 
 def set_secret(env_name: str, value: str) -> None:
