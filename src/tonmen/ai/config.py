@@ -4,6 +4,9 @@ import os
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
+from .secrets import get_secret, secret_source
+from .settings import get_setting
+
 
 def _validate_openai_base_url(value: str) -> str:
     base_url = value.strip().rstrip("/")
@@ -18,13 +21,20 @@ def _validate_openai_base_url(value: str) -> str:
     return base_url
 
 
+def _configured(name: str, fallback: object) -> str:
+    raw = os.getenv(name)
+    if raw is not None and raw.strip():
+        return raw.strip()
+    return str(fallback).strip()
+
+
 @dataclass(frozen=True, slots=True)
 class LeadAIConfig:
     """Public configuration for the optional Lead AI.
 
-    The API key is intentionally never stored on this object. Providers read the
-    configured secret environment variable only at request time so the key cannot
-    accidentally flow into dataclasses, reports, Chronicle, Events, or UI payloads.
+    Secret values are never stored on this dataclass. Environment variables take
+    precedence; the local Console settings/secret stores are fallback sources so a
+    local operator can configure AI without restarting or editing shell profiles.
     """
 
     provider: str = "disabled"
@@ -36,9 +46,7 @@ class LeadAIConfig:
     @classmethod
     def from_env(cls) -> "LeadAIConfig":
         key_env = (os.getenv("TONMEN_AI_KEY_ENV") or "OPENAI_API_KEY").strip()
-        # Explicit opt-in avoids surprise network calls/cost merely because a shell
-        # already contains an unrelated OPENAI_API_KEY.
-        provider = (os.getenv("TONMEN_AI_PROVIDER") or "disabled").strip().lower()
+        provider = _configured("TONMEN_AI_PROVIDER", get_setting("lead_provider", "disabled")).lower()
         if provider not in {"disabled", "openai"}:
             raise ValueError("TONMEN_AI_PROVIDER must be 'disabled' or 'openai'")
         timeout = int(os.getenv("TONMEN_AI_TIMEOUT_SECONDS") or "30")
@@ -49,7 +57,7 @@ class LeadAIConfig:
             base_url = _validate_openai_base_url(base_url)
         return cls(
             provider=provider,
-            model=(os.getenv("TONMEN_AI_MODEL") or "gpt-5.6").strip(),
+            model=_configured("TONMEN_AI_MODEL", get_setting("lead_model", "gpt-5.6")),
             base_url=base_url,
             api_key_env=key_env,
             timeout_seconds=timeout,
@@ -61,15 +69,16 @@ class LeadAIConfig:
 
     @property
     def key_configured(self) -> bool:
-        return bool(os.getenv(self.api_key_env, "").strip())
+        return bool(get_secret(self.api_key_env))
 
     def api_key(self) -> str:
-        value = os.getenv(self.api_key_env, "").strip()
+        value = get_secret(self.api_key_env)
         if not value:
             raise RuntimeError(f"Lead AI key is not configured in {self.api_key_env}")
         return value
 
     def public_status(self) -> dict[str, object]:
+        source = secret_source(self.api_key_env)
         return {
             "enabled": self.enabled,
             "provider": self.provider,
@@ -77,7 +86,9 @@ class LeadAIConfig:
             "base_url": self.base_url,
             "key_env": self.api_key_env,
             "key_configured": self.key_configured,
-            "secret_persisted": False,
+            "key_source": source,
+            "secret_persisted": source == "local_store",
+            "secret_exposed": False,
             "raw_evidence_sent": False,
             "execution_authority": False,
         }
