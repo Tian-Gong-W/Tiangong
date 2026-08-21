@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="tonmen-csrf" content="__TONMEN_CSRF__">
-  <title>主導 AI / Provider Hub | TONMEN Console</title>
-  <link rel="stylesheet" href="/assets/app.css?v=provider-hub-1">
-  <link rel="stylesheet" href="/assets/viewport.css?v=provider-hub-1">
-  <link rel="stylesheet" href="/assets/provider-hub-page.css?v=provider-hub-1">
+  <title>AI 配置 | TONMEN</title>
+  <link rel="stylesheet" href="/assets/app.css?v=provider-hub-2">
+  <link rel="stylesheet" href="/assets/viewport.css?v=provider-hub-2">
+  <link rel="stylesheet" href="/assets/provider-hub-page.css?v=provider-hub-2">
 </head>
 <body>
   <div class="console-frame provider-console">
@@ -15,74 +15,56 @@
       <div class="header-brand">
         <div class="brand-emblem" aria-hidden="true"><span>宮</span></div>
         <div class="brand-name"><strong>雲頂天宮</strong><i></i><b>TONMEN</b></div>
-        <div class="brand-tagline">Provider Hub · Governed Intelligence</div>
+        <div class="brand-tagline">AI 配置</div>
       </div>
-      <div class="header-slogan">
-        <span>多智共議，一律而行。</span>
-        <small>Multi-provider intelligence · Single governance boundary</small>
-      </div>
-      <div class="hub-refresh-wrap">
-        <span id="hub-updated">—</span>
-        <button class="ghost" id="hub-refresh" type="button">↻ 刷新</button>
-      </div>
+      <div class="header-slogan"><span>连接模型，开启 AI</span></div>
+      <div class="hub-refresh-wrap"><span id="hub-updated">—</span><button class="ghost" id="hub-refresh" type="button">↻ 刷新</button></div>
     </header>
 
     <div class="console-workspace">
       <aside class="sidebar">
-        <nav class="nav" aria-label="TONMEN module navigation">
-          <a class="nav-item" href="/"><span>◉</span><b>儀表總覽</b></a>
-          <a class="nav-item" href="/missions"><span>◎</span><b>任務 <small>Missions</small></b></a>
-          <a class="nav-item" href="/scope"><span>◌</span><b>天域 <small>Scope</small></b></a>
-          <a class="nav-item" href="/guard"><span>◇</span><b>天律 <small>Guard</small></b></a>
-          <a class="nav-item" href="/tools"><span>⌁</span><b>天工 <small>Tools</small></b></a>
-          <a class="nav-item" href="/workers"><span>♜</span><b>天役 <small>Workers</small></b></a>
-          <a class="nav-item" href="/intelligence"><span>◉</span><b>天鑑 <small>Intelligence</small></b></a>
-          <a class="nav-item" href="/reasoner"><span>✺</span><b>天策 <small>Reasoner</small></b></a>
-          <a class="nav-item active" href="/lead"><span>♜</span><b>主導 <small>AI Hub</small></b></a>
-          <a class="nav-item" href="/loop"><span>∞</span><b>天衡 <small>Loop</small></b></a>
-          <a class="nav-item" href="/chronicle"><span>▤</span><b>天冊 <small>Chronicle</small></b></a>
-          <a class="nav-item" href="/approval"><span>♙</span><b>審批 <small>Approval</small></b></a>
-          <a class="nav-item" href="/settings"><span>⚙</span><b>設定 <small>Settings</small></b></a>
+        <nav class="nav" aria-label="TONMEN navigation">
+          <a class="nav-item" href="/"><span>◉</span><b>总览</b></a>
+          <a class="nav-item" href="/missions"><span>◎</span><b>任务</b></a>
+          <a class="nav-item" href="/scope"><span>◌</span><b>授权范围 <small>天域</small></b></a>
+          <a class="nav-item" href="/guard"><span>◇</span><b>安全策略 <small>天律</small></b></a>
+          <a class="nav-item" href="/tools"><span>⌁</span><b>工具 <small>天工</small></b></a>
+          <a class="nav-item" href="/workers"><span>♜</span><b>执行节点 <small>天役</small></b></a>
+          <a class="nav-item" href="/intelligence"><span>◉</span><b>情报 <small>天鑑</small></b></a>
+          <a class="nav-item" href="/reasoner"><span>✺</span><b>AI 推理 <small>天策</small></b></a>
+          <a class="nav-item active" href="/lead"><span>♜</span><b>AI 配置 <small>主導</small></b></a>
+          <a class="nav-item" href="/loop"><span>∞</span><b>任务流程 <small>天衡</small></b></a>
+          <a class="nav-item" href="/chronicle"><span>▤</span><b>任务记录 <small>天冊</small></b></a>
+          <a class="nav-item" href="/approval"><span>♙</span><b>人工确认</b></a>
+          <a class="nav-item" href="/settings"><span>⚙</span><b>设置</b></a>
         </nav>
-        <div class="sidebar-art" aria-hidden="true">
-          <div class="temple-roof">⌁  亠  ⌁</div>
-          <div class="temple-lines">╱╲  ╱╲<br>⌒⌒⌒⌒⌒</div>
-        </div>
-        <div class="sidebar-poem">主智能定其向，眾模型證其實；<br>權仍歸天律，器仍由天工。</div>
+        <div class="sidebar-art" aria-hidden="true"><div class="temple-roof">⌁  亠  ⌁</div><div class="temple-lines">╱╲  ╱╲<br>⌒⌒⌒⌒⌒</div></div>
       </aside>
 
       <main class="main-stage provider-stage">
         <section class="provider-page">
-          <div class="provider-page-head">
-            <div>
-              <span class="kicker">AI PROVIDER CONTROL PLANE</span>
-              <h1>主導 AI <small>/ Provider Hub</small></h1>
-              <p>连接多个模型账号，按能力、Token 使用量与权重分担 Council 子代理负载；所有真实工具执行仍由 Scope → Guard → Approval → Executor 控制。</p>
-            </div>
-            <div class="governance-seal"><span>执行权</span><strong>NO</strong><span>审批权</span><strong>NO</strong></div>
-          </div>
-
+          <div class="provider-page-head"><div><h1>AI 配置</h1><p>配置模型账号、AI 主控和子代理。</p></div></div>
           <div id="hub-alert" class="hub-alert hidden"></div>
           <section id="hub-summary" class="hub-summary"></section>
 
           <div class="hub-layout">
             <section class="hub-panel lead-panel">
-              <div class="hub-panel-head"><div><h2>♜ Lead AI</h2><small>主脑状态与当前 Council 指令</small></div><span id="lead-state" class="module-badge blue">LOADING</span></div>
-              <div id="lead-body" class="hub-panel-body"><div class="hub-empty">正在读取 Lead AI…</div></div>
+              <div class="hub-panel-head"><div><h2>AI 主控</h2><small>当前状态和最近判断</small></div><span id="lead-state" class="module-badge blue">读取中</span></div>
+              <div id="lead-body" class="hub-panel-body"><div class="hub-empty">正在读取…</div></div>
             </section>
 
             <section class="hub-panel pool-panel">
-              <div class="hub-panel-head"><div><h2>Provider Pool</h2><small>网页登录 + API Key 状态；不显示 Secret</small></div><span id="pool-state" class="module-badge blue">—</span></div>
-              <div id="provider-grid" class="provider-grid"><div class="hub-empty">正在读取 Provider…</div></div>
+              <div class="hub-panel-head"><div><h2>模型账号</h2><small>连接状态</small></div><span id="pool-state" class="module-badge blue">—</span></div>
+              <div id="provider-grid" class="provider-grid"><div class="hub-empty">正在读取…</div></div>
             </section>
 
             <section class="hub-panel distribution-panel">
-              <div class="hub-panel-head"><div><h2>Token Distribution</h2><small>来自 Chronicle 中最近 100 个任务的模型子代理调用</small></div><span id="token-total" class="module-badge purple">0 TOKENS</span></div>
-              <div id="distribution-list" class="distribution-list"><div class="hub-empty">尚无模型子代理 Token 记录。</div></div>
+              <div class="hub-panel-head"><div><h2>调用统计</h2><small>子代理使用情况</small></div><span id="token-total" class="module-badge purple">0</span></div>
+              <div id="distribution-list" class="distribution-list"><div class="hub-empty">暂无调用记录。</div></div>
             </section>
 
             <section class="hub-panel routing-panel">
-              <div class="hub-panel-head"><div><h2>Model Router</h2><small>weighted least usage · role-aware</small></div><span class="module-badge ok">GOVERNED</span></div>
+              <div class="hub-panel-head"><div><h2>高级路由</h2><small>模型分配规则</small></div></div>
               <div id="routing-body" class="hub-panel-body"></div>
             </section>
           </div>
@@ -91,6 +73,6 @@
     </div>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="/assets/provider-hub-page.js?v=provider-hub-1"></script>
+  <script src="/assets/provider-hub-page.js?v=provider-hub-2"></script>
 </body>
 </html>
