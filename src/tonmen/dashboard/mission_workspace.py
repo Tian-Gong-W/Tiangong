@@ -237,7 +237,7 @@ def _build_assets(plan, run, report: dict[str, Any]) -> dict[str, Any]:
                 "web",
                 url,
                 status_code=data.get("status_code"),
-                title=data.get("title"),
+                page_title=data.get("title"),
                 technologies=list(data.get("technologies") or []),
                 evidence_id=md.get("evidence_id"),
             )
