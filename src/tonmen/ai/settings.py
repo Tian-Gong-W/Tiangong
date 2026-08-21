@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Any, Mapping
 
-from .secrets import get_secret
+from .secrets import hydrate_secret_environment
 
 _ALLOWED_PROVIDERS = {"openai", "chatgpt", "google", "grok", "deepseek", "mistral"}
 _SECRET_ENVS = ("OPENAI_API_KEY", "DEEPSEEK_API_KEY", "MISTRAL_API_KEY")
@@ -105,8 +105,4 @@ def apply_local_ai_environment() -> None:
         if pool:
             os.environ["TONMEN_AI_POOL"] = ",".join(pool)
     for env_name in _SECRET_ENVS:
-        if os.getenv(env_name, "").strip():
-            continue
-        value = get_secret(env_name)
-        if value:
-            os.environ[env_name] = value
+        hydrate_secret_environment(env_name)
