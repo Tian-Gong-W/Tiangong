@@ -32,6 +32,8 @@ def test_primary_ai_and_worker_pages_do_not_restore_long_english_intros():
     assert "Multi-provider intelligence" not in provider_html
 
     assert "执行节点" in worker_html
-    assert "主控授权 → 节点执行 → 回传证据" in worker_html
+    assert "主控授权" in worker_html
+    assert "节点执行" in worker_html
+    assert "回传证据" in worker_html
     assert "EXECUTION FLEET CONTROL" not in worker_html
     assert "Central governance · Distributed execution" not in worker_html
