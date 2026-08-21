@@ -16,6 +16,8 @@ from .usability_server import UsabilityDashboardHandler
 _SIMPLE_ASSETS = {
     "module-simple-view.css": "text/css; charset=utf-8",
     "module-simple-view.js": "text/javascript; charset=utf-8",
+    "console-final-cleanup.css": "text/css; charset=utf-8",
+    "console-final-cleanup.js": "text/javascript; charset=utf-8",
 }
 
 
@@ -29,10 +31,20 @@ class SimpleViewDashboardHandler(UsabilityDashboardHandler):
                 "</head>",
                 '  <link rel="stylesheet" href="/assets/module-simple-view.css?v=simple-1">\n</head>',
             )
+        if "/assets/console-final-cleanup.css" not in text:
+            text = text.replace(
+                "</head>",
+                '  <link rel="stylesheet" href="/assets/console-final-cleanup.css?v=final-1">\n</head>',
+            )
         if "/assets/module-simple-view.js" not in text:
             text = text.replace(
                 "</body>",
                 '  <script src="/assets/module-simple-view.js?v=simple-1"></script>\n</body>',
+            )
+        if "/assets/console-final-cleanup.js" not in text:
+            text = text.replace(
+                "</body>",
+                '  <script src="/assets/console-final-cleanup.js?v=final-1"></script>\n</body>',
             )
         return text.encode("utf-8")
 
