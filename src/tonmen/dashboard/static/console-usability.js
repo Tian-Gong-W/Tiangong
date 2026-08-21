@@ -65,6 +65,8 @@
     [" runs", " 个任务"], [" facts", " 条依据"], [" agents", " 个子代理"],
     ["deny overrides allow", "拒绝规则优先"], ["Built-in", "内置"], ["READY", "可用"], ["DISABLED", "未开启"]
   ];
+  const advancedReportSections = new Set(["时间", "安全控制", "原始发现", "执行请求", "AI 评审", "判断记录", "原始证据"]);
+  const compactSummaryFields = new Set(["开始时间", "结束时间", "已合并重复", "评审轮次", "子代理评审"]);
 
   function toast(message, bad = false) {
     const el = document.getElementById("toast");
@@ -195,6 +197,28 @@
     if (replacement !== text) node.textContent = replacement;
   }
 
+  function simplifyReportLayout(report) {
+    if (!report) return;
+    report.querySelectorAll(".report-summary > div").forEach(item => {
+      const label = item.querySelector("span")?.textContent?.trim();
+      if (compactSummaryFields.has(label)) item.classList.add("simple-report-secondary");
+    });
+    report.querySelectorAll(".report-section").forEach(section => {
+      if (section.dataset.simpleCollapsed === "1") return;
+      const heading = section.querySelector(":scope > h3")?.textContent?.trim();
+      if (!heading || !advancedReportSections.has(heading)) return;
+      section.dataset.simpleCollapsed = "1";
+      const details = document.createElement("details");
+      details.className = "report-advanced-section";
+      const summary = document.createElement("summary");
+      summary.textContent = heading;
+      details.appendChild(summary);
+      section.replaceWith(details);
+      details.appendChild(section);
+      section.querySelector(":scope > h3")?.classList.add("simple-hide");
+    });
+  }
+
   function simplifyGeneratedCopy() {
     const selectors = [
       ".module-page-root h2", ".module-page-root h3", ".module-page-root th", ".module-page-root .module-stat span",
@@ -226,6 +250,7 @@
         if (value === "yes") td.textContent = "是";
         if (value === "no") td.textContent = "否";
       });
+      simplifyReportLayout(report);
     }
   }
 
