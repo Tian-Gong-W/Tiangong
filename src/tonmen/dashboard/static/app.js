@@ -4,7 +4,7 @@
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => [...document.querySelectorAll(sel)];
   const state = { missions: [], current: null, status: null, scope: null };
-  const esc = (value) => String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&","<":"<",">":">",'"':""","'":"&#39;"}[ch]));
+  const esc = (value) => String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
   const api = async (url, options = {}) => {
     const opts = { ...options, headers: { ...(options.headers || {}) } };
     if (opts.body && typeof opts.body !== "string") { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(opts.body); }
