@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 from typing import Mapping
+from uuid import uuid4
 
 from tonmen.core.runtime import TonmenRuntime
 from tonmen.evidence import GraphNode
 from tonmen.intelligence import parse_evidence, summarize_facts
 from tonmen.jobs import JobStatus
 from tonmen.missions import MissionPlan
-from tonmen.missions.run import MissionRun, MissionRunState, StepExecutionState
+from tonmen.missions.run import MissionRun, MissionRunState, StepExecution, StepExecutionState
 from tonmen.observations import Observation
-from tonmen.reasoning import MissionReasoner, ReasoningAction, ReasoningDecision
+from tonmen.reasoning import ActionProposal, MissionReasoner, ReasoningAction, ReasoningDecision
 from tonmen.tools import RiskLevel, ToolRequest
 
 
@@ -33,6 +34,10 @@ class MissionCoordinator:
     def _check_scope(self, plan: MissionPlan) -> None:
         if self.runtime.scope is None or not self.runtime.scope.is_allowed(plan.target):
             raise MissionRunDenied("target is outside the authorized scope")
+
+    def _check_proposal_scope(self, target: str) -> None:
+        if self.runtime.scope is None or not self.runtime.scope.is_allowed(target):
+            raise MissionRunDenied(f"proposal target is outside the authorized scope: {target}")
 
     @staticmethod
     def _ensure_graph(plan: MissionPlan, run: MissionRun) -> None:
@@ -101,6 +106,289 @@ class MissionCoordinator:
                 label=node.label,
                 metadata={**dict(node.metadata), **route},
             )
+
+    def execute_proposal(
+        self,
+        run: MissionRun,
+        proposal: ActionProposal,
+        *,
+        approval_token: str | None = None,
+    ) -> bool:
+        """Execute a late-bound ActionProposal under the same governance rules.
+
+        Returns True if the proposal was accepted and executed (or parked for
+        approval). Returns False if it was rejected by scope/preflight.
+
+        Does not mutate the original MissionPlan; creates a synthetic dynamic
+        step execution recorded on the run and in the provenance graph.
+        """
+        if run.state in {MissionRunState.SUCCEEDED, MissionRunState.FAILED, MissionRunState.DENIED}:
+            return False
+
+        try:
+            self._check_proposal_scope(proposal.target)
+        except MissionRunDenied as exc:
+            self._emit(
+                "proposal.denied",
+                run,
+                proposal_id=proposal.id,
+                tool=proposal.tool,
+                target=proposal.target,
+                reason=str(exc),
+            )
+            if proposal.id in run.graph.nodes:
+                node = run.graph.nodes[proposal.id]
+                run.graph.nodes[proposal.id] = GraphNode(
+                    id=node.id,
+                    kind=node.kind,
+                    label=node.label,
+                    metadata={**dict(node.metadata), "status": "denied_scope", "error": str(exc)},
+                )
+            return False
+
+        # Approval gate for high-risk proposals
+        if proposal.requires_approval and not approval_token:
+            self._emit(
+                "proposal.waiting_approval",
+                run,
+                proposal_id=proposal.id,
+                tool=proposal.tool,
+                target=proposal.target,
+                risk=proposal.risk,
+            )
+            run.state = MissionRunState.WAITING_APPROVAL
+            if proposal.id in run.graph.nodes:
+                node = run.graph.nodes[proposal.id]
+                run.graph.nodes[proposal.id] = GraphNode(
+                    id=node.id,
+                    kind=node.kind,
+                    label=node.label,
+                    metadata={**dict(node.metadata), "status": "waiting_approval"},
+                )
+            return True
+
+        step_id = f"dynamic:{proposal.id}"
+        execution = StepExecution(
+            step_id=step_id,
+            tool=proposal.tool,
+            target=proposal.target,
+            state=StepExecutionState.PENDING,
+            metadata={
+                "dynamic": True,
+                "proposal_id": proposal.id,
+                "hypothesis_id": proposal.hypothesis_id,
+                "expected_info_gain": proposal.expected_info_gain,
+                "risk": proposal.risk,
+                "rationale": proposal.rationale,
+            },
+        )
+
+        # Ensure graph nodes for the dynamic step
+        if step_id not in run.graph.nodes:
+            run.graph.add_node(
+                GraphNode(
+                    id=step_id,
+                    kind="step.dynamic",
+                    label=f"{proposal.tool}:{proposal.target}",
+                    metadata={
+                        "risk": proposal.risk,
+                        "requires_approval": proposal.requires_approval,
+                        "proposal_id": proposal.id,
+                        "dynamic": True,
+                    },
+                )
+            )
+            run.graph.link(run.id, "contains", step_id)
+            if proposal.id in run.graph.nodes:
+                run.graph.link(proposal.id, "realized_as", step_id)
+
+        # Tool must exist in registry
+        try:
+            adapter = self.runtime.registry.get(proposal.tool)
+        except Exception as exc:
+            execution.state = StepExecutionState.FAILED
+            execution.error = f"unknown tool: {proposal.tool} ({exc})"
+            run.steps.append(execution)
+            self._emit("proposal.failed", run, proposal_id=proposal.id, error=execution.error)
+            return False
+
+        readiness = adapter.readiness()
+        if not readiness.ready:
+            execution.state = StepExecutionState.FAILED
+            execution.error = f"tool preflight blocked: {readiness.detail}"
+            execution.metadata["preflight"] = {
+                "ready": False,
+                "code": readiness.code,
+                "detail": readiness.detail,
+            }
+            run.steps.append(execution)
+            self._emit(
+                "proposal.preflight_blocked",
+                run,
+                proposal_id=proposal.id,
+                tool=proposal.tool,
+                detail=readiness.detail,
+            )
+            return False
+
+        request = ToolRequest(
+            tool=proposal.tool,
+            target=proposal.target,
+            parameters=dict(proposal.parameters),
+            context={
+                "mission_id": run.id,
+                "plan_id": run.plan_id,
+                "step_id": step_id,
+                "proposal_id": proposal.id,
+                "dynamic": True,
+            },
+        )
+        execution.state = StepExecutionState.RUNNING
+        run.steps.append(execution)
+        run.state = MissionRunState.RUNNING
+        self._emit(
+            "proposal.started",
+            run,
+            proposal_id=proposal.id,
+            step_id=step_id,
+            tool=proposal.tool,
+            target=proposal.target,
+            risk=proposal.risk,
+        )
+
+        job = self.runtime.jobs.submit(request, approval_token=approval_token)
+        execution.job_id = job.id
+
+        if job.status is JobStatus.DENIED:
+            execution.state = StepExecutionState.DENIED
+            execution.error = job.error or "execution denied"
+            self._emit("proposal.denied", run, proposal_id=proposal.id, error=execution.error)
+            return False
+
+        if job.status is not JobStatus.SUCCEEDED or job.outcome is None:
+            execution.state = StepExecutionState.FAILED
+            if job.outcome is not None:
+                self._record_execution_evidence(run, execution, job.outcome.evidence)
+                self._record_execution_route(run, execution, job.outcome)
+                execution.error = job.error or job.outcome.result.summary
+                # Low-risk discovery timeouts become degraded, not mission failure
+                if bool(job.outcome.result.evidence.get("timed_out")) and proposal.risk <= int(RiskLevel.DISCOVERY):
+                    execution.state = StepExecutionState.DEGRADED
+                    execution.metadata["degraded_reason"] = "discovery_timeout"
+                    run.state = MissionRunState.RUNNING
+                    self._emit("proposal.degraded", run, proposal_id=proposal.id, error=execution.error)
+                    return True
+            else:
+                execution.error = job.error or "execution failed"
+            self._emit("proposal.failed", run, proposal_id=proposal.id, error=execution.error)
+            return False
+
+        outcome = job.outcome
+        evidence = outcome.evidence
+        self._record_execution_evidence(run, execution, evidence)
+        self._record_execution_route(run, execution, outcome)
+        self._emit(
+            "evidence.created",
+            run,
+            step_id=step_id,
+            tool=proposal.tool,
+            evidence_id=evidence.id,
+            exit_code=evidence.exit_code,
+            proposal_id=proposal.id,
+        )
+
+        facts = parse_evidence(evidence)
+        observation_metadata = {
+            "exit_code": evidence.exit_code,
+            "job_id": job.id,
+            "fact_ids": [fact.id for fact in facts],
+            "proposal_id": proposal.id,
+            "dynamic": True,
+        }
+        observation = Observation.create(
+            source=proposal.tool,
+            target=proposal.target,
+            summary=summarize_facts(proposal.tool, facts, outcome.result.summary),
+            evidence_id=evidence.id,
+            metadata=observation_metadata,
+        )
+        run.observations.append(observation)
+        execution.state = StepExecutionState.SUCCEEDED
+        execution.observation_id = observation.id
+        execution.metadata["fact_ids"] = [fact.id for fact in facts]
+
+        run.graph.add_node(
+            GraphNode(
+                id=observation.id,
+                kind="observation",
+                label=observation.summary,
+                metadata={"source": observation.source, "target": observation.target, "dynamic": True},
+            )
+        )
+        run.graph.link(evidence.id, "supports", observation.id)
+        run.graph.link(run.id, "observed", observation.id)
+        self._emit(
+            "observation.created",
+            run,
+            step_id=step_id,
+            observation_id=observation.id,
+            evidence_id=evidence.id,
+            summary=observation.summary,
+            proposal_id=proposal.id,
+        )
+
+        for fact in facts:
+            run.graph.add_node(
+                GraphNode(
+                    id=fact.id,
+                    kind=f"intelligence.{fact.kind.value}",
+                    label=fact.title,
+                    metadata={
+                        "source": fact.source,
+                        "target": fact.target,
+                        "severity": fact.severity.value,
+                        "confidence": fact.confidence,
+                        "evidence_id": fact.evidence_id,
+                        "data": dict(fact.data),
+                        "from_proposal": proposal.id,
+                    },
+                )
+            )
+            run.graph.link(evidence.id, "reveals", fact.id)
+            run.graph.link(observation.id, "summarizes", fact.id)
+            run.graph.link(run.id, "knows", fact.id)
+            self._emit(
+                "intelligence.created",
+                run,
+                step_id=step_id,
+                fact_id=fact.id,
+                kind=fact.kind.value,
+                title=fact.title,
+                severity=fact.severity.value,
+                evidence_id=fact.evidence_id,
+                proposal_id=proposal.id,
+            )
+
+        if proposal.id in run.graph.nodes:
+            node = run.graph.nodes[proposal.id]
+            run.graph.nodes[proposal.id] = GraphNode(
+                id=node.id,
+                kind=node.kind,
+                label=node.label,
+                metadata={**dict(node.metadata), "status": "executed", "step_id": step_id},
+            )
+
+        self._emit(
+            "proposal.completed",
+            run,
+            proposal_id=proposal.id,
+            step_id=step_id,
+            tool=proposal.tool,
+            evidence_id=evidence.id,
+            facts=len(facts),
+        )
+        run.state = MissionRunState.RUNNING
+        return True
 
     def start(self, plan: MissionPlan) -> MissionRun:
         self._check_scope(plan)
