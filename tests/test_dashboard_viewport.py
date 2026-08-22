@@ -20,6 +20,7 @@ def test_console_loads_viewport_resilience_styles():
 def test_main_panel_centralizes_common_governed_actions():
     static = resources.files("tonmen.dashboard.static")
     html = static.joinpath("index.html").read_text(encoding="utf-8")
+    app = static.joinpath("app.js").read_text(encoding="utf-8")
     deck = static.joinpath("deck.js").read_text(encoding="utf-8")
 
     for control_id in (
@@ -28,11 +29,12 @@ def test_main_panel_centralizes_common_governed_actions():
         "deck-resume",
         "deck-approve",
         "deck-evidence",
-        "deck-retry",
         "deck-scope-form",
     ):
         assert f'id="{control_id}"' in html
 
+    # Retry is contextual and appears only after a failed mission.
+    assert 'id="retry-btn"' in app
     assert 'clickProxy("#approve-btn"' in deck
     assert 'clickProxy("#resume-btn"' in deck
     assert 'clickProxy("#evidence-btn"' in deck
