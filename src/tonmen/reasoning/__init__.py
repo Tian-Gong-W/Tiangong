@@ -1,3 +1,4 @@
+from .convergence import ConvergenceDetector, ConvergenceReport
 from .engine import MissionReasoner
 from .model import (
     ActionProposal,
@@ -9,6 +10,8 @@ from .model import (
 
 __all__ = [
     "ActionProposal",
+    "ConvergenceDetector",
+    "ConvergenceReport",
     "Hypothesis",
     "HypothesisStatus",
     "MissionReasoner",
