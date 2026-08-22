@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from tonmen.missions import MissionPlan, MissionRun, MissionRunState, StepExecutionState
 
-from .model import ReasoningAction, ReasoningDecision
+from .model import ActionProposal, Hypothesis, HypothesisStatus, ReasoningAction, ReasoningDecision
 
 _SEVERE = {"high", "critical"}
 
@@ -19,7 +19,13 @@ def _waiting_pair(plan: MissionPlan, run: MissionRun):
 
 
 class MissionReasoner:
-    """Deterministic reasoning over provenance-linked facts and existing plan steps only."""
+    """Reasoning over provenance-linked facts.
+
+    Phase 1 change: in addition to selecting among the original frozen plan
+    steps, the reasoner may emit new ActionProposals when the fixed plan is
+    exhausted but uncertainty remains. Every proposal must still pass Scope,
+    risk and approval checks before the loop schedules it.
+    """
 
     def decide(self, plan: MissionPlan, run: MissionRun) -> ReasoningDecision:
         if run.plan_id != plan.id:
@@ -97,8 +103,46 @@ class MissionReasoner:
                 requires_human=True,
             )
 
+        # Phase 1: when the original plan is exhausted but we still have little
+        # evidence, emit a low-risk follow-up proposal instead of immediately
+        # completing. The loop will still subject it to Scope + risk + approval.
+        proposals: list[ActionProposal] = []
+        hypotheses: list[Hypothesis] = []
+
+        if len(facts) < 3 and run.target:
+            # Minimal self-reliant behaviour: if almost nothing is known, propose
+            # a passive discovery step rather than declaring the mission done.
+            hypo = Hypothesis.create(
+                statement=f"Target {run.target} may expose additional passive services or web surfaces not yet observed.",
+                confidence=0.4,
+                status=HypothesisStatus.OPEN,
+            )
+            hypotheses.append(hypo)
+            proposals.append(
+                ActionProposal.create(
+                    tool="nmap",
+                    target=run.target,
+                    parameters={"args": ["-sV", "-T4", "--top-ports", "100"]},
+                    rationale="Original plan produced little intelligence; a passive service scan may increase world-model coverage at low risk.",
+                    expected_info_gain=0.55,
+                    risk=1,
+                    requires_approval=False,
+                    hypothesis_id=hypo.id,
+                    estimated_cost=1,
+                )
+            )
+
+        if proposals:
+            return ReasoningDecision.create(
+                action=ReasoningAction.PROPOSE,
+                summary="Original plan exhausted; emitting new low-risk ActionProposal(s) to reduce residual uncertainty.",
+                basis_fact_ids=tuple(node.id for node in facts[:16]),
+                new_proposals=proposals,
+                hypotheses=hypotheses,
+            )
+
         return ReasoningDecision.create(
             action=ReasoningAction.COMPLETE,
-            summary="No further planned action is justified by the current evidence.",
+            summary="No further planned action is justified by the current evidence, and no high-value new proposal was generated.",
             basis_fact_ids=tuple(node.id for node in facts[:16]),
         )
