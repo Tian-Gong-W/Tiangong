@@ -17,11 +17,10 @@ from .model import LoopStopReason, MissionLoopPolicy, MissionLoopResult
 class MissionLoop:
     """Bounded observe → reason → act loop.
 
-    Phase 1: the loop can now receive ReasoningAction.PROPOSE. New hypotheses
-    and ActionProposals are recorded into the provenance graph. Full dynamic
-    scheduling of those proposals (turning them into governed executable steps)
-    is the next increment; for now we treat PROPOSE as evidence that residual
-    uncertainty remains, instead of immediately completing.
+    Phase 1 complete: the loop receives ReasoningAction.PROPOSE, records
+    hypotheses / ActionProposals into the provenance graph, and schedules
+    eligible proposals through coordinator.execute_proposal under the same
+    Scope / risk / approval governance as fixed plan steps.
     """
 
     def __init__(
@@ -182,6 +181,34 @@ class MissionLoop:
                 requires_approval=proposal.requires_approval,
                 hypothesis_id=proposal.hypothesis_id,
             )
+
+    def _schedule_proposals(
+        self,
+        run: MissionRun,
+        decision: ReasoningDecision,
+        *,
+        executions: int,
+    ) -> int:
+        """Attempt to execute newly proposed actions under governance.
+
+        Returns the number of proposals that resulted in a real execution attempt.
+        """
+        executed = 0
+        for proposal in decision.new_proposals:
+            if executions + executed >= self.policy.max_executions:
+                self._emit(
+                    "proposal.deferred",
+                    run,
+                    proposal_id=proposal.id,
+                    reason="execution_budget",
+                )
+                break
+            ok = self.coordinator.execute_proposal(run, proposal)
+            if ok:
+                executed += 1
+                if run.state is MissionRunState.WAITING_APPROVAL:
+                    break
+        return executed
 
     def _record_session(self, run: MissionRun, session_id: str) -> None:
         run.graph.add_node(
@@ -457,9 +484,31 @@ class MissionLoop:
             key = self._decision_key(decision)
             repeated[key] = repeated.get(key, 0) + 1
             no_progress = evidence_added == 0 and states_before == tuple(step.state for step in run.steps)
-            # PROPOSE counts as progress (we recorded new research directions)
+
             if decision.action is ReasoningAction.PROPOSE and decision.new_proposals:
-                no_progress = False
+                scheduled = self._schedule_proposals(run, decision, executions=executions)
+                executions += scheduled
+                if scheduled:
+                    no_progress = False
+                self._emit(
+                    "proposal.scheduled",
+                    run,
+                    decision_id=decision.id,
+                    proposal_ids=[p.id for p in decision.new_proposals],
+                    scheduled=scheduled,
+                )
+                self._checkpoint(plan, run)
+                if run.state is MissionRunState.WAITING_APPROVAL:
+                    return self._result(
+                        plan,
+                        run,
+                        session_id=session_id,
+                        reason=LoopStopReason.APPROVAL_REQUIRED,
+                        iterations=iteration,
+                        executions=executions,
+                        decision=decision,
+                    )
+                continue
 
             if repeated[key] > self.policy.max_repeat_decisions and no_progress:
                 return self._result(
@@ -482,25 +531,6 @@ class MissionLoop:
                     )
                     self._checkpoint(plan, run)
                     continue
-
-            if decision.action is ReasoningAction.PROPOSE:
-                # Recorded above. Until dynamic scheduling lands, treat this as
-                # "residual uncertainty acknowledged" and allow the loop to
-                # continue / eventually complete under normal budgets rather
-                # than forcing an immediate stop.
-                self._emit(
-                    "proposal.acknowledged",
-                    run,
-                    decision_id=decision.id,
-                    proposal_ids=[p.id for p in decision.new_proposals],
-                    note="proposals recorded; dynamic execution scheduling is the next phase increment",
-                )
-                self._checkpoint(plan, run)
-                # Fall through: do not complete solely because of PROPOSE.
-                # If there is nothing left in the original plan, the next
-                # iterations will either repeat and hit REPEATED_DECISION or
-                # reach COMPLETE once the reasoner stops emitting new work.
-                continue
 
             if run.state is MissionRunState.WAITING_APPROVAL or decision.action is ReasoningAction.REQUEST_APPROVAL:
                 return self._result(
