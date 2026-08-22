@@ -55,7 +55,7 @@ def test_loop_stops_at_human_approval_after_discovery(tmp_path):
     assert result.stop_reason is LoopStopReason.APPROVAL_REQUIRED
     assert result.run.state is MissionRunState.WAITING_APPROVAL
     assert result.executions == 2
-    assert [call[0] for call in calls] == ["nmap", "httpx"]
+    assert [call[0] for call in calls] == ["httpx", "nmap"]
     assert result.run.steps[-1].state is StepExecutionState.WAITING_APPROVAL
     assert any(node.kind == "loop.stop" for node in result.run.graph.nodes.values())
     assert not runtime.approvals._grants
@@ -70,7 +70,7 @@ def test_loop_skips_unjustified_validation_and_completes(tmp_path):
     assert result.stop_reason is LoopStopReason.COMPLETE
     assert result.run.state is MissionRunState.SUCCEEDED
     assert result.run.steps[-1].state is StepExecutionState.SKIPPED
-    assert [call[0] for call in calls] == ["nmap", "httpx"]
+    assert [call[0] for call in calls] == ["httpx", "nmap"]
     assert any(node.kind == "reasoning.skip" for node in result.run.graph.nodes.values())
 
 
@@ -84,9 +84,9 @@ def test_loop_execution_budget_is_a_hard_stop(tmp_path):
     assert result.stop_reason is LoopStopReason.EXECUTION_BUDGET
     assert result.executions == 1
     assert result.run.state is MissionRunState.RUNNING
-    assert [call[0] for call in calls] == ["nmap"]
-    assert result.run.steps[0].state is StepExecutionState.SUCCEEDED
-    assert result.run.steps[1].state is StepExecutionState.PENDING
+    assert [call[0] for call in calls] == ["httpx"]
+    assert next(step for step in result.run.steps if step.tool == "httpx").state is StepExecutionState.SUCCEEDED
+    assert next(step for step in result.run.steps if step.tool == "nmap").state is StepExecutionState.PENDING
 
 
 def test_approved_loop_resume_executes_only_waiting_step_and_stops_for_review(tmp_path):
@@ -109,7 +109,7 @@ def test_approved_loop_resume_executes_only_waiting_step_and_stops_for_review(tm
         approval_tokens={waiting.id: grant.token},
     )
 
-    assert [call[0] for call in calls1] == ["nmap", "httpx"]
+    assert [call[0] for call in calls1] == ["httpx", "nmap"]
     assert [call[0] for call in calls2] == ["nuclei"]
     assert second.stop_reason is LoopStopReason.REVIEW_REQUIRED
     assert second.run.state is MissionRunState.SUCCEEDED

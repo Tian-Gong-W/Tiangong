@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from tonmen.tools.base import RiskLevel, ToolAdapter, ToolReadiness, ToolRequest, ToolSpec
+from tonmen.tools.base import CostEstimate, RiskLevel, ToolAdapter, ToolReadiness, ToolRequest, ToolSpec
 from tonmen.tools.validation import reject_unknown_parameters, validate_web_target
 
 _ALLOWED_SEVERITIES = {"info", "low", "medium", "high", "critical"}
@@ -30,6 +30,14 @@ class NucleiAdapter(ToolAdapter):
         description="Template-based vulnerability validation with bounded parameters",
         risk=RiskLevel.VALIDATION,
         capabilities=("vulnerability.validate", "finding.generate"),
+        accepts=("url", "host"),
+        produces=("validation_observation", "finding"),
+        modalities=("http", "json"),
+        estimated_cost=CostEstimate(wall_seconds=30, network_requests=10),
+        replayable=True,
+        isolation_profile="scoped_network",
+        requires_approval=True,
+        default_parameters=(("severity", ("medium", "high", "critical")), ("rate_limit", 10), ("timeout", 10)),
     )
 
     def readiness(self) -> ToolReadiness:

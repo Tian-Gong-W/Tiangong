@@ -99,11 +99,13 @@ def test_discovery_timeout_degrades_and_httpx_still_runs(tmp_path):
         StepExecutionState.SUCCEEDED,
         StepExecutionState.WAITING_APPROVAL,
     ]
-    assert [call[0] for call in calls] == ["nmap", "httpx"]
-    assert "-sV" not in calls[0]
+    assert [call[0] for call in calls] == ["httpx", "nmap"]
+    nmap_call = next(call for call in calls if call[0] == "nmap")
+    assert "-sV" not in nmap_call
     assert result.run.steps[0].metadata["timed_out"] is True
     assert result.run.steps[0].metadata["degraded_reason"] == "discovery_timeout"
-    assert result.run.evidence[0].exit_code == 124
+    nmap_evidence = next(item for item in result.run.evidence if item.tool == "nmap")
+    assert nmap_evidence.exit_code == 124
     assert any(node.kind == "intelligence.web" for node in result.run.graph.nodes.values())
 
 
@@ -117,18 +119,20 @@ def test_degraded_timeout_survives_chronicle_and_console_payload(tmp_path):
     loaded_plan, loaded_run = store.load(result.run.id)
     assert loaded_run.steps[0].state is StepExecutionState.DEGRADED
     assert loaded_run.steps[0].metadata["timed_out"] is True
-    assert loaded_run.evidence[0].exit_code == 124
-    assert "timed out" in loaded_run.evidence[0].stderr
+    nmap_evidence = next(item for item in loaded_run.evidence if item.tool == "nmap")
+    assert nmap_evidence.exit_code == 124
+    assert "timed out" in nmap_evidence.stderr
 
     state = DashboardState(TonmenConfig(workspace=tmp_path, config_path=tmp_path / "tonmen.toml"))
     payload = state.mission(result.run.id)
     assert payload["steps"][0]["state"] == "degraded"
     assert payload["steps"][0]["metadata"]["timed_out"] is True
-    assert payload["evidence"][0]["exit_code"] == 124
+    nmap_payload = next(item for item in payload["evidence"] if item["tool"] == "nmap")
+    assert nmap_payload["exit_code"] == 124
     assert loaded_plan.id == plan.id
 
 
-def test_non_timeout_discovery_error_remains_terminal(tmp_path):
+def test_non_timeout_discovery_error_degrades_and_replans(tmp_path):
     runtime = TonmenRuntime.sentinel(TonmenConfig(workspace=tmp_path, allowed_targets=("localhost",)))
     calls: list[list[str]] = []
 
@@ -142,8 +146,12 @@ def test_non_timeout_discovery_error_remains_terminal(tmp_path):
 
     result = MissionLoop(runtime).run(plan)
 
-    assert result.stop_reason is LoopStopReason.TERMINAL
-    assert result.run.state is MissionRunState.FAILED
-    assert result.run.steps[0].state is StepExecutionState.FAILED
-    assert [call[0] for call in calls] == ["nmap"]
-    assert result.run.evidence[0].exit_code == 2
+    assert result.stop_reason is LoopStopReason.COMPLETE
+    assert result.run.state is MissionRunState.SUCCEEDED
+    assert [call[0] for call in calls] == ["httpx", "nmap"]
+    assert result.run.steps[0].state is StepExecutionState.DEGRADED
+    assert result.run.steps[1].state is StepExecutionState.DEGRADED
+    assert result.run.steps[0].metadata["degraded_reason"] == "discovery_error"
+    assert result.run.steps[1].metadata["degraded_reason"] == "discovery_error"
+    assert result.run.steps[2].state is StepExecutionState.SKIPPED
+    assert sorted(item.exit_code for item in result.run.evidence) == [2, 2]
