@@ -67,7 +67,7 @@ def test_loop_skips_unjustified_validation_and_completes(tmp_path):
 
     result = MissionLoop(runtime).run(plan)
 
-    assert result.stop_reason is LoopStopReason.CONVERGED
+    assert result.stop_reason is LoopStopReason.COMPLETE
     assert result.run.state is MissionRunState.SUCCEEDED
     assert result.run.steps[-1].state is StepExecutionState.SKIPPED
     assert [call[0] for call in calls] == ["nmap", "httpx"]
