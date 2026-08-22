@@ -15,7 +15,14 @@ from .model import LoopStopReason, MissionLoopPolicy, MissionLoopResult
 
 
 class MissionLoop:
-    """Bounded observe → reason → act loop over existing governed mission steps only."""
+    """Bounded observe → reason → act loop.
+
+    Phase 1: the loop can now receive ReasoningAction.PROPOSE. New hypotheses
+    and ActionProposals are recorded into the provenance graph. Full dynamic
+    scheduling of those proposals (turning them into governed executable steps)
+    is the next increment; for now we treat PROPOSE as evidence that residual
+    uncertainty remains, instead of immediately completing.
+    """
 
     def __init__(
         self,
@@ -68,11 +75,13 @@ class MissionLoop:
 
     @staticmethod
     def _decision_key(decision: ReasoningDecision) -> tuple[object, ...]:
+        proposal_ids = tuple(p.id for p in decision.new_proposals)
         return (
             decision.action.value,
             decision.next_step_id,
             decision.basis_fact_ids,
             decision.requires_human,
+            proposal_ids,
         )
 
     @staticmethod
@@ -98,6 +107,81 @@ class MissionLoop:
                 return False
             return True
         return False
+
+    def _record_hypotheses_and_proposals(
+        self,
+        run: MissionRun,
+        decision: ReasoningDecision,
+    ) -> None:
+        """Persist Phase-1 hypothesis / proposal objects into the provenance graph."""
+        for hypo in decision.hypotheses:
+            if hypo.id in run.graph.nodes:
+                continue
+            run.graph.add_node(
+                GraphNode(
+                    id=hypo.id,
+                    kind="hypothesis",
+                    label=hypo.statement,
+                    metadata={
+                        "confidence": hypo.confidence,
+                        "status": hypo.status.value,
+                        "supporting_fact_ids": list(hypo.supporting_fact_ids),
+                        "contradicting_fact_ids": list(hypo.contradicting_fact_ids),
+                        **dict(hypo.metadata),
+                    },
+                )
+            )
+            run.graph.link(run.id, "considers", hypo.id)
+            for fact_id in hypo.supporting_fact_ids:
+                if fact_id in run.graph.nodes:
+                    run.graph.link(fact_id, "supports_hypothesis", hypo.id)
+            self._emit(
+                "hypothesis.created",
+                run,
+                hypothesis_id=hypo.id,
+                statement=hypo.statement,
+                confidence=hypo.confidence,
+                status=hypo.status.value,
+            )
+
+        for proposal in decision.new_proposals:
+            if proposal.id in run.graph.nodes:
+                continue
+            run.graph.add_node(
+                GraphNode(
+                    id=proposal.id,
+                    kind="action_proposal",
+                    label=f"{proposal.tool}:{proposal.target}",
+                    metadata={
+                        "tool": proposal.tool,
+                        "target": proposal.target,
+                        "parameters": dict(proposal.parameters),
+                        "rationale": proposal.rationale,
+                        "expected_info_gain": proposal.expected_info_gain,
+                        "risk": proposal.risk,
+                        "requires_approval": proposal.requires_approval,
+                        "hypothesis_id": proposal.hypothesis_id,
+                        "estimated_cost": proposal.estimated_cost,
+                        **dict(proposal.metadata),
+                    },
+                )
+            )
+            run.graph.link(run.id, "proposed", proposal.id)
+            if decision.id in run.graph.nodes:
+                run.graph.link(decision.id, "emitted", proposal.id)
+            if proposal.hypothesis_id and proposal.hypothesis_id in run.graph.nodes:
+                run.graph.link(proposal.hypothesis_id, "motivates", proposal.id)
+            self._emit(
+                "proposal.created",
+                run,
+                proposal_id=proposal.id,
+                tool=proposal.tool,
+                target=proposal.target,
+                expected_info_gain=proposal.expected_info_gain,
+                risk=proposal.risk,
+                requires_approval=proposal.requires_approval,
+                hypothesis_id=proposal.hypothesis_id,
+            )
 
     def _record_session(self, run: MissionRun, session_id: str) -> None:
         run.graph.add_node(
@@ -150,6 +234,7 @@ class MissionLoop:
                     "decision_id": decision.id,
                     "decision_action": decision.action.value,
                     "evidence_added": evidence_added,
+                    "proposal_count": len(decision.new_proposals),
                 },
             )
         )
@@ -165,6 +250,7 @@ class MissionLoop:
             decision_id=decision.id,
             decision_action=decision.action.value,
             evidence_added=evidence_added,
+            proposal_count=len(decision.new_proposals),
         )
 
     def _record_council_round(
@@ -344,7 +430,13 @@ class MissionLoop:
                 basis_fact_ids=list(decision.basis_fact_ids),
                 next_step_id=decision.next_step_id,
                 requires_human=decision.requires_human,
+                proposal_count=len(decision.new_proposals),
             )
+
+            # Phase 1: persist any newly formed hypotheses / proposals
+            if decision.new_proposals or decision.hypotheses:
+                self._record_hypotheses_and_proposals(run, decision)
+
             self._record_iteration(
                 run,
                 session_id=session_id,
@@ -365,6 +457,10 @@ class MissionLoop:
             key = self._decision_key(decision)
             repeated[key] = repeated.get(key, 0) + 1
             no_progress = evidence_added == 0 and states_before == tuple(step.state for step in run.steps)
+            # PROPOSE counts as progress (we recorded new research directions)
+            if decision.action is ReasoningAction.PROPOSE and decision.new_proposals:
+                no_progress = False
+
             if repeated[key] > self.policy.max_repeat_decisions and no_progress:
                 return self._result(
                     plan,
@@ -386,6 +482,25 @@ class MissionLoop:
                     )
                     self._checkpoint(plan, run)
                     continue
+
+            if decision.action is ReasoningAction.PROPOSE:
+                # Recorded above. Until dynamic scheduling lands, treat this as
+                # "residual uncertainty acknowledged" and allow the loop to
+                # continue / eventually complete under normal budgets rather
+                # than forcing an immediate stop.
+                self._emit(
+                    "proposal.acknowledged",
+                    run,
+                    decision_id=decision.id,
+                    proposal_ids=[p.id for p in decision.new_proposals],
+                    note="proposals recorded; dynamic execution scheduling is the next phase increment",
+                )
+                self._checkpoint(plan, run)
+                # Fall through: do not complete solely because of PROPOSE.
+                # If there is nothing left in the original plan, the next
+                # iterations will either repeat and hit REPEATED_DECISION or
+                # reach COMPLETE once the reasoner stops emitting new work.
+                continue
 
             if run.state is MissionRunState.WAITING_APPROVAL or decision.action is ReasoningAction.REQUEST_APPROVAL:
                 return self._result(
