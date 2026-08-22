@@ -126,3 +126,15 @@ class MissionRun:
         self.state = state
         if state in {MissionRunState.SUCCEEDED, MissionRunState.FAILED, MissionRunState.DENIED}:
             self.finished_at = datetime.now(timezone.utc)
+
+
+def iter_plan_executions(plan: MissionPlan, run: MissionRun):
+    """Pair frozen plan steps with their original execution slots.
+
+    Dynamic actions are appended to ``run.steps`` after mission start, so callers
+    that reason about the compatibility ``MissionPlan`` must ignore those later
+    entries instead of using ``zip(..., strict=True)`` across the full run.
+    """
+    if len(run.steps) < len(plan.steps):
+        raise ValueError("mission run is missing execution slots for the frozen plan")
+    return zip(plan.steps, run.steps[: len(plan.steps)], strict=True)
