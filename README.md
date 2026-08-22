@@ -5,7 +5,7 @@
 
 **TONMEN** is the governed autonomous security-agent runtime by **Top-Men AI**.
 
-**v0.4.0 Alpha** now includes project configuration, persistent authorized scope, dependency diagnostics, bounded mission loops, evidence-backed intelligence, explicit human approval boundaries, and a local visual control panel.
+**v0.4.0 Alpha** includes project configuration, persistent authorized scope, dependency diagnostics, bounded mission loops, evidence-backed intelligence, explicit human approval boundaries, a local visual control panel, and the first adaptive-research runtime primitives.
 
 ## Install
 
@@ -62,7 +62,7 @@ tonmen plan app.example.test
 tonmen loop app.example.test
 ```
 
-Current governed path:
+The current CLI path remains the compatibility runtime while the Console/Chronicle migrate to adaptive state:
 
 ```text
 Intent
@@ -80,7 +80,7 @@ Evidence → 天鑑 Intelligence → 天策 Reasoner
 CONTINUE / SKIP / COMPLETE / REQUEST_APPROVAL / REVIEW / STOP
 ```
 
-The built-in tool path is currently Nmap → HTTPx → Nuclei. Discovery may run inside authorized scope. Nuclei validation remains approval-gated when evidence supports it.
+The compatibility plan still exposes Nmap → HTTPx → Nuclei so existing CLI, Chronicle and reports remain stable. Discovery may run inside authorized scope. Nuclei validation remains approval-gated.
 
 ```bash
 tonmen missions
@@ -90,6 +90,42 @@ tonmen resume <run-id> --approve
 ```
 
 Approval tokens are never persisted.
+
+## Adaptive research core
+
+The new research path does **not** pre-generate the entire future mission. It starts with a minimum bootstrap experiment, then regenerates candidate actions from the current hypotheses, evidence, previous action signatures, Scope and Policy.
+
+```text
+Mission goal
+  ↓
+Hypothesis
+  ↓
+bootstrap (minimum useful action)
+  ↓
+AdaptiveMissionDirector
+  ↓
+decide_next(current state)
+  ↓
+ActionProposal candidates
+  ↓
+Scope / Policy / Approval
+  ↓
+Executor
+  ↓
+Evidence + ActionLedger
+  ↺ re-plan from the new state
+```
+
+Core primitives now include:
+
+- `CapabilitySpec`: semantic planner-facing capability contract layered over legacy `ToolSpec`.
+- `Hypothesis` + `EvidenceRequirement`: explicit research questions that can later be supported, rejected or confirmed by evidence requirements.
+- `ActionProposal`: a newly-created experiment with information-gain, relevance, cost, risk and replayability metadata.
+- `AdaptiveMissionState` + `ActionRecord`: append-only research state and action ledger.
+- `MissionPlanner.bootstrap()` + `MissionPlanner.decide_next()`: minimum bootstrap followed by state-driven re-planning with duplicate-action suppression.
+- `AdaptiveMissionDirector.tick()`: executes one selected action at a time through the existing governed Runtime path.
+
+The adaptive Director can create **new ActionProposals after a mission has started**, but it cannot register arbitrary tools, expand Scope, bypass Policy, mint approvals, or execute raw shell strings. Higher-risk work still stops at the existing Approval boundary.
 
 ## Project config
 
@@ -102,8 +138,9 @@ Create `tonmen.toml` with `tonmen init`, or start from [`tonmen.toml.example`](t
 - External targets deny-by-default.
 - Unknown tool parameters are rejected.
 - Validation/intrusive actions require a bound, single-use grant.
-- Planner, Coordinator, Intelligence, Reasoner and Mission Loop cannot self-approve.
-- Mission Loop cannot add tools or expand target scope.
+- Planner, Director, Coordinator, Intelligence, Reasoner and Mission Loop cannot self-approve.
+- Adaptive planning may create new ActionProposals only from registered capabilities; it cannot expand target scope or register arbitrary executors.
+- The legacy Mission Loop cannot add tools or expand target scope.
 - Approval tokens are never persisted.
 - Intelligence facts must point to Evidence IDs.
 - Unparseable output remains evidence; it does not become a guessed fact.
