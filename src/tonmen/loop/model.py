@@ -22,6 +22,7 @@ def _default_max_executions() -> int:
 
 class LoopStopReason(str, Enum):
     COMPLETE = "complete"
+    CONVERGED = "converged"
     APPROVAL_REQUIRED = "approval_required"
     REVIEW_REQUIRED = "review_required"
     TERMINAL = "terminal"
