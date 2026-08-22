@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from tonmen.missions import MissionPlan, MissionRun, MissionRunState, StepExecutionState
 
+from .modalities import discriminating_experiment, next_modality_proposals
 from .model import ActionProposal, Hypothesis, HypothesisStatus, ReasoningAction, ReasoningDecision
 
 _SEVERE = {"high", "critical"}
@@ -19,7 +20,6 @@ def _waiting_pair(plan: MissionPlan, run: MissionRun):
 
 
 def _already_tried_tools(run: MissionRun) -> set[tuple[str, str]]:
-    """Tools already planned, proposed, or executed for a given target."""
     tried: set[tuple[str, str]] = set()
     for step in run.steps:
         tried.add((step.tool, step.target))
@@ -28,7 +28,6 @@ def _already_tried_tools(run: MissionRun) -> set[tuple[str, str]]:
             tool = str(node.metadata.get("tool") or "")
             target = str(node.metadata.get("target") or "")
             if not tool:
-                # label form "tool:target"
                 label = node.label or ""
                 if ":" in label:
                     tool, _, target = label.partition(":")
@@ -37,12 +36,19 @@ def _already_tried_tools(run: MissionRun) -> set[tuple[str, str]]:
     return tried
 
 
-def _refresh_hypotheses_from_evidence(run: MissionRun, facts) -> list[Hypothesis]:
-    """Re-evaluate open hypotheses against current intelligence nodes.
+def _has_web_surface(facts) -> bool:
+    for node in facts:
+        if node.kind == "intelligence.web":
+            return True
+        if node.kind == "intelligence.service":
+            data = node.metadata.get("data", {})
+            service = str(data.get("service", "")).lower() if isinstance(data, dict) else ""
+            if "http" in service:
+                return True
+    return False
 
-    Phase 2: evidence can support, contradict, or leave hypotheses open.
-    We emit updated Hypothesis objects so the loop can rewrite graph metadata.
-    """
+
+def _refresh_hypotheses_from_evidence(run: MissionRun, facts) -> list[Hypothesis]:
     updated: list[Hypothesis] = []
     fact_ids = {n.id for n in facts}
     service_or_web = [
@@ -60,22 +66,27 @@ def _refresh_hypotheses_from_evidence(run: MissionRun, facts) -> list[Hypothesis
         confidence = float(node.metadata.get("confidence") or 0.4)
         supporting = tuple(node.metadata.get("supporting_fact_ids") or ())
         contradicting = tuple(node.metadata.get("contradicting_fact_ids") or ())
+        kind = str(node.metadata.get("kind") or "")
 
-        # Heuristic: passive-surface hypotheses become supported when we have
-        # any service/web/host intelligence; otherwise stay open (or drop conf).
         if "passive services" in statement.lower() or "web surfaces" in statement.lower():
             if service_or_web:
                 supporting = tuple(dict.fromkeys([*supporting, *[n.id for n in service_or_web[:8]]]))
                 confidence = min(0.95, confidence + 0.25 * len(service_or_web))
                 status = HypothesisStatus.SUPPORTED
             elif len(facts) >= 3:
-                # Plenty of other facts but no surface evidence → weaken
                 confidence = max(0.1, confidence - 0.15)
                 status = HypothesisStatus.OPEN if confidence >= 0.25 else HypothesisStatus.ABANDONED
             else:
                 status = HypothesisStatus.OPEN
+        elif kind == "discriminating":
+            # Discriminating meta-hypotheses resolve once we gain new surface facts
+            if service_or_web:
+                supporting = tuple(dict.fromkeys([*supporting, *[n.id for n in service_or_web[:4]]]))
+                confidence = min(0.9, confidence + 0.3)
+                status = HypothesisStatus.SUPPORTED
+            else:
+                status = HypothesisStatus.OPEN
         else:
-            # Generic: if any linked supporting facts still exist, keep; else open
             still_supported = [fid for fid in supporting if fid in fact_ids]
             if still_supported and confidence >= 0.6:
                 status = HypothesisStatus.SUPPORTED
@@ -102,10 +113,10 @@ def _refresh_hypotheses_from_evidence(run: MissionRun, facts) -> list[Hypothesis
 class MissionReasoner:
     """Reasoning over provenance-linked facts.
 
-    Phase 2:
-    - refresh hypothesis status from evidence
-    - avoid re-proposing tools already tried for the same target
-    - only emit proposals with meaningful expected information gain
+    Phase 3:
+    - modality ladder (network → web) as first-class late-bound proposals
+    - discriminating experiments when multiple open hypotheses compete
+    - still never bypasses Scope / risk / approval (enforced by the loop)
     """
 
     def decide(self, plan: MissionPlan, run: MissionRun) -> ReasoningDecision:
@@ -194,56 +205,89 @@ class MissionReasoner:
         proposals: list[ActionProposal] = []
         new_hypotheses: list[Hypothesis] = list(refreshed)
         tried = _already_tried_tools(run)
+        open_left = [
+            h for h in new_hypotheses if h.status is HypothesisStatus.OPEN and h.confidence >= 0.25
+        ]
 
-        # Phase 2: only propose when residual uncertainty is real and the
-        # candidate action has not already been attempted for this target.
-        if len(facts) < 3 and run.target and ("nmap", run.target) not in tried:
-            hypo = Hypothesis.create(
-                statement=f"Target {run.target} may expose additional passive services or web surfaces not yet observed.",
-                confidence=0.4,
-                status=HypothesisStatus.OPEN,
+        # Phase 3a: competing open hypotheses → discriminating experiment first
+        if run.target and len(open_left) >= 2:
+            disc_hypos, disc_props = discriminating_experiment(
+                target=run.target,
+                open_hypotheses=open_left,
+                tried=tried,
             )
-            new_hypotheses.append(hypo)
-            proposals.append(
-                ActionProposal.create(
-                    tool="nmap",
-                    target=run.target,
-                    parameters={"args": ["-sV", "-T4", "--top-ports", "100"]},
-                    rationale="Little intelligence so far; a passive service scan may increase world-model coverage at low risk.",
-                    expected_info_gain=0.55 if len(facts) == 0 else 0.40,
-                    risk=1,
-                    requires_approval=False,
-                    hypothesis_id=hypo.id,
-                    estimated_cost=1,
+            if disc_props:
+                new_hypotheses.extend(disc_hypos)
+                proposals.extend(disc_props)
+                return ReasoningDecision.create(
+                    action=ReasoningAction.PROPOSE,
+                    summary="Multiple open hypotheses compete; proposing a discriminating experiment.",
+                    basis_fact_ids=tuple(node.id for node in facts[:16]),
+                    new_proposals=proposals,
+                    hypotheses=new_hypotheses,
                 )
-            )
 
-        # If we already tried the low-risk follow-up and still have almost no
-        # facts, do not keep re-proposing the same action — that is not autonomy,
-        # that is a loop.
+        # Phase 3b: modality ladder — switch capability when residual uncertainty remains
+        if run.target:
+            modality_props = next_modality_proposals(
+                target=run.target,
+                tried=tried,
+                has_web_surface=_has_web_surface(facts),
+                fact_count=len(facts),
+            )
+            if modality_props:
+                # Attach a fresh open hypothesis for the modality switch when sparse
+                if len(facts) < 3:
+                    hypo = Hypothesis.create(
+                        statement=(
+                            f"Target {run.target} may still expose unobserved surfaces "
+                            f"in the next research modality."
+                        ),
+                        confidence=0.4,
+                        status=HypothesisStatus.OPEN,
+                        metadata={"kind": "modality_switch"},
+                    )
+                    new_hypotheses.append(hypo)
+                    modality_props = [
+                        ActionProposal.create(
+                            tool=p.tool,
+                            target=p.target,
+                            parameters=p.parameters,
+                            rationale=p.rationale,
+                            expected_info_gain=p.expected_info_gain,
+                            risk=p.risk,
+                            requires_approval=p.requires_approval,
+                            hypothesis_id=hypo.id,
+                            estimated_cost=p.estimated_cost,
+                            metadata=dict(p.metadata),
+                        )
+                        for p in modality_props
+                    ]
+                proposals.extend(modality_props)
+
         if proposals:
             return ReasoningDecision.create(
                 action=ReasoningAction.PROPOSE,
-                summary="Residual uncertainty remains; emitting new low-risk ActionProposal(s).",
+                summary="Residual uncertainty remains; advancing along the modality ladder.",
                 basis_fact_ids=tuple(node.id for node in facts[:16]),
                 new_proposals=proposals,
                 hypotheses=new_hypotheses,
             )
 
-        open_left = [
-            h for h in new_hypotheses if h.status is HypothesisStatus.OPEN and h.confidence >= 0.25
-        ]
         if not open_left:
             return ReasoningDecision.create(
                 action=ReasoningAction.COMPLETE,
-                summary="No open high-value hypotheses remain and no new proposal is justified.",
+                summary="No open high-value hypotheses remain and no new modality step is justified.",
                 basis_fact_ids=tuple(node.id for node in facts[:16]),
                 hypotheses=new_hypotheses,
             )
 
         return ReasoningDecision.create(
             action=ReasoningAction.COMPLETE,
-            summary="Open hypotheses remain but no safe high-info-gain action is available without a new capability or human direction.",
+            summary=(
+                "Open hypotheses remain but every safe modality step has already been tried; "
+                "further progress needs a new capability or human direction."
+            ),
             basis_fact_ids=tuple(node.id for node in facts[:16]),
             hypotheses=new_hypotheses,
         )
