@@ -9,7 +9,7 @@ from tonmen.core.runtime import TonmenRuntime
 from tonmen.council import AssessmentCouncil
 from tonmen.evidence import GraphNode
 from tonmen.missions import MissionPlan, MissionRun, MissionRunState
-from tonmen.reasoning import MissionReasoner, ReasoningAction, ReasoningDecision
+from tonmen.reasoning import ConvergenceDetector, MissionReasoner, ReasoningAction, ReasoningDecision
 
 from .model import LoopStopReason, MissionLoopPolicy, MissionLoopResult
 
@@ -17,10 +17,10 @@ from .model import LoopStopReason, MissionLoopPolicy, MissionLoopResult
 class MissionLoop:
     """Bounded observe → reason → act loop.
 
-    Phase 1 complete: the loop receives ReasoningAction.PROPOSE, records
-    hypotheses / ActionProposals into the provenance graph, and schedules
-    eligible proposals through coordinator.execute_proposal under the same
-    Scope / risk / approval governance as fixed plan steps.
+    Phase 2:
+    - hypotheses are refreshed from evidence (supported / abandoned / open)
+    - duplicate tool+target proposals are suppressed by the reasoner
+    - ConvergenceDetector can stop the loop when further work has near-zero value
     """
 
     def __init__(
@@ -39,6 +39,7 @@ class MissionLoop:
             agents_per_round=self.policy.subagents_per_round,
         )
         self.checkpoint = checkpoint
+        self.convergence = ConvergenceDetector(min_idle_rounds=2, min_info_gain_threshold=0.35)
 
     def _emit(self, event_type: str, run: MissionRun, **data: object) -> None:
         if self.runtime.events is not None:
@@ -107,12 +108,43 @@ class MissionLoop:
             return True
         return False
 
+    def _apply_hypothesis_updates(self, run: MissionRun, decision: ReasoningDecision) -> None:
+        """Rewrite existing hypothesis nodes when the reasoner refreshes their status."""
+        for hypo in decision.hypotheses:
+            if hypo.id not in run.graph.nodes:
+                # brand-new hypotheses are handled by _record_hypotheses_and_proposals
+                continue
+            node = run.graph.nodes[hypo.id]
+            old_status = str(node.metadata.get("status", "open"))
+            new_meta = {
+                **dict(node.metadata),
+                "confidence": hypo.confidence,
+                "status": hypo.status.value,
+                "supporting_fact_ids": list(hypo.supporting_fact_ids),
+                "contradicting_fact_ids": list(hypo.contradicting_fact_ids),
+            }
+            run.graph.nodes[hypo.id] = GraphNode(
+                id=node.id,
+                kind=node.kind,
+                label=hypo.statement or node.label,
+                metadata=new_meta,
+            )
+            if old_status != hypo.status.value:
+                self._emit(
+                    "hypothesis.updated",
+                    run,
+                    hypothesis_id=hypo.id,
+                    old_status=old_status,
+                    status=hypo.status.value,
+                    confidence=hypo.confidence,
+                )
+
     def _record_hypotheses_and_proposals(
         self,
         run: MissionRun,
         decision: ReasoningDecision,
     ) -> None:
-        """Persist Phase-1 hypothesis / proposal objects into the provenance graph."""
+        """Persist new hypothesis / proposal objects into the provenance graph."""
         for hypo in decision.hypotheses:
             if hypo.id in run.graph.nodes:
                 continue
@@ -189,10 +221,6 @@ class MissionLoop:
         *,
         executions: int,
     ) -> int:
-        """Attempt to execute newly proposed actions under governance.
-
-        Returns the number of proposals that resulted in a real execution attempt.
-        """
         executed = 0
         for proposal in decision.new_proposals:
             if executions + executed >= self.policy.max_executions:
@@ -460,9 +488,24 @@ class MissionLoop:
                 proposal_count=len(decision.new_proposals),
             )
 
-            # Phase 1: persist any newly formed hypotheses / proposals
+            # Phase 2: rewrite existing hypothesis statuses, then record new ones
+            if decision.hypotheses:
+                self._apply_hypothesis_updates(run, decision)
             if decision.new_proposals or decision.hypotheses:
                 self._record_hypotheses_and_proposals(run, decision)
+
+            max_gain = max((p.expected_info_gain for p in decision.new_proposals), default=0.0)
+            report = self.convergence.observe(run, max_expected_info_gain=max_gain)
+            self._emit(
+                "convergence.observed",
+                run,
+                converged=report.converged,
+                reason=report.reason,
+                open_hypotheses=report.open_hypotheses,
+                recent_fact_gain=report.recent_fact_gain,
+                recent_proposal_gain=report.recent_proposal_gain,
+                max_expected_info_gain=report.max_expected_info_gain,
+            )
 
             self._record_iteration(
                 run,
@@ -480,6 +523,20 @@ class MissionLoop:
                 phase="live",
             )
             self._checkpoint(plan, run)
+
+            if report.converged and decision.action in {
+                ReasoningAction.COMPLETE,
+                ReasoningAction.PROPOSE,
+            } and not decision.new_proposals:
+                return self._result(
+                    plan,
+                    run,
+                    session_id=session_id,
+                    reason=LoopStopReason.CONVERGED,
+                    iterations=iteration,
+                    executions=executions,
+                    decision=decision,
+                )
 
             key = self._decision_key(decision)
             repeated[key] = repeated.get(key, 0) + 1
@@ -566,11 +623,17 @@ class MissionLoop:
                 )
 
             if run.state is MissionRunState.SUCCEEDED or decision.action is ReasoningAction.COMPLETE:
+                # Prefer CONVERGED when the detector agrees the world model is stable
+                reason = (
+                    LoopStopReason.CONVERGED
+                    if report.converged
+                    else LoopStopReason.COMPLETE
+                )
                 return self._result(
                     plan,
                     run,
                     session_id=session_id,
-                    reason=LoopStopReason.COMPLETE,
+                    reason=reason,
                     iterations=iteration,
                     executions=executions,
                     decision=decision,
