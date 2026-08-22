@@ -102,10 +102,10 @@ def test_lead_ai_console_assets_and_native_route_are_packaged():
     css = static.joinpath("lead-ai.css").read_text(encoding="utf-8")
 
     assert 'href="/lead"' in html
-    assert '"/lead": ["主導", "Lead AI"' in js
+    assert '"/lead": ["主导", "主导智能"' in js
     assert 'api("/api/ai/lead")' in js
-    assert "Total tokens" in js
-    assert "API Key <b>SERVER ONLY</b>" in js
+    assert "提供方：" in js
+    assert "密钥已配置：" in js
     assert ".lead-console-grid" in css
     assert ".lead-progress" in css
 

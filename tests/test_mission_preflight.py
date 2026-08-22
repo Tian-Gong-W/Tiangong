@@ -27,8 +27,8 @@ def test_console_mission_policy_uses_current_loop_defaults():
     assert policy.max_iterations == 8
     assert policy.max_executions == 3
     assert policy.max_duration_seconds == 1200
-    assert policy.assessment_rounds == 8
-    assert policy.subagents_per_round == 4
+    assert policy.assessment_rounds == 0
+    assert policy.subagents_per_round == 0
 
 
 def test_preflight_reports_timeout_assets_and_empty_ai_pool(monkeypatch, tmp_path):

@@ -6,20 +6,18 @@ def test_overview_is_utility_first_not_a_module_wall():
     html = static.joinpath("index.html").read_text(encoding="utf-8")
     css = static.joinpath("viewport.css").read_text(encoding="utf-8")
 
-    # Overview keeps the operational essentials.
+    # Overview keeps only the operational essentials in the lean layout.
     for required in (
-        'id="status-grid"',
         'id="command-deck"',
-        'id="mission-panel"',
+        'id="scope-panel"',
         'id="chronicle-panel"',
         'id="approval-panel"',
     ):
         assert required in html
 
-    # Detailed module content is not duplicated visually on the Overview.
-    assert "#overview #intel-panel,#overview #reason-panel,#overview .graph-panel{display:none!important}" in css
-    assert "#overview .scope-panel{display:none!important}" in css
-    assert "#overview .loop-visual{display:none!important}" in css
+    # Detailed module walls are absent from the Overview markup.
+    for removed in ('id="status-grid"', 'id="mission-panel"', 'id="intel-panel"', 'id="reason-panel"'):
+        assert removed not in html
 
     # Idle approval is hidden until a human decision is actually required.
     assert "#overview #approval-panel:has(.approval-body.idle){display:none!important}" in css
@@ -31,7 +29,6 @@ def test_overview_removes_nonfunctional_decorative_controls():
     # Do not imply functionality with fake notification/help/operator controls.
     assert ".brand-tagline,.header-icon,.operator-card,.sidebar-art,.sidebar-poem{display:none!important}" in css
 
-    # The summary strip and command deck should be compact and flat.
-    assert "#overview .status-card{min-height:58px" in css
+    # The command deck should remain compact and flat.
     assert "#overview .command-deck{" in css
     assert "box-shadow:none!important" in css

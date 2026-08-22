@@ -41,8 +41,8 @@
       max_iterations: Number(iterations?.value || 8),
       max_executions: Number(executions?.value || 3),
       max_duration_seconds: Number(duration?.value || 1200),
-      assessment_rounds: 8,
-      subagents_per_round: 4,
+      assessment_rounds: 0,
+      subagents_per_round: 0,
     };
   }
 

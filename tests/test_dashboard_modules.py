@@ -46,7 +46,7 @@ def test_module_workspace_assets_are_packaged_and_routed():
 
     assert "setInterval" in js
     assert "2500" in js
-    assert "Execution Content" in js
+    assert "执行内容" in js
     assert "stdout" in js
     assert "stderr" in js
     assert ".module-page-root" in css

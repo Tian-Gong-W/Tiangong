@@ -38,8 +38,9 @@ class MissionLoopPolicy:
     max_executions: int = field(default_factory=_default_max_executions)
     max_repeat_decisions: int = 2
     max_duration_seconds: int = 1200
-    assessment_rounds: int = 8
-    subagents_per_round: int = 4
+    # Council review is opt-in. These are hard ceilings, not a prescribed cadence.
+    assessment_rounds: int = 0
+    subagents_per_round: int = 0
 
     def __post_init__(self) -> None:
         if not 1 <= self.max_iterations <= 64:
@@ -50,10 +51,12 @@ class MissionLoopPolicy:
             raise ValueError("max_repeat_decisions must be between 1 and 8")
         if not 1 <= self.max_duration_seconds <= 10800:
             raise ValueError("max_duration_seconds must be between 1 and 10800")
-        if not 7 <= self.assessment_rounds <= 10:
-            raise ValueError("assessment_rounds must be between 7 and 10")
-        if not 3 <= self.subagents_per_round <= 5:
-            raise ValueError("subagents_per_round must be between 3 and 5")
+        if not 0 <= self.assessment_rounds <= 10:
+            raise ValueError("assessment_rounds must be between 0 and 10")
+        if not 0 <= self.subagents_per_round <= 5:
+            raise ValueError("subagents_per_round must be between 0 and 5")
+        if (self.assessment_rounds == 0) != (self.subagents_per_round == 0):
+            raise ValueError("assessment_rounds and subagents_per_round must both be zero or both be enabled")
 
 
 @dataclass(frozen=True, slots=True)

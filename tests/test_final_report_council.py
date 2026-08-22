@@ -65,17 +65,21 @@ def _completed_run(tmp_path, *, rounds=8, agents=4):
     return runtime, plan, second.run
 
 
-def test_assessment_policy_is_bounded_to_requested_ranges():
-    MissionLoopPolicy(assessment_rounds=7, subagents_per_round=3)
+def test_assessment_policy_is_opt_in_and_only_sets_hard_ceilings():
+    default = MissionLoopPolicy()
+    assert default.assessment_rounds == 0
+    assert default.subagents_per_round == 0
+
+    MissionLoopPolicy(assessment_rounds=1, subagents_per_round=1)
     MissionLoopPolicy(assessment_rounds=10, subagents_per_round=5)
     with pytest.raises(ValueError, match="assessment_rounds"):
-        MissionLoopPolicy(assessment_rounds=6)
-    with pytest.raises(ValueError, match="assessment_rounds"):
-        MissionLoopPolicy(assessment_rounds=11)
+        MissionLoopPolicy(assessment_rounds=11, subagents_per_round=1)
     with pytest.raises(ValueError, match="subagents_per_round"):
-        MissionLoopPolicy(subagents_per_round=2)
-    with pytest.raises(ValueError, match="subagents_per_round"):
-        MissionLoopPolicy(subagents_per_round=6)
+        MissionLoopPolicy(assessment_rounds=1, subagents_per_round=6)
+    with pytest.raises(ValueError, match="both be zero or both be enabled"):
+        MissionLoopPolicy(assessment_rounds=1, subagents_per_round=0)
+    with pytest.raises(ValueError, match="both be zero or both be enabled"):
+        MissionLoopPolicy(assessment_rounds=0, subagents_per_round=1)
 
 
 def test_terminal_mission_converges_before_max_rounds_when_evidence_is_unchanged(tmp_path):
@@ -174,7 +178,8 @@ def test_dashboard_terminal_checkpoint_publishes_final_report_event(tmp_path):
 
     report = state.report(result.run.id)
     assert report["report_type"] == "final"
-    assert 1 <= report["summary"]["assessment_rounds"] < 8
+    assert report["summary"]["assessment_rounds"] == 0
+    assert report["summary"]["subagent_reviews"] == 0
     events = state.event_stream(0, timeout=0, limit=500)["events"]
     ready = [event for event in events if event["type"] == "report.ready"]
     assert ready
