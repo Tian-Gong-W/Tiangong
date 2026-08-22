@@ -18,6 +18,14 @@ _WORKSPACE_ASSETS = {
     "mission-workspace.css": "text/css; charset=utf-8",
     "mission-workspace.js": "text/javascript; charset=utf-8",
 }
+_BASE_SCRIPTS = (
+    "app.js",
+    "deck.js",
+    "module-pages.js",
+    "events.js",
+    "history-delete.js",
+    "reports.js",
+)
 
 
 class DashboardState(SimpleViewDashboardState):
@@ -34,6 +42,20 @@ class DashboardState(SimpleViewDashboardState):
 class MissionWorkspaceDashboardHandler(SimpleViewDashboardHandler):
     def _index(self) -> bytes:
         text = super()._index().decode("utf-8")
+
+        # The base server historically concatenated six independent JavaScript
+        # modules into /assets/app.js. One syntax error then prevented the browser
+        # from parsing the entire bundle and made every Console control appear dead.
+        # The production Console now loads those modules independently so a defect
+        # remains failure-contained to its own module.
+        legacy_app = '<script src="/assets/app.js?v=lean-nav-1"></script>'
+        if legacy_app in text:
+            scripts = "\n".join(
+                f'  <script src="/assets/{name}?v=console-p0-1"></script>'
+                for name in _BASE_SCRIPTS
+            )
+            text = text.replace(legacy_app, scripts)
+
         if "/assets/mission-workspace.css" not in text:
             text = text.replace(
                 "</head>",
@@ -50,6 +72,15 @@ class MissionWorkspaceDashboardHandler(SimpleViewDashboardHandler):
         path = urlparse(self.path).path.rstrip("/") or "/"
         if path.startswith("/assets/"):
             name = unquote(path.removeprefix("/assets/"))
+
+            # Intercept app.js before the legacy base handler can append the other
+            # modules. The remaining base scripts are served individually by the
+            # inherited static asset handler.
+            if name == "app.js":
+                payload = resources.files("tonmen.dashboard.static").joinpath(name).read_bytes()
+                self._send_bytes(200, "text/javascript; charset=utf-8", payload, cache="no-store")
+                return
+
             content_type = _WORKSPACE_ASSETS.get(name)
             if content_type is not None:
                 payload = resources.files("tonmen.dashboard.static").joinpath(name).read_bytes()
