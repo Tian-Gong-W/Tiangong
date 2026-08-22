@@ -2,19 +2,46 @@ from __future__ import annotations
 
 from typing import Any
 
+from tonmen.ai import LeadAIOrchestrator, ProviderHub
+
 from .engine import AssessmentCouncil as BaseAssessmentCouncil
 
 
 class AssessmentCouncil(BaseAssessmentCouncil):
-    """Assessment Council that restores Provider Hub usage from Mission provenance.
+    """Failure-contained, opt-in Council wrapper.
 
-    MissionLoop resume creates a fresh Council instance. Before each new round we
-    rebuild provider token/failure counters from persisted council.subagent nodes so
-    TONMEN-local per-mission budgets cannot be reset simply by resuming a mission.
+    Council review is no longer a mandatory mission cadence. ``0/0`` disables it;
+    non-zero values are hard ceilings only. The core runtime can therefore operate
+    with one Lead and no standing review committee unless a caller explicitly opts in.
     """
 
+    def __init__(
+        self,
+        *,
+        target_rounds: int = 0,
+        agents_per_round: int = 0,
+        lead_ai: LeadAIOrchestrator | None = None,
+        provider_hub: ProviderHub | None = None,
+    ) -> None:
+        rounds = int(target_rounds)
+        agents = int(agents_per_round)
+        if not 0 <= rounds <= 10:
+            raise ValueError("assessment_rounds must be between 0 and 10")
+        if not 0 <= agents <= 5:
+            raise ValueError("subagents_per_round must be between 0 and 5")
+        if (rounds == 0) != (agents == 0):
+            raise ValueError("assessment_rounds and subagents_per_round must both be zero or both be enabled")
+
+        # Initialize the same runtime dependencies as BaseAssessmentCouncil without
+        # inheriting its legacy 7-10 / 3-5 prescribed ranges.
+        self.target_rounds = rounds
+        self.agents_per_round = agents
+        self.lead_ai = lead_ai or LeadAIOrchestrator()
+        self.provider_hub = provider_hub or ProviderHub()
+
     def record_round(self, plan: Any, run: Any, **kwargs: Any) -> str | None:
-        prime = getattr(self.provider_hub, "prime_usage_from_run", None)
-        if callable(prime):
-            prime(run)
+        if self.target_rounds == 0 or self.agents_per_round == 0:
+            return None
+        if self._existing_rounds(run) >= self.target_rounds:
+            return None
         return super().record_round(plan, run, **kwargs)
