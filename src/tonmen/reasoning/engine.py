@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tonmen.missions import MissionPlan, MissionRun, MissionRunState, StepExecutionState
+from tonmen.missions import MissionPlan, MissionRun, MissionRunState, StepExecutionState, iter_plan_executions
 
 from .modalities import discriminating_experiment, next_modality_proposals
 from .model import ActionProposal, Hypothesis, HypothesisStatus, ReasoningAction, ReasoningDecision
@@ -13,7 +13,7 @@ def _intelligence_nodes(run: MissionRun):
 
 
 def _waiting_pair(plan: MissionPlan, run: MissionRun):
-    for planned, execution in zip(plan.steps, run.steps, strict=True):
+    for planned, execution in iter_plan_executions(plan, run):
         if execution.state is StepExecutionState.WAITING_APPROVAL:
             return planned, execution
     return None
@@ -175,7 +175,7 @@ class MissionReasoner:
 
         pending = [
             (planned, execution)
-            for planned, execution in zip(plan.steps, run.steps, strict=True)
+            for planned, execution in iter_plan_executions(plan, run)
             if execution.state is StepExecutionState.PENDING
         ]
         if pending:
