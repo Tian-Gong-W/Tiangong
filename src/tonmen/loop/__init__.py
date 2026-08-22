@@ -1,4 +1,4 @@
-from .engine import MissionLoop
+from .director_engine import MissionLoop
 from .model import LoopStopReason, MissionLoopPolicy, MissionLoopResult
 
 __all__ = ["LoopStopReason", "MissionLoop", "MissionLoopPolicy", "MissionLoopResult"]
