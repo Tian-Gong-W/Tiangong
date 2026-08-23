@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tonmen.tools.base import RiskLevel, ToolAdapter, ToolRequest, ToolSpec
+from tonmen.tools.base import CostEstimate, RiskLevel, ToolAdapter, ToolRequest, ToolSpec
 from tonmen.tools.validation import reject_unknown_parameters, validate_web_target
 
 
@@ -11,6 +11,13 @@ class HttpxAdapter(ToolAdapter):
         description="HTTP service probing and metadata collection",
         risk=RiskLevel.DISCOVERY,
         capabilities=("http.probe", "http.metadata", "technology.detect"),
+        accepts=("url", "host"),
+        produces=("web_observation", "technology_observation"),
+        modalities=("http", "text"),
+        estimated_cost=CostEstimate(wall_seconds=5, network_requests=2),
+        replayable=True,
+        isolation_profile="scoped_network",
+        default_parameters=(("follow_redirects", False), ("timeout", 10)),
     )
 
     def validate(self, request: ToolRequest) -> None:
