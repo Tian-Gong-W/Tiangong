@@ -50,7 +50,7 @@ class CapabilityResolver:
             matched_products = tuple(product for product in request.required_products if product in products)
             matched_modalities = tuple(modality for modality in request.preferred_modalities if modality in modalities)
 
-            if requested_products and not matched_products:
+            if request.require_product_match and requested_products and not matched_products:
                 continue
             if accepted_capabilities and not accepted_capabilities.intersection(capabilities):
                 continue
@@ -83,7 +83,10 @@ class CapabilityResolver:
                 if requested_modalities
                 else 0.0
             )
-            relevance = 1.0 + (0.55 * product_fraction) + (0.15 * modality_fraction)
+            # A non-matching exploratory adapter is still eligible, but carries a
+            # modest relevance score instead of being silently excluded.
+            novelty_floor = 0.25 if requested_products and not matched_products else 0.0
+            relevance = 1.0 + (0.55 * product_fraction) + (0.15 * modality_fraction) + novelty_floor
             approval_penalty = 1.15 if policy.decision is Decision.REQUIRE_APPROVAL or spec.requires_approval else 1.0
             score = (max(0.01, request.expected_info_gain) * relevance) / (cost * approval_penalty)
 
