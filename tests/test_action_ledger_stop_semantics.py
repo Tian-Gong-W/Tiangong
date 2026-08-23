@@ -7,6 +7,7 @@ from tonmen.loop import LoopStopReason, MissionLoop, MissionLoopPolicy
 from tonmen.missions import (
     ActionLedger,
     MissionPlan,
+    MissionRun,
     MissionRunState,
     MissionStep,
     StepExecutionState,
@@ -48,8 +49,7 @@ def test_action_ledger_round_trips_through_existing_chronicle_schema(tmp_path):
             )
         ],
     )
-    runtime = _runtime(tmp_path)
-    run = runtime and __import__("tonmen.missions", fromlist=["MissionRun"]).MissionRun.create(plan)
+    run = MissionRun.create(plan)
     ledger = ActionLedger(run.steps, legacy_slots=len(plan.steps))
     dynamic = ledger.append_dynamic(
         action_id="dynamic:proposal-1",
@@ -96,8 +96,8 @@ def test_convergence_detector_now_terminates_the_live_loop(tmp_path):
     assert result.stop_reason is LoopStopReason.CONVERGED
     assert result.iterations == 2
     assert result.run.state is MissionRunState.RUNNING
-    observations = [node for node in result.run.graph.nodes.values() if node.kind == "loop.stop"]
-    assert observations[-1].metadata["reason"] == "converged"
+    stops = [node for node in result.run.graph.nodes.values() if node.kind == "loop.stop"]
+    assert stops[-1].metadata["reason"] == "converged"
 
 
 def test_complete_is_reserved_for_positive_mission_completion(tmp_path):
