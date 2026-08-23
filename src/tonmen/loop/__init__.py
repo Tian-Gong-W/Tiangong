@@ -13,6 +13,15 @@ class MissionLoop(_DirectorMissionLoop):
         self.director = MissionDirector(self.runtime, reasoner=self.reasoner)
         self.reasoner = self.director.reasoner
 
+    def _emit(self, event_type, run, **data) -> None:
+        # `target` is reserved by the base event envelope for Mission identity.
+        # Dynamic proposal events historically also used `target`, which only
+        # surfaced once P4 caused more late-bound proposals on Console runtimes.
+        # Preserve both meanings without duplicate keyword collisions.
+        if "target" in data:
+            data = {"action_target": data["target"], **{key: value for key, value in data.items() if key != "target"}}
+        super()._emit(event_type, run, **data)
+
     def _schedule_one_proposal(self, run, decision, *, approval_tokens, plan=None) -> int:
         proposal = decision.new_proposals[0]
         scheduled = super()._schedule_one_proposal(
