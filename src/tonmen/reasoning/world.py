@@ -8,6 +8,16 @@ from tonmen.missions import ActionOutcome, ActionOutcomeKind, MissionRun, StepEx
 from .model import Hypothesis, HypothesisStatus
 
 
+_PRODUCT_ALIASES = {
+    "host": ("host_observation",),
+    "service": ("service_observation",),
+    # Current intelligence parser emits one WEB fact for HTTP metadata. Expose
+    # both the parser vocabulary and CapabilitySpec products in WorldModel.
+    "web": ("web_observation", "http_observation", "technology_observation"),
+    "finding": ("finding", "validation_observation"),
+}
+
+
 @dataclass(frozen=True, slots=True)
 class EvidenceNeed:
     hypothesis_id: str
@@ -23,12 +33,11 @@ class EvidenceNeed:
 
 @dataclass(frozen=True, slots=True)
 class WorldModel:
-    """Evidence-derived research state consumed by the Mission Director.
+    """Deterministic evidence-derived research state for the Mission Director.
 
-    The graph remains the durable provenance store. WorldModel is a deterministic
-    projection over that graph plus the ActionLedger-compatible execution history,
-    so it can always be rebuilt after restart instead of becoming a second source
-    of truth.
+    The graph remains the durable provenance store. This object is rebuilt from
+    graph + ActionLedger-compatible execution history after every turn, so it is
+    not a second mutable truth store.
     """
 
     target: str
@@ -83,9 +92,10 @@ class WorldModel:
 
         observed_products: list[str] = []
         for kind in fact_kinds:
-            product = "finding" if kind == "finding" else f"{kind}_observation"
-            if product not in observed_products:
-                observed_products.append(product)
+            aliases = _PRODUCT_ALIASES.get(kind, (f"{kind}_observation",))
+            for product in aliases:
+                if product not in observed_products:
+                    observed_products.append(product)
 
         hypotheses: list[Hypothesis] = []
         contradiction_fact_ids: list[str] = []
