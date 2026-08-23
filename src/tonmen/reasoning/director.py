@@ -267,13 +267,19 @@ class MissionDirector:
 
     @classmethod
     def _matching_pending_step(cls, plan: MissionPlan, run: MissionRun, candidate: _CapabilityCandidate):
+        """Reuse only the next legacy slot; never let Coordinator order override Director selection."""
         for planned, execution in iter_plan_executions(plan, run):
             if execution.state is not StepExecutionState.PENDING:
                 continue
-            if planned.tool.strip().lower() != candidate.spec.name.strip().lower():
-                continue
-            if cls._same_target_identity(planned.target, candidate.target):
+            if (
+                planned.tool.strip().lower() == candidate.spec.name.strip().lower()
+                and cls._same_target_identity(planned.target, candidate.target)
+            ):
                 return planned, execution
+            # Coordinator.advance_once executes the first pending slot. If the
+            # selected capability is later in the frozen plan, materialize it as a
+            # dynamic Action instead of pretending the later slot would execute.
+            return None
         return None
 
     def _candidate_decision(
