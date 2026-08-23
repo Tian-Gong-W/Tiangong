@@ -1,0 +1,78 @@
+name: Sync labeled pull-request auto-merge
+
+on:
+  pull_request_target:
+    types:
+      - labeled
+      - unlabeled
+      - opened
+      - reopened
+      - ready_for_review
+      - converted_to_draft
+      - synchronize
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync-automerge:
+    name: Sync automerge with label
+    if: github.event.pull_request.base.ref == 'Top-Men'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable or disable squash auto-merge
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pullRequest = context.payload.pull_request;
+            const hasAutoMergeLabel = pullRequest.labels.some(
+              (label) => label.name === 'automerge',
+            );
+            const shouldEnable = hasAutoMergeLabel && !pullRequest.draft;
+
+            const result = await github.graphql(
+              `query PullRequestAutoMergeState($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    id
+                    autoMergeRequest { enabledAt mergeMethod }
+                  }
+                }
+              }`,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                number: pullRequest.number,
+              },
+            );
+
+            const currentAutoMerge = result.repository.pullRequest.autoMergeRequest;
+
+            if (shouldEnable && !currentAutoMerge) {
+              await github.graphql(
+                `mutation EnableAutoMerge($pullRequestId: ID!) {
+                  enablePullRequestAutoMerge(
+                    input: { pullRequestId: $pullRequestId, mergeMethod: SQUASH }
+                  ) {
+                    pullRequest { number }
+                  }
+                }`,
+                { pullRequestId: result.repository.pullRequest.id },
+              );
+              core.info(`Enabled squash auto-merge for #${pullRequest.number}.`);
+            } else if (!shouldEnable && currentAutoMerge) {
+              await github.graphql(
+                `mutation DisableAutoMerge($pullRequestId: ID!) {
+                  disablePullRequestAutoMerge(
+                    input: { pullRequestId: $pullRequestId }
+                  ) {
+                    pullRequest { number }
+                  }
+                }`,
+                { pullRequestId: result.repository.pullRequest.id },
+              );
+              core.info(`Disabled auto-merge for #${pullRequest.number}.`);
+            } else {
+              core.info(`No auto-merge change is needed for #${pullRequest.number}.`);
+            }
