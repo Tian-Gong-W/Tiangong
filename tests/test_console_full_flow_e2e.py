@@ -154,8 +154,8 @@ def test_production_console_full_http_mission_lifecycle(tmp_path, monkeypatch):
         # exposing the grant token to the browser response.
         approved = post_json(f"/api/missions/{run_id}/approve", {})
         assert approved["status"] in {"accepted", "running", "completed"}
-        assert approved.get("approval_token_exposed") is not True
-        assert "token" not in json.dumps(approved).lower()
+        assert approved.get("approval_token_exposed") is False
+        assert not ({"token", "approval_token", "grant", "grant_token"} & set(approved))
 
         approval_done = _wait_until(
             lambda: get_json(f"/api/missions/{run_id}/approval-status"),
@@ -182,7 +182,7 @@ def test_production_console_full_http_mission_lifecycle(tmp_path, monkeypatch):
         assert "error" not in report
         with urlopen(f"{base}/api/missions/{run_id}/report?format=markdown", timeout=3) as response:
             markdown = response.read().decode("utf-8")
-        assert response.status == 200
+            assert response.status == 200
         assert markdown.strip()
 
         audit = get_json("/api/audit?limit=200")
