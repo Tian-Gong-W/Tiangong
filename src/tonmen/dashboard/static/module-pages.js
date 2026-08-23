@@ -38,7 +38,7 @@
     "/approval": ["审批队列", "Approval", "所有等待人工批准的步骤。"]
   };
 
-  const esc = value => String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&","<":"<",">":">",'"':""","'":"&#39;"}[ch]));
+  const esc = value => String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
   const nowText = () => new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"});
   const fmt = value => value ? new Date(value).toLocaleString() : "—";
   const short = value => String(value || "").slice(0, 8);
