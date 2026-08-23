@@ -5,10 +5,10 @@ from time import monotonic
 from typing import Any, Mapping
 from uuid import uuid4
 
-from tonmen.missions import MissionPlan, MissionRun, MissionRunState
+from tonmen.missions import MissionPlan, MissionRun, MissionRunState, iter_plan_executions
 
 from .config import LeadAIConfig
-from .provider import OpenAIResponsesProvider
+from .provider import MistralAgentProvider, OpenAIResponsesProvider
 
 _ALLOWED_ACTIONS = {
     "continue_governed_plan",
@@ -84,7 +84,7 @@ class LeadAIOrchestrator:
         self,
         config: LeadAIConfig | None = None,
         *,
-        provider: OpenAIResponsesProvider | None = None,
+        provider: OpenAIResponsesProvider | MistralAgentProvider | None = None,
     ) -> None:
         self.config_error: str | None = None
         if config is None:
@@ -96,9 +96,14 @@ class LeadAIOrchestrator:
         self.config = config
         if provider is not None:
             self.provider = provider
-        elif self.config.enabled and self.config.provider == "openai":
+        elif self.config.enabled:
             try:
-                self.provider = OpenAIResponsesProvider(self.config)
+                if self.config.provider == "openai":
+                    self.provider = OpenAIResponsesProvider(self.config)
+                elif self.config.provider == "mistral":
+                    self.provider = MistralAgentProvider(self.config)
+                else:
+                    self.provider = None
             except Exception as exc:
                 self.config_error = str(exc)[:240]
                 self.provider = None
@@ -147,7 +152,20 @@ class LeadAIOrchestrator:
                     "has_evidence": bool(execution.evidence_id),
                     "error": (execution.error or "")[:240],
                 }
-                for planned, execution in zip(plan.steps, run.steps, strict=True)
+                for planned, execution in iter_plan_executions(plan, run)
+            ],
+            "dynamic_actions": [
+                {
+                    "id": execution.id,
+                    "tool": execution.tool,
+                    "target": execution.target,
+                    "state": execution.state.value,
+                    "risk": execution.metadata.get("risk"),
+                    "requires_approval": bool(execution.metadata.get("requires_approval")),
+                    "has_evidence": bool(execution.evidence_id),
+                    "error": (execution.error or "")[:240],
+                }
+                for execution in run.steps[len(plan.steps) :]
             ],
             "evidence": [
                 {
@@ -172,7 +190,6 @@ class LeadAIOrchestrator:
                 for node in facts[-20:]
             ],
             "constraints": {
-                "existing_plan_only": True,
                 "execution_authority": False,
                 "approval_authority": False,
                 "scope_authority": False,
@@ -233,6 +250,7 @@ class LeadAIOrchestrator:
             confidence = round(float(result.get("confidence", 0.5)), 2)
             if not 0 <= confidence <= 1:
                 raise ValueError("Lead AI confidence must be between 0 and 1")
+            provider_model = getattr(self.provider, "last_model", None) or self.config.model
             return LeadDirective(
                 id=uuid4().hex,
                 round=round_number,
@@ -244,7 +262,7 @@ class LeadAIOrchestrator:
                 confidence=confidence,
                 source="model",
                 provider=self.config.provider,
-                model=self.config.model,
+                model=str(provider_model)[:160],
                 latency_ms=latency_ms,
                 **usage,
             )
