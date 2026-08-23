@@ -8,7 +8,7 @@ from tonmen.assets import build_resolved_asset_set
 from tonmen.core.runtime import TonmenRuntime
 from tonmen.missions import MissionPlan, MissionStep
 from tonmen.policy import Decision, TargetScope
-from tonmen.tools import ToolRequest
+from tonmen.tools import CapabilitySpec, RiskLevel, ToolRequest
 
 
 class MissionPlanningDenied(RuntimeError):
@@ -27,7 +27,11 @@ def _resolved_ip_coverage_enabled() -> bool:
 
 
 class MissionPlanner:
-    """Build governed plans from capabilities plus passive asset observations.
+    """Build a governed compatibility plan from registered capabilities.
+
+    The plan is no longer the runtime heartbeat; ``MissionDirector`` chooses each
+    next action. This projection remains for CLI/report compatibility and initial
+    execution slots while that legacy surface is retired.
 
     DNS resolution never grants execution authority. Direct resolved-IP fanout is
     explicit and bounded: TONMEN_RESOLVED_IP_COVERAGE=1 must be set, every concrete
@@ -44,6 +48,23 @@ class MissionPlanner:
         self.runtime = runtime
         self.asset_resolver = asset_resolver or (lambda target, scope: build_resolved_asset_set(target, scope))
 
+    @staticmethod
+    def _legacy_priority(spec: CapabilitySpec) -> int:
+        semantics = set(spec.capabilities)
+        if "host.scan" in semantics or "port.scan" in semantics:
+            return 10
+        if "http.probe" in semantics:
+            return 20
+        if spec.risk >= RiskLevel.VALIDATION:
+            return 30
+        return 100
+
+    @staticmethod
+    def _target_for(spec: CapabilitySpec, target: str) -> str:
+        if spec.accepts and "url" not in spec.accepts and "host" in spec.accepts:
+            return _host_target(target)
+        return target
+
     def plan(self, target: str) -> MissionPlan:
         if self.runtime.scope is None or not self.runtime.scope.is_allowed(target):
             raise MissionPlanningDenied("target is outside the authorized scope")
@@ -52,17 +73,6 @@ class MissionPlanner:
         if not isinstance(asset_set, dict):
             raise MissionPlanningDenied("asset resolver returned invalid data")
 
-        defaults = {
-            "nmap": {"ports": "80,443", "service_detection": False},
-            "httpx": {"follow_redirects": False, "timeout": 10},
-            "nuclei": {"severity": ("medium", "high", "critical"), "rate_limit": 10, "timeout": 10},
-        }
-        rationales = {
-            "nmap": "Establish a minimal TCP reachability view on common web ports without version probing.",
-            "httpx": "Collect HTTP status, title and technology metadata while preserving hostname/SNI semantics.",
-            "nuclei": "Validate higher-confidence web findings only after explicit approval.",
-        }
-        order = {"nmap": 10, "httpx": 20, "nuclei": 30}
         steps: list[MissionStep] = []
         host = _host_target(target)
         authorized_addresses = [
@@ -73,46 +83,48 @@ class MissionPlanner:
         eligible_direct_targets = [item for item in authorized_addresses if item != host]
         coverage_enabled = _resolved_ip_coverage_enabled()
 
-        # Base web mission consumes three execution slots: hostname Nmap, HTTPx and
-        # approval-gated Nuclei. Keep total generated steps within the existing
-        # MissionLoop max_executions hard ceiling of 16.
-        max_extra_backends = 13
+        adapters = sorted(self.runtime.registry, key=lambda item: self._legacy_priority(item.spec))
+        base_slots = max(1, len(adapters))
+        max_extra_backends = max(0, 16 - base_slots)
         direct_coverage_targets = eligible_direct_targets[:max_extra_backends] if coverage_enabled else []
         deferred_due_to_bound = eligible_direct_targets[max_extra_backends:] if coverage_enabled else []
 
-        for adapter in sorted(self.runtime.registry, key=lambda item: order.get(item.spec.name, 100)):
-            parameters = defaults.get(adapter.spec.name, {})
-            targets = [host, *direct_coverage_targets] if adapter.spec.name == "nmap" else [target]
+        for adapter in adapters:
+            spec = adapter.spec
+            parameters = dict(spec.default_parameters)
+            semantics = set(spec.capabilities)
+            is_network_discovery = "host.scan" in semantics or "port.scan" in semantics
+            targets = [host, *direct_coverage_targets] if is_network_discovery else [self._target_for(spec, target)]
 
             seen_targets: set[str] = set()
             for step_target in targets:
                 if step_target in seen_targets:
                     continue
                 seen_targets.add(step_target)
-                request = ToolRequest(tool=adapter.spec.name, target=step_target, parameters=parameters)
+                request = ToolRequest(tool=spec.name, target=step_target, parameters=parameters)
                 adapter.validate(request)
-                decision = self.runtime.policy.evaluate(adapter.spec, request)
+                decision = self.runtime.policy.evaluate(spec, request)
                 if decision.decision is Decision.DENY:
                     continue
-                requires_approval = decision.decision is Decision.REQUIRE_APPROVAL
-                rationale = rationales.get(adapter.spec.name, adapter.spec.description)
-                if adapter.spec.name == "nmap" and step_target != host:
+                requires_approval = decision.decision is Decision.REQUIRE_APPROVAL or spec.requires_approval
+                rationale = spec.description
+                if is_network_discovery and step_target != host:
                     rationale = (
-                        "Cover an independently authorized DNS-resolved backend on common web ports; "
+                        "Cover an independently authorized DNS-resolved backend with this network capability; "
                         "DNS resolution itself did not grant Scope."
                     )
                 steps.append(
                     MissionStep.create(
-                        tool=adapter.spec.name,
+                        tool=spec.name,
                         target=step_target,
                         parameters=parameters,
-                        risk=int(adapter.spec.risk),
+                        risk=int(spec.risk),
                         requires_approval=requires_approval,
                         rationale=rationale,
                     )
                 )
 
-        recommended_max_executions = min(16, max(3, len(steps)))
+        recommended_max_executions = min(16, max(1, len(steps)))
         coverage = {
             "primary_hostname": host,
             "web_target": target,
@@ -124,9 +136,8 @@ class MissionPlanner:
             "needs_scope": list(asset_set.get("needs_scope", [])),
             "web_backend_fanout": False,
             "note": (
-                "DNS answers are observations only. Direct resolved-IP Nmap coverage requires both independent IP/CIDR Scope "
-                "and TONMEN_RESOLVED_IP_COVERAGE=1. Fanout is bounded so the generated Mission stays within 16 executions. "
-                "HTTPx/Nuclei stay on the hostname to preserve Host/SNI routing."
+                "DNS answers are observations only. Direct resolved-IP network coverage requires both independent IP/CIDR Scope "
+                "and TONMEN_RESOLVED_IP_COVERAGE=1. The compatibility projection is bounded to the runtime execution ceiling."
             ),
         }
         return MissionPlan.create(
