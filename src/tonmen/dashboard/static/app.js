@@ -3,7 +3,14 @@
   const csrf = document.querySelector('meta[name="tonmen-csrf"]').content;
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => [...document.querySelectorAll(sel)];
-  const state = { missions: [], current: null, status: null, scope: null };
+  const state = {
+    missions: [],
+    current: null,
+    status: null,
+    scope: null,
+    refreshing: false,
+    polling: false
+  };
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
   const api = async (url, options = {}) => {
     const opts = { ...options, headers: { ...(options.headers || {}) } };
@@ -124,11 +131,13 @@
       renderApproval(null);
       renderChronicle(null);
       updateDeck(null);
-      toast(`无法加载任务：${e.message}`, true);
+      toast(`加载任务失败：${e.message}`, true);
     }
   }
 
   async function refreshAll(preferredId = null) {
+    if (state.refreshing) return;
+    state.refreshing = true;
     try {
       const [status, scope, ms] = await Promise.all([
         api("/api/status").catch(() => null),
@@ -152,7 +161,11 @@
           strong.style.color = ready ? "var(--green)" : "var(--amber)";
         }
       }
-    } catch (e) { toast(e.message, true); }
+    } catch (e) {
+      toast(e.message, true);
+    } finally {
+      state.refreshing = false;
+    }
   }
 
   async function approveCurrent() {
@@ -269,12 +282,17 @@
 
   refreshAll();
   setInterval(async () => {
-    if (document.hidden) return;
+    if (document.hidden || state.polling) return;
+    state.polling = true;
     try {
       const ms = await api("/api/missions");
       state.missions = ms.missions || [];
       if (state.current) await loadMission(state.current.id);
       else if (state.missions[0]) await loadMission(state.missions[0].id);
-    } catch (_) {}
+    } catch (_) {
+      // Polling is supplemental; the event stream and manual refresh remain active.
+    } finally {
+      state.polling = false;
+    }
   }, 5000);
 })();
