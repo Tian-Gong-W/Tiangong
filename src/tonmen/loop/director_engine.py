@@ -4,8 +4,16 @@ from time import monotonic
 from typing import Mapping
 from uuid import uuid4
 
-from tonmen.missions import MissionPlan, MissionRun, MissionRunState, StepExecutionState, iter_plan_executions
-from tonmen.reasoning import MissionDirector, ReasoningAction, ReasoningDecision
+from tonmen.evidence import GraphNode
+from tonmen.missions import (
+    MissionPlan,
+    MissionRun,
+    MissionRunState,
+    StepExecution,
+    StepExecutionState,
+    iter_plan_executions,
+)
+from tonmen.reasoning import ActionProposal, MissionDirector, ReasoningAction, ReasoningDecision
 
 from .engine import MissionLoop as _LegacyMissionLoop
 from .model import LoopStopReason, MissionLoopResult
@@ -63,6 +71,100 @@ class MissionLoop(_LegacyMissionLoop):
                 return False
             return True
         return False
+
+    @staticmethod
+    def _dynamic_execution(run: MissionRun, proposal_id: str) -> StepExecution | None:
+        for execution in run.steps:
+            if not bool(execution.metadata.get("dynamic")):
+                continue
+            if str(execution.metadata.get("proposal_id") or "") == proposal_id:
+                return execution
+        return None
+
+    def _materialize_dynamic_wait(self, run: MissionRun, proposal: ActionProposal) -> StepExecution:
+        step_id = f"dynamic:{proposal.id}"
+        execution = self._dynamic_execution(run, proposal.id)
+        if execution is None:
+            execution = StepExecution(
+                step_id=step_id,
+                tool=proposal.tool,
+                target=proposal.target,
+                state=StepExecutionState.WAITING_APPROVAL,
+                error="explicit approval grant required",
+                metadata={
+                    "dynamic": True,
+                    "proposal_id": proposal.id,
+                    "hypothesis_id": proposal.hypothesis_id,
+                    "expected_info_gain": proposal.expected_info_gain,
+                    "risk": proposal.risk,
+                    "rationale": proposal.rationale,
+                    "requires_approval": proposal.requires_approval,
+                },
+            )
+            run.steps.append(execution)
+        else:
+            execution.state = StepExecutionState.WAITING_APPROVAL
+            execution.error = "explicit approval grant required"
+
+        if step_id not in run.graph.nodes:
+            run.graph.add_node(
+                GraphNode(
+                    id=step_id,
+                    kind="step.dynamic",
+                    label=f"{proposal.tool}:{proposal.target}",
+                    metadata={
+                        "risk": proposal.risk,
+                        "requires_approval": proposal.requires_approval,
+                        "proposal_id": proposal.id,
+                        "dynamic": True,
+                    },
+                )
+            )
+            run.graph.link(run.id, "contains", step_id)
+            if proposal.id in run.graph.nodes:
+                run.graph.link(proposal.id, "realized_as", step_id)
+
+        proposal_node = run.graph.nodes.get(proposal.id)
+        if proposal_node is not None:
+            run.graph.nodes[proposal.id] = GraphNode(
+                id=proposal_node.id,
+                kind=proposal_node.kind,
+                label=proposal_node.label,
+                metadata={**dict(proposal_node.metadata), "status": "waiting_approval", "action_id": step_id},
+            )
+
+        run.state = MissionRunState.WAITING_APPROVAL
+        return execution
+
+    def _schedule_one_proposal(
+        self,
+        run: MissionRun,
+        decision: ReasoningDecision,
+        *,
+        approval_tokens: Mapping[str, str],
+    ) -> int:
+        """Choose exactly one candidate ActionProposal for this reasoning turn."""
+        proposal = decision.new_proposals[0]
+        step_id = f"dynamic:{proposal.id}"
+        token = approval_tokens.get(step_id)
+        existing = self._dynamic_execution(run, proposal.id)
+
+        if existing is not None and existing.state is StepExecutionState.WAITING_APPROVAL and not token:
+            run.state = MissionRunState.WAITING_APPROVAL
+            return 0
+
+        if existing is not None and existing.state is StepExecutionState.WAITING_APPROVAL and token:
+            # Coordinator.execute_proposal still creates the execution record. Remove
+            # the parked placeholder so the approved action keeps one stable step id
+            # instead of leaving duplicate runtime entries.
+            run.steps.remove(existing)
+            run.state = MissionRunState.RUNNING
+
+        accepted = self.coordinator.execute_proposal(run, proposal, approval_token=token)
+        if accepted and run.state is MissionRunState.WAITING_APPROVAL:
+            self._materialize_dynamic_wait(run, proposal)
+            return 0
+        return 1 if accepted else 0
 
     def _advance_legacy_once(
         self,
@@ -158,14 +260,20 @@ class MissionLoop(_LegacyMissionLoop):
                         executions=executions,
                         decision=decision,
                     )
-                scheduled = self._schedule_proposals(run, decision, executions=executions)
+                selected = decision.new_proposals[0]
+                scheduled = self._schedule_one_proposal(
+                    run,
+                    decision,
+                    approval_tokens=approval_tokens,
+                )
                 executions += scheduled
                 evidence_added = len(run.evidence) - evidence_before
                 self._emit(
                     "proposal.scheduled",
                     run,
                     decision_id=decision.id,
-                    proposal_ids=[proposal.id for proposal in decision.new_proposals],
+                    proposal_ids=[selected.id],
+                    candidate_count=len(decision.new_proposals),
                     scheduled=scheduled,
                 )
                 if run.state is MissionRunState.WAITING_APPROVAL:

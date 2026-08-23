@@ -43,6 +43,15 @@ class StepExecution:
     error: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def id(self) -> str:
+        """Stable action identity used by approval/resume code.
+
+        Frozen plan executions and late-bound dynamic actions share the same runtime
+        lifecycle even though the compatibility field is still named ``step_id``.
+        """
+        return self.step_id
+
 
 @dataclass(slots=True)
 class MissionRun:
