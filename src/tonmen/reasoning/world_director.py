@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from tonmen.missions import MissionPlan, MissionRun
-from tonmen.tools import CapabilityRequest, CapabilityResolution, CapabilityResolver, RiskLevel
+from tonmen.tools import CapabilityRequest, CapabilityResolution, RiskLevel
+from tonmen.tools.resolver import CapabilityResolver
 
 from .director import MissionDirector as _LegacyCapabilityDirector
 from .director import _CapabilityCandidate
@@ -82,9 +83,6 @@ class MissionDirector(_LegacyCapabilityDirector):
         ]
         descriptions = [need.description for need in model.evidence_needs if need.description]
 
-        # The bootstrap hypothesis is created in the current reasoning turn and is
-        # not yet in the graph-backed WorldModel. Fold its semantic need into the
-        # request without mutating WorldModel.
         for hypothesis in open_hypotheses:
             metadata = dict(hypothesis.metadata)
             for product in metadata.get("required_products", ()):
@@ -100,8 +98,6 @@ class MissionDirector(_LegacyCapabilityDirector):
                 descriptions.append(description)
 
         if supported and not open_hypotheses:
-            # Supported evidence may justify bounded validation. This request is
-            # narrow: unrelated cheap tools must not win merely on cost.
             products = ["validation_observation", "finding"]
             if not modalities:
                 modalities = list(model.observed_modalities) or ["http"]
