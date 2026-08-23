@@ -28,9 +28,6 @@ class _CheapObservationAdapter(ToolAdapter):
         default_parameters=(),
     )
 
-    def readiness(self):
-        return super().readiness()
-
     def validate(self, request: ToolRequest) -> None:
         if request.target != "localhost":
             raise ValueError("test adapter only accepts localhost")
@@ -56,12 +53,14 @@ def test_builtin_capabilities_self_describe_and_declared_defaults_validate(tmp_p
 
 def test_director_can_choose_cheaper_capability_outside_frozen_plan_order(tmp_path):
     runtime = _runtime(tmp_path)
-    runtime.registry.register(_CheapObservationAdapter())
     plan = MissionPlanner(runtime).plan("localhost")
+    runtime.registry.register(_CheapObservationAdapter())
     run = MissionRun.create(plan)
     run.state = MissionRunState.RUNNING
 
     assert plan.steps[0].tool == "nmap"
+    assert all(step.tool != "cheap-observer" for step in plan.steps)
+
     decision = MissionDirector(runtime).decide_next(plan, run)
 
     assert decision.action is ReasoningAction.PROPOSE
