@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from tonmen.missions import MissionPlan, MissionRun, MissionRunState, StepExecutionState, iter_plan_executions
+from tonmen.tools import RiskLevel
 
 from .model import Hypothesis, HypothesisStatus, ReasoningAction, ReasoningDecision
 
@@ -16,6 +17,21 @@ def _waiting_pair(plan: MissionPlan, run: MissionRun):
         if execution.state is StepExecutionState.WAITING_APPROVAL:
             return planned, execution
     return None
+
+
+def _surface_basis(facts):
+    basis = []
+    for node in facts:
+        if node.kind == "intelligence.web":
+            basis.append(node)
+            continue
+        if node.kind != "intelligence.service":
+            continue
+        data = node.metadata.get("data", {})
+        service = str(data.get("service", "")).lower() if isinstance(data, dict) else ""
+        if "http" in service:
+            basis.append(node)
+    return basis
 
 
 def _refresh_hypotheses_from_evidence(run: MissionRun, facts) -> list[Hypothesis]:
@@ -119,10 +135,22 @@ class MissionReasoner:
         waiting = _waiting_pair(plan, run)
         if waiting is not None:
             step, _ = waiting
+            if step.risk >= int(RiskLevel.VALIDATION):
+                basis = _surface_basis(facts)
+                if not basis:
+                    return ReasoningDecision.create(
+                        action=ReasoningAction.SKIP,
+                        summary="No evidence-backed surface supports the approval-gated validation action.",
+                        next_step_id=step.id,
+                        hypotheses=refreshed,
+                    )
+                basis_ids = tuple(node.id for node in basis[:16])
+            else:
+                basis_ids = tuple(node.id for node in facts[:16])
             return ReasoningDecision.create(
                 action=ReasoningAction.REQUEST_APPROVAL,
                 summary=f"{step.tool} is approval-gated; a bound grant is required before this compatibility action can run.",
-                basis_fact_ids=tuple(node.id for node in facts[:16]),
+                basis_fact_ids=basis_ids,
                 next_step_id=step.id,
                 requires_human=True,
                 hypotheses=refreshed,
