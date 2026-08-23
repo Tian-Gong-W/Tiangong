@@ -10,12 +10,10 @@ from .base import (
 )
 from .capability import CapabilityRequest, CapabilityResolution
 from .registry import ToolRegistry
-from .resolver import CapabilityResolver
 
 __all__ = [
     "CapabilityRequest",
     "CapabilityResolution",
-    "CapabilityResolver",
     "CapabilitySpec",
     "CostEstimate",
     "RiskLevel",
