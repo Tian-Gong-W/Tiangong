@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from .agents import MissionCoordinator, MissionPlanner, MissionPlanningDenied, MissionRunDenied
+from .artifacts import ArtifactStore
 from .chronicle import ChronicleStore
 from .console import render_decision, render_loop, render_plan, render_run
 from .core.config import TonmenConfig
@@ -25,9 +27,9 @@ BANNER = """\
 
 def _add_loop_budget_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-iterations", type=int, default=8)
-    parser.add_argument("--max-executions", type=int, default=3)
+    parser.add_argument("--max-executions", type=int, default=6)
     parser.add_argument("--max-repeat-decisions", type=int, default=2)
-    parser.add_argument("--max-duration", type=int, default=300, dest="max_duration_seconds")
+    parser.add_argument("--max-duration", type=int, default=900, dest="max_duration_seconds")
 
 
 def _loop_policy(args) -> MissionLoopPolicy:
@@ -62,11 +64,21 @@ def _parser() -> argparse.ArgumentParser:
     scope_remove = scope_sub.add_parser("remove", help="remove a non-default allowed target rule")
     scope_remove.add_argument("target")
 
-    plan = sub.add_parser("plan", help="create a dry-run mission plan for an authorized target")
+    artifact = sub.add_parser("artifact", help="inspect local binaries without executing them")
+    artifact_sub = artifact.add_subparsers(dest="artifact_command", required=True)
+    artifact_inspect = artifact_sub.add_parser("inspect", help="ingest and statically inspect a local artifact")
+    artifact_inspect.add_argument("path", type=Path)
+    artifact_sub.add_parser("list", help="list workspace artifact reports")
+    artifact_show = artifact_sub.add_parser("show", help="show and integrity-check a stored artifact report")
+    artifact_show.add_argument("artifact_id")
+    artifact_delete = artifact_sub.add_parser("delete", help="delete a stored artifact blob and its report")
+    artifact_delete.add_argument("artifact_id")
+
+    plan = sub.add_parser("plan", help="show the bounded candidate capability envelope for an authorized target")
     plan.add_argument("target")
-    run = sub.add_parser("run", help="execute the current governed mission to its next boundary")
+    run = sub.add_parser("run", help="execute the current governed candidate plan to its next boundary")
     run.add_argument("target")
-    loop = sub.add_parser("loop", help="run a bounded observe-reason-act mission loop")
+    loop = sub.add_parser("loop", help="run an evidence-driven adaptive mission loop from a minimal seed")
     loop.add_argument("target")
     _add_loop_budget_arguments(loop)
     loop_resume = sub.add_parser("loop-resume", help="continue a non-terminal persisted loop with a fresh bounded budget")
@@ -115,6 +127,43 @@ def _scope_show(config: TonmenConfig) -> None:
         print("  (none)")
 
 
+def _artifact_command(config: TonmenConfig, args) -> int:
+    store = ArtifactStore(config.workspace)
+    try:
+        if args.artifact_command == "inspect":
+            payload = store.ingest(args.path)
+            print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+            print("\n静态检查完成：未加载、未执行该 Artifact。")
+            return 0
+        if args.artifact_command == "list":
+            entries = store.list()
+            if not entries:
+                print("Artifact Store 为空。")
+                return 0
+            for item in entries:
+                print(
+                    f"{item['artifact_id']}  {str(item.get('format') or 'unknown'):<10}  "
+                    f"{str(item.get('architecture') or 'unknown'):<12}  {item.get('source_name') or 'artifact'}"
+                )
+            return 0
+        if args.artifact_command == "show":
+            print(json.dumps(store.load(args.artifact_id), ensure_ascii=False, indent=2, sort_keys=True))
+            return 0
+        if args.artifact_command == "delete":
+            if not store.delete(args.artifact_id):
+                print("Artifact Store 无此记录。")
+                return 2
+            print(f"Artifact 已删除: {args.artifact_id}")
+            return 0
+    except FileNotFoundError as exc:
+        print(f"Artifact 不存在: {exc}")
+        return 2
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"Artifact 拒绝: {exc}")
+        return 2
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     print(BANNER)
@@ -156,6 +205,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"配置已寫入: {saved}")
         return 0
 
+    if args.command == "artifact":
+        return _artifact_command(config, args)
+
     if args.command == "doctor":
         report = run_doctor(config)
         print(render_doctor(report))
@@ -171,7 +223,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command in {"plan", "run", "loop"}:
         try:
-            plan = MissionPlanner(runtime).plan(args.target)
+            planner = MissionPlanner(runtime)
+            plan = planner.seed(args.target) if args.command == "loop" else planner.plan(args.target)
         except MissionPlanningDenied as exc:
             print(f"天律拒絕: {exc}")
             print("若这是你明确授权的目标，先执行: tonmen scope add <target>")
@@ -197,7 +250,7 @@ def main(argv: list[str] | None = None) -> int:
         except (MissionRunDenied, ValueError) as exc:
             print(f"天衡拒絕: {exc}")
             return 2
-        chronicle.save(plan, result.run)
+        chronicle.save(result.plan or plan, result.run)
         _print_loop_result(result)
         print(f"\n天冊已錄: {result.run.id}")
         return 3 if result.stop_reason is LoopStopReason.TERMINAL else 0
@@ -237,7 +290,7 @@ def main(argv: list[str] | None = None) -> int:
         except (MissionRunDenied, ValueError) as exc:
             print(f"天衡拒絕: {exc}")
             return 2
-        chronicle.save(plan, result.run)
+        chronicle.save(result.plan or plan, result.run)
         _print_loop_result(result)
         return 3 if result.stop_reason is LoopStopReason.TERMINAL else 0
 
@@ -271,7 +324,7 @@ def main(argv: list[str] | None = None) -> int:
         except (MissionRunDenied, ValueError) as exc:
             print(f"天律拒絕: {exc}")
             return 2
-        chronicle.save(plan, result.run)
+        chronicle.save(result.plan or plan, result.run)
         _print_loop_result(result)
         return 3 if result.stop_reason is LoopStopReason.TERMINAL else 0
 

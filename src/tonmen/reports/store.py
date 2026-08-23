@@ -4,9 +4,212 @@ import json
 import os
 from pathlib import Path
 
+from tonmen.adaptive import assess_evidence_confidence
 from tonmen.missions import MissionPlan, MissionRun
 
 from .generator import build_report, render_markdown
+
+
+def _confidence_payload(plan: MissionPlan, run: MissionRun) -> dict:
+    assessment = assess_evidence_confidence(plan, run)
+    claims = [
+        {
+            "key": item.key,
+            "subject": item.subject,
+            "assertion": item.assertion,
+            "state": item.state.value,
+            "confidence": item.confidence,
+            "support_fact_ids": list(item.support_fact_ids),
+            "conflict_fact_ids": list(item.conflict_fact_ids),
+            "sources": list(item.sources),
+            "observed_values": list(item.observed_values),
+        }
+        for item in assessment.claims
+    ]
+    return {
+        "supported": len(assessment.supported),
+        "conflicted": len(assessment.conflicted),
+        "unresolved": len(assessment.unresolved),
+        "conflict_fact_ids": list(assessment.conflict_fact_ids),
+        "claims": claims,
+    }
+
+
+def _confidence_markdown(payload: dict) -> str:
+    lines = [
+        "## Evidence Confidence / Conflict",
+        "",
+        f"- Supported claims: {payload.get('supported', 0)}",
+        f"- Conflicted claims: {payload.get('conflicted', 0)}",
+        f"- Unresolved claims: {payload.get('unresolved', 0)}",
+        "- Rule: absence of evidence is not treated as contradictory evidence.",
+        "",
+    ]
+    claims = payload.get("claims", [])
+    if not claims:
+        lines.extend(["No confidence claims were derived.", ""])
+        return "\n".join(lines)
+    for claim in claims:
+        lines.extend(
+            [
+                f"### {claim.get('subject') or claim.get('key')}",
+                "",
+                f"- State: **{claim.get('state', 'unresolved')}**",
+                f"- Assertion: `{claim.get('assertion') or '—'}`",
+                f"- Confidence: `{float(claim.get('confidence', 0.0)):.4f}`",
+                f"- Sources: `{', '.join(claim.get('sources', [])) or '—'}`",
+                f"- Observed values: `{', '.join(claim.get('observed_values', [])) or '—'}`",
+                f"- Support Facts: `{', '.join(claim.get('support_fact_ids', [])) or '—'}`",
+                f"- Conflict Facts: `{', '.join(claim.get('conflict_fact_ids', [])) or '—'}`",
+                "",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def _ai_payload(run: MissionRun) -> list[dict]:
+    return [
+        {
+            "id": node.id,
+            "kind": node.kind,
+            "label": node.label,
+            "metadata": dict(node.metadata),
+        }
+        for node in run.graph.nodes.values()
+        if node.kind in {"ai.advisory", "ai.advisory_error"}
+    ]
+
+
+def _ai_markdown(items: list[dict]) -> str:
+    lines = [
+        "## Local AI Advisory",
+        "",
+        "- Optional local analysis only; deterministic TONMEN remains authoritative.",
+        "- API key required by TONMEN: no",
+        "- Execution authority: none",
+        "",
+    ]
+    if not items:
+        lines.extend(["No local AI advisory was recorded for this mission.", ""])
+        return "\n".join(lines)
+    for index, item in enumerate(items, start=1):
+        metadata = item.get("metadata", {})
+        if item.get("kind") == "ai.advisory_error":
+            lines.extend(
+                [
+                    f"### Advisory {index}: deterministic fallback",
+                    "",
+                    f"- Provider/model: `{metadata.get('provider', '—')}` / `{metadata.get('model', '—')}`",
+                    f"- Error: {metadata.get('error') or item.get('label') or '—'}",
+                    f"- Fallback: `{metadata.get('fallback', 'deterministic')}`",
+                    f"- Local only: `{metadata.get('local_only', True)}`",
+                    f"- Execution authority: `{metadata.get('execution_authority', False)}`",
+                    "",
+                ]
+            )
+            continue
+        hypotheses = metadata.get("hypotheses", [])
+        preferences = metadata.get("capability_preferences", [])
+        lines.extend(
+            [
+                f"### Advisory {index}: {metadata.get('provider', 'local')} / {metadata.get('model', '—')}",
+                "",
+                f"- Summary: {metadata.get('summary') or item.get('label') or '—'}",
+                f"- Focus: `{', '.join(metadata.get('focus', [])) or '—'}`",
+                f"- Basis Facts: `{', '.join(metadata.get('basis_fact_ids', [])) or '—'}`",
+                f"- Challenge decision: `{metadata.get('challenge_decision', False)}`",
+                f"- Challenge reason: {metadata.get('challenge_reason') or '—'}",
+                f"- Hypotheses: `{len(hypotheses)}`",
+                f"- Capability preferences: `{len(preferences)}`",
+                f"- Local only: `{metadata.get('local_only', True)}`",
+                f"- API key required: `{metadata.get('api_key_required', False)}`",
+                f"- Execution authority: `{metadata.get('execution_authority', False)}`",
+                "",
+            ]
+        )
+        for preference in preferences:
+            lines.extend(
+                [
+                    f"  - `{preference.get('tool', '—')}` preference={preference.get('preference', 0)} — {preference.get('rationale') or '—'}",
+                ]
+            )
+        if preferences:
+            lines.append("")
+    return "\n".join(lines)
+
+
+def _capability_selection_payload(run: MissionRun) -> list[dict]:
+    selections: list[dict] = []
+    for node in run.graph.nodes.values():
+        if node.kind != "planning.revision":
+            continue
+        metadata = dict(node.metadata)
+        rankings = [dict(item) for item in metadata.get("candidate_rankings", []) if isinstance(item, dict)]
+        ai_tiebreak = dict(metadata.get("ai_tiebreak", {})) if isinstance(metadata.get("ai_tiebreak"), dict) else {}
+        selections.append(
+            {
+                "revision_id": node.id,
+                "tool": metadata.get("tool"),
+                "target": metadata.get("target"),
+                "deterministic_score": metadata.get("deterministic_score"),
+                "final_score": metadata.get("final_score", metadata.get("deterministic_score")),
+                "selection_engine": metadata.get("selection_engine", "capability_catalog"),
+                "score_reasons": list(metadata.get("score_reasons", [])),
+                "candidate_rankings": rankings,
+                "ai_tiebreak": ai_tiebreak,
+                "execution_authority": False,
+            }
+        )
+    return selections
+
+
+def _capability_selection_markdown(items: list[dict]) -> str:
+    lines = [
+        "## Capability Selection Audit",
+        "",
+        "- Candidate eligibility and base scoring are deterministic.",
+        "- Local AI, when enabled, is limited to a bounded tie-break over already-eligible candidates.",
+        "- Execution authority: none",
+        "",
+    ]
+    if not items:
+        lines.extend(["No adaptive capability revision was recorded.", ""])
+        return "\n".join(lines)
+
+    for index, item in enumerate(items, start=1):
+        tiebreak = item.get("ai_tiebreak", {})
+        lines.extend(
+            [
+                f"### Selection {index}: {item.get('tool') or '—'}",
+                "",
+                f"- Revision: `{item.get('revision_id')}`",
+                f"- Engine: `{item.get('selection_engine', 'capability_catalog')}`",
+                f"- Deterministic score: `{item.get('deterministic_score')}`",
+                f"- Final score: `{item.get('final_score')}`",
+                f"- AI tie-break applied: `{tiebreak.get('applied', False)}`",
+                f"- AI preference / adjustment: `{tiebreak.get('preference', 0)}` / `{tiebreak.get('adjustment', 0)}`",
+                f"- AI rationale: {tiebreak.get('rationale') or '—'}",
+                "",
+                "Candidate ranking:",
+                "",
+            ]
+        )
+        rankings = item.get("candidate_rankings", [])
+        if not rankings:
+            lines.extend(["- No candidate ranking snapshot persisted.", ""])
+            continue
+        for row in rankings:
+            lines.append(
+                "- "
+                f"`{row.get('tool', '—')}` "
+                f"eligible={row.get('eligible', False)} "
+                f"base={row.get('score', '—')} "
+                f"ai={row.get('ai_adjustment', 0)} "
+                f"final={row.get('final_score', row.get('score', '—'))} "
+                f"reasons={'; '.join(str(value) for value in row.get('reasons', [])) or '—'}"
+            )
+        lines.append("")
+    return "\n".join(lines)
 
 
 class ReportStore:
@@ -55,11 +258,36 @@ class ReportStore:
             raise ValueError("mission run does not belong to this plan")
         self._ensure_root()
         report = build_report(plan, run)
+        confidence = _confidence_payload(plan, run)
+        ai_advisories = _ai_payload(run)
+        capability_selection = _capability_selection_payload(run)
+        report["evidence_confidence"] = confidence
+        report["ai_advisories"] = ai_advisories
+        report["capability_selection"] = capability_selection
+        report.setdefault("summary", {})["supported_claims"] = confidence["supported"]
+        report["summary"]["conflicted_claims"] = confidence["conflicted"]
+        report["summary"]["unresolved_claims"] = confidence["unresolved"]
+        report["summary"]["ai_advisories"] = sum(1 for item in ai_advisories if item["kind"] == "ai.advisory")
+        report["summary"]["ai_advisory_errors"] = sum(1 for item in ai_advisories if item["kind"] == "ai.advisory_error")
+        report["summary"]["capability_selections"] = len(capability_selection)
+        report["summary"]["ai_tiebreak_selections"] = sum(
+            1 for item in capability_selection if item.get("ai_tiebreak", {}).get("applied") is True
+        )
         self._atomic_write(
             self._path(run.id, "json"),
             json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
         )
-        self._atomic_write(self._path(run.id, "md"), render_markdown(report))
+        markdown = (
+            render_markdown(report).rstrip()
+            + "\n\n"
+            + _confidence_markdown(confidence).rstrip()
+            + "\n\n"
+            + _ai_markdown(ai_advisories).rstrip()
+            + "\n\n"
+            + _capability_selection_markdown(capability_selection).rstrip()
+            + "\n"
+        )
+        self._atomic_write(self._path(run.id, "md"), markdown)
         return report
 
     def load_json(self, run_id: str) -> dict:

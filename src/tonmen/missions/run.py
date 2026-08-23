@@ -7,7 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from tonmen.evidence import EvidenceGraph, EvidenceRecord
-from tonmen.missions.model import MissionPlan
+from tonmen.missions.model import MissionPlan, MissionStep
 from tonmen.observations import Observation
 
 
@@ -70,6 +70,22 @@ class MissionRun:
             graph=EvidenceGraph(),
             started_at=datetime.now(timezone.utc),
         )
+
+    def append_planned_step(self, step: MissionStep) -> StepExecution:
+        """Append one step from an explicit plan revision and reopen clean success.
+
+        Failed/denied missions are terminal. A previously successful seed run may be
+        reopened only because the adaptive planner has appended a new governed step.
+        """
+        if any(existing.step_id == step.id for existing in self.steps):
+            raise ValueError("mission run already contains this step")
+        if self.state in {MissionRunState.FAILED, MissionRunState.DENIED}:
+            raise ValueError("terminal failed/denied mission cannot accept plan revisions")
+        execution = StepExecution(step_id=step.id, tool=step.tool, target=step.target)
+        self.steps.append(execution)
+        self.state = MissionRunState.RUNNING
+        self.finished_at = None
+        return execution
 
     def finish(self, state: MissionRunState) -> None:
         self.state = state

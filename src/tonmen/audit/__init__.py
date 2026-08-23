@@ -1,3 +1,3 @@
-from .log import AuditEvent, AuditLog
+from .log import AuditEvent, AuditLog, AuditVerification
 
-__all__ = ["AuditEvent", "AuditLog"]
+__all__ = ["AuditEvent", "AuditLog", "AuditVerification"]

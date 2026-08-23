@@ -172,3 +172,144 @@
   window.addEventListener("popstate", () => setTimeout(installReportButton, 0));
   setTimeout(installReportButton, 0);
 })();
+
+(() => {
+  "use strict";
+
+  const esc = value => String(value ?? "").replace(/[&<>"']/g, ch => ({
+    "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
+  }[ch]));
+  const short = value => String(value || "").slice(0, 8);
+  let refreshing = false;
+
+  function selectedRun() {
+    return new URLSearchParams(location.search).get("run") ||
+      document.querySelector("#module-page-root tr.selected[data-select-run]")?.dataset.selectRun || null;
+  }
+
+  function nodeMap(detail) {
+    return new Map((detail.graph?.nodes || []).map(node => [node.id, node]));
+  }
+
+  function difference(left, right) {
+    const r = new Set(right || []);
+    return [...new Set(left || [])].filter(value => !r.has(value));
+  }
+
+  function factNodesForEvidence(detail, evidenceId, nodes) {
+    return (detail.graph?.edges || [])
+      .filter(edge => edge.source === evidenceId && edge.relation === "reveals")
+      .map(edge => nodes.get(edge.target)).filter(Boolean);
+  }
+
+  function profile(step) {
+    const value = step?.metadata?.adaptive_profile || {};
+    return {
+      complexity: Number(value.complexity || 0),
+      unknowns: value.unknowns || [],
+      hypotheses: value.hypotheses || [],
+    };
+  }
+
+  function revisionTriggeredBy(detail, factIds) {
+    const facts = new Set(factIds || []);
+    return (detail.planning || detail.graph?.nodes || []).find(node => {
+      if (node.kind && node.kind !== "planning.revision") return false;
+      const basis = node.metadata?.basis_fact_ids || [];
+      return basis.some(id => facts.has(id));
+    }) || null;
+  }
+
+  function nextProfile(detail, index) {
+    for (let i = index + 1; i < (detail.steps || []).length; i += 1) {
+      const candidate = detail.steps[i];
+      if (candidate.metadata?.adaptive_profile) return profile(candidate);
+    }
+    const rounds = (detail.graph?.nodes || []).filter(node => node.kind === "council.round" && node.metadata?.target_profile);
+    const latest = rounds.at(-1)?.metadata?.target_profile || {};
+    return {complexity:Number(latest.complexity || 0), unknowns:latest.unknowns || [], hypotheses:latest.hypotheses || []};
+  }
+
+  function causalRows(detail) {
+    const nodes = nodeMap(detail);
+    return (detail.steps || []).map((step, index) => {
+      const evidence = (detail.evidence || []).find(item => item.id === step.evidence_id);
+      if (!evidence) return null;
+      const facts = factNodesForEvidence(detail, evidence.id, nodes);
+      const factIds = facts.map(node => node.id);
+      const before = profile(step);
+      const after = nextProfile(detail, index);
+      const revision = revisionTriggeredBy(detail, factIds);
+      return {
+        index:index + 1,
+        tool:step.tool,
+        state:step.state,
+        evidence,
+        facts,
+        unknownsClosed:difference(before.unknowns, after.unknowns),
+        unknownsOpened:difference(after.unknowns, before.unknowns),
+        hypothesesAdded:difference(after.hypotheses, before.hypotheses),
+        hypothesesRemoved:difference(before.hypotheses, after.hypotheses),
+        complexity:after.complexity - before.complexity,
+        revision,
+      };
+    }).filter(Boolean);
+  }
+
+  function chips(label, values) {
+    if (!values.length) return "";
+    return `<div class="trace-basis"><span>${esc(label)}</span>${values.map(value => `<span class="trace-fact">${esc(value)}</span>`).join("")}</div>`;
+  }
+
+  function causalCard(row) {
+    const md = row.revision?.metadata || {};
+    const command = `$ ${(row.evidence.argv || []).join(" ")}`;
+    const next = md.tool ? `${md.tool}${md.requires_approval ? " · approval boundary" : " · governed next capability"}` : "no capability appended from these facts";
+    return `<article class="trace-card" style="margin-top:7px"><div class="trace-head"><strong>E${esc(row.index)} · ${esc(row.tool)} → Evidence Delta</strong><span>${esc(row.state)} · exit ${esc(row.evidence.exit_code)}</span></div>
+      <code title="${esc(command)}">${esc(command)}</code>
+      ${chips("Facts produced", row.facts.map(node => node.label))}
+      ${chips("Unknowns closed", row.unknownsClosed)}
+      ${chips("Unknowns opened", row.unknownsOpened)}
+      ${chips("Hypotheses +", row.hypothesesAdded)}
+      ${chips("Hypotheses −", row.hypothesesRemoved)}
+      <div class="trace-meta"><span>complexity Δ ${row.complexity > 0 ? "+" : ""}${esc(row.complexity)}</span><span>Evidence ${esc(short(row.evidence.id))}</span></div>
+      <div class="trace-callout"><b>因此下一步</b><span>${esc(next)}</span></div>
+      ${row.revision ? `<p>${esc(md.rationale || row.revision.label || "Evidence justified the next registered capability.")}</p><div class="trace-meta"><span>information gain: ${esc(md.expected_information_gain || "—")}</span><span>execution_authority=${md.execution_authority === false ? "false" : "—"}</span></div>` : `<p class="trace-muted">这些 Evidence 没有单独触发新的 planning.revision；Planner 保持当前边界或等待更多证据。</p>`}
+    </article>`;
+  }
+
+  async function refreshExecutionDelta() {
+    if (refreshing || location.pathname !== "/missions") return;
+    const shell = document.querySelector("#module-page-root .decision-trace-shell");
+    const runId = selectedRun();
+    if (!shell || !runId || shell.querySelector(`[data-execution-delta-run="${runId}"]`)) return;
+    refreshing = true;
+    try {
+      const response = await fetch(`/api/missions/${encodeURIComponent(runId)}`, {cache:"no-store", headers:{"Accept":"application/json"}});
+      if (!response.ok) return;
+      const detail = await response.json();
+      if (selectedRun() !== runId || !document.contains(shell)) return;
+      const rows = causalRows(detail);
+      const view = document.createElement("section");
+      view.dataset.executionDeltaRun = runId;
+      view.className = "trace-execution-delta-view";
+      view.innerHTML = `<div class="trace-title" style="margin-top:10px"><div><strong>Execution Delta · 工具级因果链</strong><span>每次实际执行 → 新 Evidence/Facts → Profile 变化 → 为什么追加或不追加下一 capability</span></div><div class="trace-legend"><span>${rows.length} executions</span><span>read only</span></div></div>${rows.map(causalCard).join("") || `<div class="trace-card" style="margin-top:7px"><span class="trace-muted">尚无已执行步骤可形成工具级 Delta。</span></div>`}`;
+      const councilDelta = shell.querySelector(".trace-delta-view");
+      if (councilDelta) councilDelta.insertAdjacentElement("afterend", view);
+      else (shell.querySelector(".trace-profile") || shell.querySelector(".trace-title"))?.insertAdjacentElement("afterend", view);
+    } finally {
+      refreshing = false;
+    }
+  }
+
+  const root = document.getElementById("module-page-root");
+  if (root) new MutationObserver(() => queueMicrotask(refreshExecutionDelta)).observe(root, {childList:true, subtree:true});
+  window.addEventListener("popstate", () => setTimeout(refreshExecutionDelta, 0));
+  window.addEventListener("tonmen:runtime-event", event => {
+    if (["step.completed", "step.degraded", "intelligence.created", "plan.revised", "council.round", "loop.stopped"].includes(event.detail?.type || "")) {
+      document.querySelector(".trace-execution-delta-view")?.remove();
+      setTimeout(refreshExecutionDelta, 120);
+    }
+  });
+  refreshExecutionDelta();
+})();

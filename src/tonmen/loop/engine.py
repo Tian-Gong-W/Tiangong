@@ -4,18 +4,25 @@ from time import monotonic
 from typing import Callable, Mapping
 from uuid import uuid4
 
-from tonmen.agents import MissionCoordinator
+from tonmen.agents import AdaptiveMissionPlanner, MissionCoordinator
 from tonmen.core.runtime import TonmenRuntime
 from tonmen.council import AssessmentCouncil
 from tonmen.evidence import GraphNode
-from tonmen.missions import MissionPlan, MissionRun, MissionRunState
+from tonmen.missions import MissionPlan, MissionRun, MissionRunState, StepExecutionState
 from tonmen.reasoning import MissionReasoner, ReasoningAction, ReasoningDecision
 
 from .model import LoopStopReason, MissionLoopPolicy, MissionLoopResult
 
 
+_SUCCESS_STATES = {
+    StepExecutionState.SUCCEEDED,
+    StepExecutionState.DEGRADED,
+    StepExecutionState.SKIPPED,
+}
+
+
 class MissionLoop:
-    """Bounded observe → reason → act loop over existing governed mission steps only."""
+    """Bounded observe → reason → replan → act loop over governed capabilities only."""
 
     def __init__(
         self,
@@ -27,6 +34,7 @@ class MissionLoop:
         self.runtime = runtime
         self.policy = policy or MissionLoopPolicy()
         self.coordinator = MissionCoordinator(runtime)
+        self.strategy = AdaptiveMissionPlanner(runtime)
         self.reasoner = MissionReasoner()
         self.council = AssessmentCouncil(
             target_rounds=self.policy.assessment_rounds,
@@ -80,24 +88,39 @@ class MissionLoop:
         return run.state not in {MissionRunState.SUCCEEDED, MissionRunState.FAILED, MissionRunState.DENIED}
 
     @staticmethod
+    def _all_steps_resolved_success(run: MissionRun) -> bool:
+        return bool(run.steps) and all(step.state in _SUCCESS_STATES for step in run.steps)
+
+    @staticmethod
     def _next_step_would_execute(
         plan: MissionPlan,
         run: MissionRun,
         approval_tokens: Mapping[str, str],
     ) -> bool:
-        from tonmen.missions import StepExecutionState
-
         for planned, execution in zip(plan.steps, run.steps, strict=True):
-            if execution.state in {
-                StepExecutionState.SUCCEEDED,
-                StepExecutionState.DEGRADED,
-                StepExecutionState.SKIPPED,
-            }:
+            if execution.state in _SUCCESS_STATES:
                 continue
             if planned.requires_approval and not approval_tokens.get(planned.id):
                 return False
             return True
         return False
+
+    def _finalize_converged_frontier(self, plan: MissionPlan, run: MissionRun) -> bool:
+        """Finalize only after the adaptive planner confirms no next capability exists."""
+        if not self._all_steps_resolved_success(run):
+            return False
+        if run.state in {MissionRunState.FAILED, MissionRunState.DENIED, MissionRunState.WAITING_APPROVAL}:
+            return False
+        if run.state is not MissionRunState.SUCCEEDED:
+            run.finish(MissionRunState.SUCCEEDED)
+        self._emit(
+            "mission.completed",
+            run,
+            final=True,
+            adaptive=True,
+            steps=len(plan.steps),
+        )
+        return True
 
     def _record_session(self, run: MissionRun, session_id: str) -> None:
         run.graph.add_node(
@@ -115,6 +138,7 @@ class MissionLoop:
                     "report_only": self.policy.report_only,
                     "assessment_round_bounds": [7, 10],
                     "subagent_bounds": [3, 5],
+                    "evidence_driven_replanning": True,
                 },
             )
         )
@@ -130,6 +154,7 @@ class MissionLoop:
             assessment_rounds=self.policy.assessment_rounds,
             subagents_per_round=self.policy.subagents_per_round,
             report_only=self.policy.report_only,
+            evidence_driven_replanning=True,
         )
 
     def _record_iteration(
@@ -311,6 +336,7 @@ class MissionLoop:
             executions=executions,
             session_id=session_id,
             last_decision=decision,
+            plan=plan,
         )
 
     def _drive(
@@ -361,7 +387,12 @@ class MissionLoop:
             jobs_before = tuple(step.job_id for step in run.steps)
             states_before = tuple(step.state for step in run.steps)
 
-            self.coordinator.advance_once(plan, run, approval_tokens=approval_tokens)
+            self.coordinator.advance_once(
+                plan,
+                run,
+                approval_tokens=approval_tokens,
+                defer_success=True,
+            )
             evidence_added = len(run.evidence) - evidence_before
             jobs_after = tuple(step.job_id for step in run.steps)
             executions += sum(
@@ -369,6 +400,13 @@ class MissionLoop:
                 for before_job, after_job in zip(jobs_before, jobs_after, strict=True)
                 if before_job != after_job and after_job is not None
             )
+
+            proposal = self.strategy.propose(plan, run)
+            if proposal is not None:
+                plan = self.strategy.apply(plan, run, proposal)
+                self._checkpoint(plan, run)
+            else:
+                self._finalize_converged_frontier(plan, run)
 
             decision = self.reasoner.decide(plan, run)
             last_decision = decision

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from tonmen.missions import MissionRun
+from tonmen.missions import MissionPlan, MissionRun
 from tonmen.reasoning import ReasoningDecision
 
 
@@ -21,9 +21,9 @@ class LoopStopReason(str, Enum):
 @dataclass(frozen=True, slots=True)
 class MissionLoopPolicy:
     max_iterations: int = 8
-    max_executions: int = 3
+    max_executions: int = 6
     max_repeat_decisions: int = 2
-    max_duration_seconds: int = 300
+    max_duration_seconds: int = 900
     assessment_rounds: int = 8
     subagents_per_round: int = 4
     report_only: bool = True
@@ -53,3 +53,4 @@ class MissionLoopResult:
     executions: int
     session_id: str
     last_decision: ReasoningDecision | None = None
+    plan: MissionPlan | None = None

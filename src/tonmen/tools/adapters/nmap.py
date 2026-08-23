@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tonmen.tools.base import RiskLevel, ToolAdapter, ToolRequest, ToolSpec
+from tonmen.tools.base import CapabilityPlanningSpec, RiskLevel, ToolAdapter, ToolRequest, ToolSpec
 from tonmen.tools.validation import reject_unknown_parameters, validate_host_target, validate_ports
 
 
@@ -11,6 +11,19 @@ class NmapAdapter(ToolAdapter):
         description="Conservative TCP connect and service discovery",
         risk=RiskLevel.DISCOVERY,
         capabilities=("host.scan", "port.scan", "service.detect"),
+        planning=CapabilityPlanningSpec(
+            target_kinds=("host",),
+            seed_for=("host",),
+            target_mode="host",
+            basis_fact_kinds=(),
+            resolves_unknowns=("network_surface",),
+            default_parameters={"ports": "80,443", "service_detection": False},
+            rationale="Establish a minimal TCP reachability view without assuming an application protocol.",
+            information_gain="host reachability, open ports and service-family evidence",
+            information_gain_score=0.78,
+            cost_score=0.28,
+        ),
+        preflight_readiness=True,
     )
 
     def validate(self, request: ToolRequest) -> None:

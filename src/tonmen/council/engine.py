@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from tonmen.adaptive import build_target_profile, desired_assessment_rounds, select_agent_roster
+from tonmen.adaptive import assess_evidence_confidence, build_target_profile, desired_assessment_rounds, select_agent_roster
 from tonmen.evidence import GraphNode
 from tonmen.missions import MissionPlan, MissionRun, MissionRunState, StepExecutionState
 from tonmen.models import ModelRuntime, ModelRuntimeError
@@ -25,10 +25,12 @@ _FOCI = (
 class AssessmentCouncil:
     """Evidence-only adaptive subagent council.
 
-    Council composition changes with the live target profile, but the governance
-    envelope is fixed: 7-10 rounds and 3-5 read-only subagents per round. When a local
-    model runtime is configured, each selected role receives an independent structured
-    model review. Model output remains advisory and has no execution authority.
+    Council composition changes with the live target profile, explicit evidence
+    conflicts, and optional local AI advisory provenance. When a local model runtime
+    is configured, each selected role receives an independent structured model review.
+    The governance envelope is fixed: 7-10 rounds and 3-5 read-only subagents per
+    round. Members never execute tools, expand Scope, issue approvals, or mutate the
+    mission plan; model output remains advisory and has no execution authority.
     """
 
     def __init__(
@@ -71,6 +73,11 @@ class AssessmentCouncil:
         return [node for node in run.graph.nodes.values() if node.kind == "intelligence.finding"]
 
     @staticmethod
+    def _latest_ai_advisory(run: MissionRun):
+        advisories = [node for node in run.graph.nodes.values() if node.kind == "ai.advisory"]
+        return advisories[-1] if advisories else None
+
+    @staticmethod
     def _recommended_action(run: MissionRun) -> str:
         if run.state is MissionRunState.WAITING_APPROVAL:
             return "await_human_approval"
@@ -105,12 +112,40 @@ class AssessmentCouncil:
         fact_ids = tuple(node.id for node in facts)
         findings = self._finding_nodes(run)
         profile = build_target_profile(plan, run)
+        confidence = assess_evidence_confidence(plan, run)
         failed = [step for step in run.steps if step.state in {StepExecutionState.FAILED, StepExecutionState.DENIED}]
         degraded = [step for step in run.steps if step.state is StepExecutionState.DEGRADED]
         waiting = [step for step in run.steps if step.state is StepExecutionState.WAITING_APPROVAL]
         completed = [step for step in run.steps if step.state is StepExecutionState.SUCCEEDED]
 
-        if role == "network_surface_mapper":
+        if role == "conflict_analyst":
+            subjects = ", ".join(item.subject for item in confidence.conflicted[:4]) or "none"
+            summary = (
+                f"{focus}: supported={len(confidence.supported)}, conflicted={len(confidence.conflicted)}, "
+                f"unresolved={len(confidence.unresolved)}; conflict subjects={subjects}. "
+                "Absence of evidence is not treated as contradictory evidence."
+            )
+            fact_ids = confidence.conflict_fact_ids or fact_ids
+        elif role == "ai_advisory_reviewer":
+            advisory = self._latest_ai_advisory(run)
+            if advisory is None:
+                summary = f"{focus}: no local AI advisory is recorded; deterministic evidence analysis remains authoritative."
+                fact_ids = ()
+            else:
+                metadata = advisory.metadata
+                basis = tuple(
+                    fact_id
+                    for fact_id in metadata.get("basis_fact_ids", [])
+                    if fact_id in run.graph.nodes
+                )
+                hypotheses = metadata.get("hypotheses", [])
+                summary = (
+                    f"{focus}: local {metadata.get('provider', 'AI')}/{metadata.get('model', 'model')} advisory "
+                    f"has {len(hypotheses)} hypothesis item(s), challenge={bool(metadata.get('challenge_decision', False))}; "
+                    f"review Fact basis before accepting any analytical claim. execution_authority=false."
+                )
+                fact_ids = basis
+        elif role == "network_surface_mapper":
             summary = (
                 f"{focus}: observed ports={','.join(str(port) for port in profile.ports) or 'none'}; "
                 f"services={','.join(profile.services) or 'none'}; unknowns={','.join(profile.unknowns) or 'none'}."
@@ -130,7 +165,8 @@ class AssessmentCouncil:
             nonzero = sum(1 for item in run.evidence if item.exit_code != 0)
             summary = (
                 f"{focus}: provenance review sees {len(run.evidence)} evidence records, {nonzero} non-zero exits, "
-                f"{len(degraded)} degraded steps and {len(failed)} failed/denied steps."
+                f"{len(degraded)} degraded steps, {len(failed)} failed/denied steps and "
+                f"{len(confidence.conflicted)} explicit comparable-fact conflict(s)."
             )
         elif role == "vulnerability_analyst":
             severities = [str(node.metadata.get("severity", "info")) for node in findings]
@@ -210,12 +246,15 @@ class AssessmentCouncil:
         return call_id
 
     def _desired_rounds(self, plan: MissionPlan, run: MissionRun) -> int:
-        return desired_assessment_rounds(
+        rounds = desired_assessment_rounds(
             build_target_profile(plan, run),
             minimum=self.min_rounds,
             preferred=self.target_rounds,
             maximum=self.max_rounds,
         )
+        if assess_evidence_confidence(plan, run).conflicted:
+            rounds += 1
+        return max(self.min_rounds, min(self.max_rounds, rounds))
 
     def record_round(
         self,
@@ -233,6 +272,8 @@ class AssessmentCouncil:
         round_number = current + 1
         focus = _FOCI[min(round_number - 1, len(_FOCI) - 1)]
         profile = build_target_profile(plan, run)
+        confidence = assess_evidence_confidence(plan, run)
+        ai_advisory = self._latest_ai_advisory(run)
         roster = select_agent_roster(
             plan,
             run,
@@ -264,6 +305,25 @@ class AssessmentCouncil:
                         "unknowns": list(profile.unknowns),
                         "hypotheses": [item.key for item in profile.hypotheses],
                     },
+                    "evidence_confidence": {
+                        "supported": len(confidence.supported),
+                        "conflicted": len(confidence.conflicted),
+                        "unresolved": len(confidence.unresolved),
+                        "conflict_keys": [item.key for item in confidence.conflicted],
+                        "conflict_fact_ids": list(confidence.conflict_fact_ids),
+                    },
+                    "local_ai_advisory": (
+                        {
+                            "id": ai_advisory.id,
+                            "provider": ai_advisory.metadata.get("provider"),
+                            "model": ai_advisory.metadata.get("model"),
+                            "challenge_decision": bool(ai_advisory.metadata.get("challenge_decision", False)),
+                            "basis_fact_ids": list(ai_advisory.metadata.get("basis_fact_ids", [])),
+                            "execution_authority": False,
+                        }
+                        if ai_advisory is not None
+                        else None
+                    ),
                     "desired_rounds": desired_rounds,
                 },
             )
@@ -273,6 +333,8 @@ class AssessmentCouncil:
             run.graph.link(session_id, "contains_assessment_round", round_id)
         if decision_id and decision_id in run.graph.nodes:
             run.graph.link(decision_id, "reviewed_by", round_id)
+        if ai_advisory is not None:
+            run.graph.link(ai_advisory.id, "reviewed_in", round_id)
 
         action = self._recommended_action(run)
         for assignment in roster:
@@ -323,6 +385,8 @@ class AssessmentCouncil:
             run.graph.link(round_id, "contains_subagent", agent_id)
             if self.model_runtime.enabled:
                 self._record_model_call(run, agent_id=agent_id, review=model_review, error=model_error)
+            if role == "ai_advisory_reviewer" and ai_advisory is not None:
+                run.graph.link(ai_advisory.id, "reviewed_by", agent_id)
             for evidence_id in evidence_ids[-8:]:
                 if evidence_id in run.graph.nodes:
                     run.graph.link(evidence_id, "reviewed_by", agent_id)

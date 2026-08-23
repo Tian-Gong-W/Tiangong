@@ -4,6 +4,7 @@ import json
 import os
 from dataclasses import dataclass, replace
 from pathlib import Path
+from urllib.parse import urlparse
 
 try:
     import tomllib
@@ -12,6 +13,9 @@ except ModuleNotFoundError:  # Python 3.10
 
 CONFIG_FILENAME = "tonmen.toml"
 DEFAULT_ALLOWED_TARGETS = ("127.0.0.1", "::1", "localhost")
+DEFAULT_AI_BASE_URL = "http://127.0.0.1:11434"
+_AI_LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
+_AI_PROVIDERS = {"none", "ollama"}
 
 
 def _normalize_rules(values) -> tuple[str, ...]:
@@ -29,6 +33,38 @@ def _toml_array(values: tuple[str, ...]) -> str:
     return "[" + ", ".join(json.dumps(item, ensure_ascii=False) for item in values) + "]"
 
 
+def validate_local_ai_base_url(value: str) -> str:
+    """Allow local AI traffic only to a plain-HTTP loopback origin."""
+    text = str(value).strip().rstrip("/")
+    parsed = urlparse(text)
+    if parsed.scheme != "http":
+        raise ValueError("local AI base_url must use http on loopback")
+    if (parsed.hostname or "").lower() not in _AI_LOOPBACK_HOSTS:
+        raise ValueError("local AI base_url must target loopback only")
+    if parsed.username or parsed.password:
+        raise ValueError("local AI base_url must not contain credentials")
+    if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+        raise ValueError("local AI base_url must be an origin without path/query/fragment")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("local AI base_url has an invalid port") from exc
+    if port is not None and not 1 <= port <= 65535:
+        raise ValueError("local AI base_url port must be within 1-65535")
+    return text
+
+
+def validate_local_ai_model(value: str) -> str:
+    """Keep the no-key/local mode from selecting an Ollama cloud-tagged model."""
+    model = str(value).strip()
+    if not model:
+        return ""
+    lowered = model.lower()
+    if "cloud" in lowered:
+        raise ValueError("local AI model must not use an Ollama cloud model/tag")
+    return model
+
+
 @dataclass(frozen=True, slots=True)
 class TonmenConfig:
     """Runtime configuration with deny-by-default external scope."""
@@ -40,6 +76,11 @@ class TonmenConfig:
     command_timeout_seconds: int = 120
     allowed_targets: tuple[str, ...] = DEFAULT_ALLOWED_TARGETS
     denied_targets: tuple[str, ...] = ()
+    ai_enabled: bool = False
+    ai_provider: str = "none"
+    ai_model: str = ""
+    ai_base_url: str = DEFAULT_AI_BASE_URL
+    ai_timeout_seconds: int = 20
     config_path: Path | None = None
 
     @classmethod
@@ -56,7 +97,8 @@ class TonmenConfig:
         data = tomllib.loads(config_path.read_text(encoding="utf-8"))
         runtime = data.get("tonmen", {})
         scope = data.get("scope", {})
-        if not isinstance(runtime, dict) or not isinstance(scope, dict):
+        ai = data.get("ai", {})
+        if not isinstance(runtime, dict) or not isinstance(scope, dict) or not isinstance(ai, dict):
             raise ValueError("tonmen.toml sections must be tables")
 
         allow_arbitrary_shell = bool(runtime.get("allow_arbitrary_shell", False))
@@ -82,6 +124,20 @@ class TonmenConfig:
         if not 1 <= bind_port <= 65535:
             raise ValueError("bind_port must be within 1-65535")
 
+        ai_enabled = bool(ai.get("enabled", False))
+        ai_provider = str(ai.get("provider", "none")).strip().lower() or "none"
+        if ai_provider not in _AI_PROVIDERS:
+            raise ValueError("ai.provider must be one of: none, ollama")
+        ai_model = validate_local_ai_model(ai.get("model", ""))
+        ai_base_url = validate_local_ai_base_url(str(ai.get("base_url", DEFAULT_AI_BASE_URL)))
+        ai_timeout = int(ai.get("timeout_seconds", 20))
+        if not 1 <= ai_timeout <= 120:
+            raise ValueError("ai.timeout_seconds must be between 1 and 120")
+        if ai_enabled and ai_provider != "ollama":
+            raise ValueError("enabled local AI currently requires provider = 'ollama'")
+        if ai_enabled and not ai_model:
+            raise ValueError("enabled local AI requires ai.model")
+
         return cls(
             workspace=workspace,
             bind_host=str(runtime.get("bind_host", "127.0.0.1")),
@@ -90,6 +146,11 @@ class TonmenConfig:
             command_timeout_seconds=timeout,
             allowed_targets=allowed,
             denied_targets=denied,
+            ai_enabled=ai_enabled,
+            ai_provider=ai_provider,
+            ai_model=ai_model,
+            ai_base_url=ai_base_url,
+            ai_timeout_seconds=ai_timeout,
             config_path=config_path,
         )
 
@@ -129,6 +190,15 @@ class TonmenConfig:
                 "[scope]",
                 f"allowed_targets = {_toml_array(_normalize_rules(self.allowed_targets))}",
                 f"denied_targets = {_toml_array(_normalize_rules(self.denied_targets))}",
+                "",
+                "[ai]",
+                "# Optional local advisory model. No API key is required or stored.",
+                "# Cloud-tagged Ollama models are rejected in local-only mode.",
+                f"enabled = {'true' if self.ai_enabled else 'false'}",
+                f"provider = {json.dumps(self.ai_provider, ensure_ascii=False)}",
+                f"model = {json.dumps(validate_local_ai_model(self.ai_model), ensure_ascii=False)}",
+                f"base_url = {json.dumps(validate_local_ai_base_url(self.ai_base_url), ensure_ascii=False)}",
+                f"timeout_seconds = {self.ai_timeout_seconds}",
                 "",
             ]
         )
