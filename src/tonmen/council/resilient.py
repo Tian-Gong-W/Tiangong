@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from tonmen.ai import LeadAIOrchestrator, ProviderHub
@@ -38,6 +39,14 @@ class AssessmentCouncil(BaseAssessmentCouncil):
         self.agents_per_round = agents
         self.lead_ai = lead_ai or LeadAIOrchestrator()
         self.provider_hub = provider_hub or ProviderHub()
+
+    def _review_payload(self, role: str, plan: Any, run: Any, **kwargs: Any) -> dict[str, object]:
+        # BaseAssessmentCouncil still renders frozen plan/execution pairs with a
+        # strict zip. Dynamic actions live after those compatibility slots and must
+        # not make an explicitly enabled Council crash during review.
+        if len(run.steps) > len(plan.steps):
+            run = replace(run, steps=list(run.steps[: len(plan.steps)]))
+        return super()._review_payload(role, plan, run, **kwargs)
 
     def record_round(self, plan: Any, run: Any, **kwargs: Any) -> str | None:
         if self.target_rounds == 0 or self.agents_per_round == 0:
