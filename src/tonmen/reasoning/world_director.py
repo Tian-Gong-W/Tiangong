@@ -97,7 +97,10 @@ class MissionDirector(_LegacyCapabilityDirector):
             if description and description not in descriptions:
                 descriptions.append(description)
 
-        if supported and not open_hypotheses:
+        # Support is not a signal to abandon still-missing explicit evidence.
+        # Continue exploration while the WorldModel has a concrete unmet product;
+        # enter narrow validation only after those collection needs are satisfied.
+        if supported and not open_hypotheses and not products:
             products = ["validation_observation", "finding"]
             if not modalities:
                 modalities = list(model.observed_modalities) or ["http"]
@@ -108,7 +111,7 @@ class MissionDirector(_LegacyCapabilityDirector):
         else:
             max_risk = int(RiskLevel.ACTIVE)
             strict = False
-            hypothesis_id = open_hypotheses[0].id if open_hypotheses else None
+            hypothesis_id = open_hypotheses[0].id if open_hypotheses else (supported[0].id if supported else None)
             rationale = "; ".join(descriptions) or "reduce current mission uncertainty with new evidence"
 
         return CapabilityRequest.create(
