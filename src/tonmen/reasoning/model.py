@@ -12,6 +12,7 @@ class ReasoningAction(str, Enum):
     SKIP = "skip"
     REVIEW = "review"
     COMPLETE = "complete"
+    NO_ACTION = "no_executable_action"
     STOP = "stop"
     # Phase 1: allow the reasoner to emit brand-new work instead of only
     # selecting among the original frozen plan steps.
