@@ -8,7 +8,7 @@ from tonmen.tools.resolver import CapabilityResolver
 
 from .director import MissionDirector as _LegacyCapabilityDirector
 from .director import _CapabilityCandidate
-from .model import Hypothesis, HypothesisStatus, ReasoningDecision
+from .model import Hypothesis, HypothesisStatus, ReasoningAction, ReasoningDecision
 from .world import WorldModel
 
 
@@ -97,9 +97,6 @@ class MissionDirector(_LegacyCapabilityDirector):
             if description and description not in descriptions:
                 descriptions.append(description)
 
-        # Support is not a signal to abandon still-missing explicit evidence.
-        # Continue exploration while the WorldModel has a concrete unmet product;
-        # enter narrow validation only after those collection needs are satisfied.
         if supported and not open_hypotheses and not products:
             products = ["validation_observation", "finding"]
             if not modalities:
@@ -201,3 +198,37 @@ class MissionDirector(_LegacyCapabilityDirector):
             },
         )
         return replace(decision, summary=summary, new_proposals=(enriched,))
+
+    def decide_next(self, plan: MissionPlan, run: MissionRun, *, approval_tokens=None) -> ReasoningDecision:
+        decision = super().decide_next(plan, run, approval_tokens=approval_tokens)
+        if decision.action is not ReasoningAction.COMPLETE:
+            return decision
+
+        # A resolver with no better adapter must not erase a meaningful existing
+        # compatibility action. Reconcile that slot through the same approval/
+        # evidence-basis logic before declaring positive completion.
+        fallback = self.reasoner.decide(plan, run)
+        if fallback.action is not ReasoningAction.CONTINUE or not fallback.next_step_id:
+            return decision
+
+        pair = self._planned_step(plan, run, fallback.next_step_id)
+        if pair is None:
+            return decision
+        planned, _ = pair
+        spec = self.runtime.registry.get(planned.tool).spec if self.runtime is not None else None
+        if spec is not None:
+            gain, _ = self._information_gain(
+                spec,
+                observed_modalities=self._observed_modalities(plan, run),
+                observed_products=self._observed_products(run),
+            )
+            if gain <= 0:
+                return ReasoningDecision.create(
+                    action=ReasoningAction.SKIP,
+                    summary="The remaining compatibility action cannot add a missing evidence product; retire it.",
+                    next_step_id=planned.id,
+                    hypotheses=decision.hypotheses,
+                )
+
+        normalized = replace(fallback, hypotheses=decision.hypotheses)
+        return self._normalize_approval(plan, run, normalized, approval_tokens or {})
