@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tonmen.tools.base import RiskLevel, ToolAdapter, ToolRequest, ToolSpec
+from tonmen.tools.base import CostEstimate, RiskLevel, ToolAdapter, ToolRequest, ToolSpec
 from tonmen.tools.validation import reject_unknown_parameters, validate_host_target, validate_ports
 
 
@@ -11,6 +11,13 @@ class NmapAdapter(ToolAdapter):
         description="Conservative TCP connect and service discovery",
         risk=RiskLevel.DISCOVERY,
         capabilities=("host.scan", "port.scan", "service.detect"),
+        accepts=("host",),
+        produces=("host_observation", "service_observation"),
+        modalities=("network",),
+        estimated_cost=CostEstimate(wall_seconds=10, network_requests=4),
+        replayable=True,
+        isolation_profile="scoped_network",
+        default_parameters=(("ports", "80,443"), ("service_detection", False)),
     )
 
     def validate(self, request: ToolRequest) -> None:
