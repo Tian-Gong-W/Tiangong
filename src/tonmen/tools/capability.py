@@ -9,8 +9,9 @@ from uuid import uuid4
 class CapabilityRequest:
     """Tool-independent request for evidence-producing capability.
 
-    It describes what evidence the runtime wants and operational constraints on
-    obtaining it. No executable/adapter name is part of the request.
+    `required_products` describes desired evidence. Exploration is non-strict by
+    default so a novel modality can still outrank the expected route; callers may
+    set `require_product_match=True` for narrow validation requests.
     """
 
     id: str
@@ -21,6 +22,7 @@ class CapabilityRequest:
     max_risk: int = 2
     max_cost_units: float | None = None
     replayable_required: bool = False
+    require_product_match: bool = False
     hypothesis_id: str | None = None
     rationale: str = ""
     expected_info_gain: float = 0.5
@@ -37,6 +39,7 @@ class CapabilityRequest:
         max_risk: int = 2,
         max_cost_units: float | None = None,
         replayable_required: bool = False,
+        require_product_match: bool = False,
         hypothesis_id: str | None = None,
         rationale: str = "",
         expected_info_gain: float = 0.5,
@@ -55,6 +58,7 @@ class CapabilityRequest:
             max_risk=int(max_risk),
             max_cost_units=float(max_cost_units) if max_cost_units is not None else None,
             replayable_required=bool(replayable_required),
+            require_product_match=bool(require_product_match),
             hypothesis_id=hypothesis_id,
             rationale=str(rationale),
             expected_info_gain=max(0.0, min(1.0, float(expected_info_gain))),
@@ -71,6 +75,7 @@ class CapabilityRequest:
             "max_risk": self.max_risk,
             "max_cost_units": self.max_cost_units,
             "replayable_required": self.replayable_required,
+            "require_product_match": self.require_product_match,
             "hypothesis_id": self.hypothesis_id,
             "rationale": self.rationale,
             "expected_info_gain": self.expected_info_gain,
