@@ -8,15 +8,18 @@ from .model import (
     ReasoningAction,
     ReasoningDecision,
 )
+from .world import EvidenceNeed, WorldModel
 
 __all__ = [
     "ActionProposal",
     "ConvergenceDetector",
     "ConvergenceReport",
+    "EvidenceNeed",
     "Hypothesis",
     "HypothesisStatus",
     "MissionDirector",
     "MissionReasoner",
     "ReasoningAction",
     "ReasoningDecision",
+    "WorldModel",
 ]
