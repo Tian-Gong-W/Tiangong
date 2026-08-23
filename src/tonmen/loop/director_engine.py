@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from tonmen.evidence import GraphNode
 from tonmen.missions import (
+    ActionLedger,
     MissionPlan,
     MissionRun,
     MissionRunState,
@@ -20,18 +21,23 @@ from .model import LoopStopReason, MissionLoopResult
 
 
 class MissionLoop(_LegacyMissionLoop):
-    """Director-first mission loop with legacy-plan compatibility.
+    """Director-first observe → reason → act loop.
 
-    The frozen ``MissionPlan`` remains available as a compatibility action source,
-    but it no longer owns the heartbeat. Before every action the runtime asks one
-    authoritative ``MissionDirector`` what should happen next.
+    MissionPlan remains a compatibility projection for older callers. Runtime work
+    is tracked through ActionLedger, while MissionDirector owns each next-action
+    decision from the current evidence state.
     """
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.director = MissionDirector()
-        # Compatibility alias for callers that still inspect ``loop.reasoner``.
+        # The runtime is essential: without it the Director intentionally degrades
+        # to the legacy compatibility facade and cannot rank Registry capabilities.
+        self.director = MissionDirector(self.runtime)
         self.reasoner = self.director.reasoner
+
+    @staticmethod
+    def _ledger(plan: MissionPlan, run: MissionRun) -> ActionLedger:
+        return ActionLedger(run.steps, legacy_slots=len(plan.steps))
 
     @staticmethod
     def _legacy_plan_complete(plan: MissionPlan, run: MissionRun) -> bool:
@@ -72,28 +78,28 @@ class MissionLoop(_LegacyMissionLoop):
             return True
         return False
 
-    @staticmethod
-    def _dynamic_execution(run: MissionRun, proposal_id: str) -> StepExecution | None:
-        for execution in run.steps:
-            if not bool(execution.metadata.get("dynamic")):
-                continue
-            if str(execution.metadata.get("proposal_id") or "") == proposal_id:
-                return execution
-        return None
+    @classmethod
+    def _dynamic_execution(cls, plan: MissionPlan, run: MissionRun, proposal_id: str) -> StepExecution | None:
+        return cls._ledger(plan, run).dynamic_for_proposal(proposal_id)
 
-    def _materialize_dynamic_wait(self, run: MissionRun, proposal: ActionProposal) -> StepExecution:
-        step_id = f"dynamic:{proposal.id}"
-        execution = self._dynamic_execution(run, proposal.id)
+    def _materialize_dynamic_wait(
+        self,
+        plan: MissionPlan,
+        run: MissionRun,
+        proposal: ActionProposal,
+    ) -> StepExecution:
+        ledger = self._ledger(plan, run)
+        action_id = f"dynamic:{proposal.id}"
+        execution = ledger.dynamic_for_proposal(proposal.id)
         if execution is None:
-            execution = StepExecution(
-                step_id=step_id,
+            execution = ledger.append_dynamic(
+                action_id=action_id,
                 tool=proposal.tool,
                 target=proposal.target,
+                proposal_id=proposal.id,
                 state=StepExecutionState.WAITING_APPROVAL,
                 error="explicit approval grant required",
                 metadata={
-                    "dynamic": True,
-                    "proposal_id": proposal.id,
                     "hypothesis_id": proposal.hypothesis_id,
                     "expected_info_gain": proposal.expected_info_gain,
                     "risk": proposal.risk,
@@ -101,15 +107,14 @@ class MissionLoop(_LegacyMissionLoop):
                     "requires_approval": proposal.requires_approval,
                 },
             )
-            run.steps.append(execution)
         else:
             execution.state = StepExecutionState.WAITING_APPROVAL
             execution.error = "explicit approval grant required"
 
-        if step_id not in run.graph.nodes:
+        if action_id not in run.graph.nodes:
             run.graph.add_node(
                 GraphNode(
-                    id=step_id,
+                    id=action_id,
                     kind="step.dynamic",
                     label=f"{proposal.tool}:{proposal.target}",
                     metadata={
@@ -120,9 +125,9 @@ class MissionLoop(_LegacyMissionLoop):
                     },
                 )
             )
-            run.graph.link(run.id, "contains", step_id)
+            run.graph.link(run.id, "contains", action_id)
             if proposal.id in run.graph.nodes:
-                run.graph.link(proposal.id, "realized_as", step_id)
+                run.graph.link(proposal.id, "realized_as", action_id)
 
         proposal_node = run.graph.nodes.get(proposal.id)
         if proposal_node is not None:
@@ -130,7 +135,7 @@ class MissionLoop(_LegacyMissionLoop):
                 id=proposal_node.id,
                 kind=proposal_node.kind,
                 label=proposal_node.label,
-                metadata={**dict(proposal_node.metadata), "status": "waiting_approval", "action_id": step_id},
+                metadata={**dict(proposal_node.metadata), "status": "waiting_approval", "action_id": action_id},
             )
 
         run.state = MissionRunState.WAITING_APPROVAL
@@ -138,31 +143,32 @@ class MissionLoop(_LegacyMissionLoop):
 
     def _schedule_one_proposal(
         self,
+        plan: MissionPlan,
         run: MissionRun,
         decision: ReasoningDecision,
         *,
         approval_tokens: Mapping[str, str],
     ) -> int:
-        """Choose exactly one candidate ActionProposal for this reasoning turn."""
+        """Execute at most one candidate ActionProposal for this reasoning turn."""
         proposal = decision.new_proposals[0]
-        step_id = f"dynamic:{proposal.id}"
-        token = approval_tokens.get(step_id)
-        existing = self._dynamic_execution(run, proposal.id)
+        action_id = f"dynamic:{proposal.id}"
+        token = approval_tokens.get(action_id)
+        ledger = self._ledger(plan, run)
+        existing = ledger.dynamic_for_proposal(proposal.id)
 
         if existing is not None and existing.state is StepExecutionState.WAITING_APPROVAL and not token:
             run.state = MissionRunState.WAITING_APPROVAL
             return 0
 
         if existing is not None and existing.state is StepExecutionState.WAITING_APPROVAL and token:
-            # Coordinator.execute_proposal still creates the execution record. Remove
-            # the parked placeholder so the approved action keeps one stable step id
-            # instead of leaving duplicate runtime entries.
-            run.steps.remove(existing)
+            # Coordinator still materializes the executing record. Remove only the
+            # parked dynamic placeholder; legacy slots are immutable ledger prefix.
+            ledger.remove_dynamic(existing)
             run.state = MissionRunState.RUNNING
 
         accepted = self.coordinator.execute_proposal(run, proposal, approval_token=token)
         if accepted and run.state is MissionRunState.WAITING_APPROVAL:
-            self._materialize_dynamic_wait(run, proposal)
+            self._materialize_dynamic_wait(plan, run, proposal)
             return 0
         return 1 if accepted else 0
 
@@ -173,7 +179,7 @@ class MissionLoop(_LegacyMissionLoop):
         *,
         approval_tokens: Mapping[str, str],
     ) -> None:
-        """Execute one compatibility step without letting plan exhaustion end Mission."""
+        """Execute one compatibility slot without letting plan exhaustion end Mission."""
         original_emit = self.coordinator._emit
 
         def guarded_emit(event_type: str, mission_run: MissionRun, **data: object) -> None:
@@ -188,8 +194,6 @@ class MissionLoop(_LegacyMissionLoop):
             self.coordinator._emit = original_emit
 
         if run.state is MissionRunState.SUCCEEDED and self._legacy_plan_complete(plan, run):
-            # Completing a frozen compatibility plan is evidence, not mission
-            # convergence. Give control back to the Director.
             run.state = MissionRunState.RUNNING
             run.finished_at = None
 
@@ -246,8 +250,27 @@ class MissionLoop(_LegacyMissionLoop):
             key = self._decision_key(decision)
             repeated[key] = repeated.get(key, 0) + 1
             evidence_before = len(run.evidence)
-            states_before = tuple(step.state for step in run.steps)
+            states_before = self._ledger(plan, run).state_signature()
             evidence_added = 0
+
+            if decision.action is ReasoningAction.NO_ACTION:
+                self._record_iteration(
+                    run,
+                    session_id=session_id,
+                    iteration=iteration,
+                    executions=executions,
+                    decision=decision,
+                    evidence_added=0,
+                )
+                return self._result(
+                    plan,
+                    run,
+                    session_id=session_id,
+                    reason=LoopStopReason.NO_EXECUTABLE_ACTION,
+                    iterations=iteration,
+                    executions=executions,
+                    decision=decision,
+                )
 
             if decision.action is ReasoningAction.PROPOSE and decision.new_proposals:
                 if executions >= self.policy.max_executions:
@@ -262,6 +285,7 @@ class MissionLoop(_LegacyMissionLoop):
                     )
                 selected = decision.new_proposals[0]
                 scheduled = self._schedule_one_proposal(
+                    plan,
                     run,
                     decision,
                     approval_tokens=approval_tokens,
@@ -285,7 +309,6 @@ class MissionLoop(_LegacyMissionLoop):
                         decision=decision,
                         evidence_added=evidence_added,
                     )
-                    self._checkpoint(plan, run)
                     return self._result(
                         plan,
                         run,
@@ -326,7 +349,6 @@ class MissionLoop(_LegacyMissionLoop):
                     decision=decision,
                     evidence_added=0,
                 )
-                self._checkpoint(plan, run)
                 return self._result(
                     plan,
                     run,
@@ -348,7 +370,6 @@ class MissionLoop(_LegacyMissionLoop):
                     decision=decision,
                     evidence_added=0,
                 )
-                self._checkpoint(plan, run)
                 return self._result(
                     plan,
                     run,
@@ -368,7 +389,6 @@ class MissionLoop(_LegacyMissionLoop):
                     decision=decision,
                     evidence_added=0,
                 )
-                self._checkpoint(plan, run)
                 return self._result(
                     plan,
                     run,
@@ -397,13 +417,13 @@ class MissionLoop(_LegacyMissionLoop):
                         decision=decision,
                     )
 
-                jobs_before = tuple(step.job_id for step in run.steps)
+                ledger = self._ledger(plan, run)
+                jobs_before = {entry.id: entry.job_id for entry in ledger}
                 self._advance_legacy_once(plan, run, approval_tokens=approval_tokens)
-                jobs_after = tuple(step.job_id for step in run.steps)
                 executions += sum(
                     1
-                    for before_job, after_job in zip(jobs_before, jobs_after, strict=True)
-                    if before_job != after_job and after_job is not None
+                    for entry in self._ledger(plan, run)
+                    if entry.job_id is not None and jobs_before.get(entry.id) != entry.job_id
                 )
                 evidence_added = len(run.evidence) - evidence_before
 
@@ -431,7 +451,19 @@ class MissionLoop(_LegacyMissionLoop):
             self._record_council_round(plan, run, session_id=session_id, decision=decision, phase="live")
             self._checkpoint(plan, run)
 
-            no_progress = evidence_added == 0 and states_before == tuple(step.state for step in run.steps)
+            if report.converged and decision.action is not ReasoningAction.COMPLETE:
+                return self._result(
+                    plan,
+                    run,
+                    session_id=session_id,
+                    reason=LoopStopReason.CONVERGED,
+                    iterations=iteration,
+                    executions=executions,
+                    decision=decision,
+                )
+
+            states_after = self._ledger(plan, run).state_signature()
+            no_progress = evidence_added == 0 and states_before == states_after
             if repeated[key] > self.policy.max_repeat_decisions and no_progress:
                 return self._result(
                     plan,
