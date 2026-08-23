@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import urlparse
 
-from tonmen.policy import Decision, PolicyEngine
+from tonmen.policy.engine import Decision, PolicyEngine
 
 from .base import ToolRequest
 from .capability import CapabilityRequest, CapabilityResolution
@@ -83,8 +83,6 @@ class CapabilityResolver:
                 if requested_modalities
                 else 0.0
             )
-            # A non-matching exploratory adapter is still eligible, but carries a
-            # modest relevance score instead of being silently excluded.
             novelty_floor = 0.25 if requested_products and not matched_products else 0.0
             relevance = 1.0 + (0.55 * product_fraction) + (0.15 * modality_fraction) + novelty_floor
             approval_penalty = 1.15 if policy.decision is Decision.REQUIRE_APPROVAL or spec.requires_approval else 1.0
