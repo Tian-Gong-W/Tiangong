@@ -36,6 +36,13 @@ class DashboardState(SimpleViewDashboardState):
         with self._lock:
             plan, run = self.chronicle.load(run_id)
             payload = super().mission(run_id)
+            for step in payload.get("steps", []):
+                metadata = step.get("metadata") or {}
+                if not metadata.get("dynamic"):
+                    continue
+                step["risk"] = metadata.get("risk")
+                step["requires_approval"] = bool(metadata.get("requires_approval"))
+                step["rationale"] = str(metadata.get("rationale") or "")
             payload["workspace"] = build_mission_workspace(plan, run)
             return payload
 
