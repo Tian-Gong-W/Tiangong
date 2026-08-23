@@ -14,7 +14,7 @@ class NmapAdapter(ToolAdapter):
         accepts=("host",),
         produces=("host_observation", "service_observation"),
         modalities=("network",),
-        estimated_cost=CostEstimate(wall_seconds=10, network_requests=4),
+        estimated_cost=CostEstimate(wall_seconds=2, network_requests=4),
         replayable=True,
         isolation_profile="scoped_network",
         default_parameters=(("ports", "80,443"), ("service_detection", False)),
