@@ -4,10 +4,9 @@ from tonmen.agents import MissionPlanner
 from tonmen.core.config import TonmenConfig
 from tonmen.core.runtime import TonmenRuntime
 from tonmen.missions import ActionOutcome, ActionOutcomeKind, MissionRun, record_action_outcome
-from tonmen.reasoning import MissionDirector
+from tonmen.reasoning import MissionDirector, WorldModel
 from tonmen.tools import (
     CapabilityRequest,
-    CapabilityResolver,
     CostEstimate,
     RiskLevel,
     ToolAdapter,
@@ -15,7 +14,7 @@ from tonmen.tools import (
     ToolRequest,
     ToolSpec,
 )
-from tonmen.reasoning import WorldModel
+from tonmen.tools.resolver import CapabilityResolver
 
 
 def _runtime(tmp_path):
