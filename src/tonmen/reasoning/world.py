@@ -168,7 +168,11 @@ class WorldModel:
         observed_set = set(observed_products)
         needs: list[EvidenceNeed] = []
         for hypothesis in hypotheses:
-            if hypothesis.status is not HypothesisStatus.OPEN:
+            # A SUPPORTED hypothesis may still carry explicit evidence products
+            # worth collecting. Keep those needs visible while matching governed
+            # capabilities remain; support itself still counts as resolved when
+            # no further useful action exists.
+            if hypothesis.status not in {HypothesisStatus.OPEN, HypothesisStatus.SUPPORTED}:
                 continue
             metadata = dict(hypothesis.metadata)
             required = tuple(str(item) for item in metadata.get("required_products", ()) if str(item))
