@@ -28,7 +28,7 @@ def test_dashboard_assets_are_packaged():
     assert "X-TONMEN-CSRF" in app_js
     assert "任务开始" in app_js
     assert "查看证据" in app_js
-    assert "无法加载任务" in app_js
+    assert "加载任务失败" in app_js
 
 
 def test_dashboard_scope_uses_project_config(tmp_path):

@@ -11,7 +11,14 @@
   root.className = "module-page-root";
   stage.appendChild(root);
 
-  const pageState = { route: null, busy: false, selectedRun: null, cache: {} };
+  const pageState = {
+    route: null,
+    busy: false,
+    rendering: false,
+    renderPending: false,
+    selectedRun: null,
+    cache: {}
+  };
 
   // 精简后的导航映射（与 index.html 侧边栏一致）
   const routeMap = [
@@ -196,25 +203,38 @@
   };
 
   async function renderRoute(force = false) {
-    const route = normalizeRoute(location.pathname);
-    pageState.route = route;
-    setNav(route);
-    if (route === "/") {
-      overview.classList.remove("module-hidden");
-      root.classList.remove("active");
-      root.innerHTML = "";
-      document.title = "雲頂天宮 | TONMEN 控制台";
+    if (pageState.rendering) {
+      pageState.renderPending = true;
       return;
     }
-    overview.classList.add("module-hidden");
-    root.classList.add("active");
-    document.title = `${(titles[route] || ["页面"])[0]} | TONMEN 控制台`;
-    if (!force) loading(route);
+    pageState.rendering = true;
     try {
-      await (renderers[route] || renderMissions)();
-      document.getElementById("module-updated")?.replaceChildren(document.createTextNode(nowText()));
-    } catch (error) {
-      if (pageState.route === route) errorPage(route, error);
+      const route = normalizeRoute(location.pathname);
+      pageState.route = route;
+      setNav(route);
+      if (route === "/") {
+        overview.classList.remove("module-hidden");
+        root.classList.remove("active");
+        root.innerHTML = "";
+        document.title = "雲頂天宮 | TONMEN 控制台";
+        return;
+      }
+      overview.classList.add("module-hidden");
+      root.classList.add("active");
+      document.title = `${(titles[route] || ["页面"])[0]} | TONMEN 控制台`;
+      if (!force) loading(route);
+      try {
+        await (renderers[route] || renderMissions)();
+        document.getElementById("module-updated")?.replaceChildren(document.createTextNode(nowText()));
+      } catch (error) {
+        if (pageState.route === route) errorPage(route, error);
+      }
+    } finally {
+      pageState.rendering = false;
+      if (pageState.renderPending) {
+        pageState.renderPending = false;
+        queueMicrotask(() => renderRoute(true));
+      }
     }
   }
 
@@ -283,7 +303,7 @@
 
   window.addEventListener("popstate", () => renderRoute());
   setInterval(() => {
-    if (document.hidden || pageState.busy || pageState.route === "/") return;
+    if (document.hidden || pageState.busy || pageState.rendering || pageState.route === "/") return;
     renderRoute(true);
   }, 2500);
 

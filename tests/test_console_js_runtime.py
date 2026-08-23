@@ -54,7 +54,8 @@ def test_production_console_loads_base_javascript_as_isolated_modules(tmp_path):
         with urlopen(f"{base}/assets/app.js?v=console-p0-1", timeout=3) as response:
             app_source = response.read().decode("utf-8")
 
-        assert "const state = { missions:" in app_source
+        assert "const state = {" in app_source
+        assert "polling: false" in app_source
         assert "Hard navigation intentionally runs in capture phase" not in app_source
         assert "const liveBuffers = new Map();" not in app_source
     finally:
