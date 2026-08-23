@@ -86,7 +86,7 @@ def test_builtin_director_progression_is_cost_and_evidence_ranked(tmp_path):
     assert selected.tool == "httpx"
 
 
-def test_validation_is_not_selected_while_hypothesis_is_only_open(tmp_path):
+def test_unresolved_hypothesis_without_executable_capability_is_not_false_completion(tmp_path):
     runtime = _runtime(tmp_path)
     plan = MissionPlan.create("localhost", [])
     run = MissionRun.create(plan)
@@ -113,8 +113,9 @@ def test_validation_is_not_selected_while_hypothesis_is_only_open(tmp_path):
 
     decision = MissionDirector(runtime).decide_next(plan, run)
 
-    assert decision.action is ReasoningAction.COMPLETE
+    assert decision.action is ReasoningAction.NO_ACTION
     assert not decision.new_proposals
+    assert "unresolved" in decision.summary
 
 
 def test_fixed_modality_ladder_is_not_part_of_public_reasoning_runtime():

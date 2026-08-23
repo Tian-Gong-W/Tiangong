@@ -5,7 +5,7 @@ from typing import Mapping
 from urllib.parse import urlparse
 
 from tonmen.core.runtime import TonmenRuntime
-from tonmen.missions import MissionPlan, MissionRun, StepExecutionState, iter_plan_executions
+from tonmen.missions import ActionLedger, MissionPlan, MissionRun, StepExecutionState, iter_plan_executions
 from tonmen.policy import Decision
 from tonmen.tools import CapabilitySpec, RiskLevel, ToolRequest
 
@@ -28,13 +28,17 @@ class MissionDirector:
     """Single next-action authority for a mission.
 
     The Director asks which registered capability can cheaply produce evidence the
-    current world model does not yet contain. Concrete tool names remain adapter
-    implementations; frozen plan order is only a compatibility fallback.
+    current world model does not yet contain. Frozen plan order is compatibility
+    data only; runtime action state comes from the ActionLedger.
     """
 
     def __init__(self, runtime: TonmenRuntime | None = None, reasoner: MissionReasoner | None = None) -> None:
         self.runtime = runtime
         self.reasoner = reasoner or MissionReasoner()
+
+    @staticmethod
+    def _ledger(plan: MissionPlan, run: MissionRun) -> ActionLedger:
+        return ActionLedger(run.steps, legacy_slots=len(plan.steps))
 
     @staticmethod
     def _planned_step(plan: MissionPlan, run: MissionRun, step_id: str):
@@ -43,15 +47,16 @@ class MissionDirector:
                 return planned, execution
         return None
 
-    @staticmethod
-    def _waiting_dynamic(run: MissionRun):
-        for execution in run.steps:
-            if execution.state is not StepExecutionState.WAITING_APPROVAL:
-                continue
-            if not bool(execution.metadata.get("dynamic")):
-                continue
-            return execution
-        return None
+    @classmethod
+    def _waiting_dynamic(cls, plan: MissionPlan, run: MissionRun):
+        return next(
+            (
+                execution
+                for execution in cls._ledger(plan, run).dynamic
+                if execution.state is StepExecutionState.WAITING_APPROVAL
+            ),
+            None,
+        )
 
     @staticmethod
     def _proposal_from_graph(run: MissionRun, proposal_id: str) -> ActionProposal | None:
@@ -142,19 +147,26 @@ class MissionDirector:
         )
 
     @staticmethod
-    def _attempted_actions(run: MissionRun) -> set[tuple[str, str]]:
+    def _unresolved(hypotheses: tuple[Hypothesis, ...]) -> tuple[Hypothesis, ...]:
+        # SUPPORTED is a resolved evidentiary state at the current depth. It may
+        # justify a validation capability while one remains, but after all such
+        # capabilities are exhausted it must not keep the Mission open forever.
+        return tuple(hypothesis for hypothesis in hypotheses if hypothesis.status is HypothesisStatus.OPEN)
+
+    @classmethod
+    def _attempted_actions(cls, plan: MissionPlan, run: MissionRun) -> set[tuple[str, str]]:
         attempted: set[tuple[str, str]] = set()
-        for execution in run.steps:
+        for execution in cls._ledger(plan, run):
             if execution.state is StepExecutionState.PENDING:
                 continue
             attempted.add((execution.tool.strip().lower(), execution.target))
         return attempted
 
-    def _observed_modalities(self, run: MissionRun) -> set[str]:
+    def _observed_modalities(self, plan: MissionPlan, run: MissionRun) -> set[str]:
         if self.runtime is None:
             return set()
         observed: set[str] = set()
-        for execution in run.steps:
+        for execution in self._ledger(plan, run):
             if execution.state not in {StepExecutionState.SUCCEEDED, StepExecutionState.DEGRADED}:
                 continue
             try:
@@ -171,10 +183,7 @@ class MissionDirector:
             if not node.kind.startswith("intelligence."):
                 continue
             kind = node.kind.removeprefix("intelligence.")
-            if kind == "finding":
-                products.add("finding")
-            else:
-                products.add(f"{kind}_observation")
+            products.add("finding" if kind == "finding" else f"{kind}_observation")
         return products
 
     @staticmethod
@@ -212,8 +221,8 @@ class MissionDirector:
     ) -> list[_CapabilityCandidate]:
         if self.runtime is None:
             return []
-        attempted = self._attempted_actions(run)
-        observed_modalities = self._observed_modalities(run)
+        attempted = self._attempted_actions(plan, run)
+        observed_modalities = self._observed_modalities(plan, run)
         observed_products = self._observed_products(run)
         supported = self._supported(hypotheses)
         candidates: list[_CapabilityCandidate] = []
@@ -276,9 +285,6 @@ class MissionDirector:
                 and cls._same_target_identity(planned.target, candidate.target)
             ):
                 return planned, execution
-            # Coordinator.advance_once executes the first pending slot. If the
-            # selected capability is later in the frozen plan, materialize it as a
-            # dynamic Action instead of pretending the later slot would execute.
             return None
         return None
 
@@ -400,9 +406,7 @@ class MissionDirector:
     ) -> ReasoningDecision:
         tokens = approval_tokens or {}
 
-        # Dynamic actions are first-class resumable work and are handled before any
-        # compatibility-plan reasoning.
-        waiting_dynamic = self._waiting_dynamic(run)
+        waiting_dynamic = self._waiting_dynamic(plan, run)
         if waiting_dynamic is not None:
             proposal_id = str(waiting_dynamic.metadata.get("proposal_id") or "")
             proposal = self._proposal_from_graph(run, proposal_id) if proposal_id else None
@@ -437,19 +441,27 @@ class MissionDirector:
             hypotheses.append(initial)
         hypothesis_tuple = tuple(hypotheses)
 
+        if self.runtime is None:
+            return ReasoningDecision.create(
+                action=base.action,
+                summary=base.summary,
+                basis_fact_ids=base.basis_fact_ids,
+                next_step_id=base.next_step_id,
+                requires_human=base.requires_human,
+                new_proposals=base.new_proposals,
+                hypotheses=hypothesis_tuple,
+            )
+
         candidates = self._rank_capabilities(plan, run, hypothesis_tuple)
         if candidates:
             decision = self._candidate_decision(plan, run, candidates[0], hypothesis_tuple)
             return self._normalize_approval(plan, run, decision, tokens)
 
-        # Compatibility is now a fallback, not the heartbeat. If equivalent
-        # evidence already exists or validation lacks evidentiary basis, retire the
-        # frozen step instead of executing it merely because it was pre-written.
         if base.action is ReasoningAction.CONTINUE and base.next_step_id:
             pair = self._planned_step(plan, run, base.next_step_id)
-            if pair is not None and self.runtime is not None:
+            if pair is not None:
                 planned, _ = pair
-                attempted = self._attempted_actions(run)
+                attempted = self._attempted_actions(plan, run)
                 if (planned.tool.strip().lower(), planned.target) in attempted:
                     return ReasoningDecision.create(
                         action=ReasoningAction.SKIP,
@@ -465,13 +477,34 @@ class MissionDirector:
                         next_step_id=planned.id,
                         hypotheses=hypothesis_tuple,
                     )
+                gain, _ = self._information_gain(
+                    spec,
+                    observed_modalities=self._observed_modalities(plan, run),
+                    observed_products=self._observed_products(run),
+                )
+                if gain <= 0:
+                    return ReasoningDecision.create(
+                        action=ReasoningAction.SKIP,
+                        summary="The compatibility action cannot add a missing evidence product; retire it.",
+                        next_step_id=planned.id,
+                        hypotheses=hypothesis_tuple,
+                    )
+
+        unresolved = self._unresolved(hypothesis_tuple)
+        if unresolved:
+            return ReasoningDecision.create(
+                action=ReasoningAction.NO_ACTION,
+                summary=(
+                    f"{len(unresolved)} unresolved hypothesis/hypotheses remain, but no registered governed "
+                    "capability can currently add a missing evidence product."
+                ),
+                basis_fact_ids=tuple(node.id for node in self._facts(run)[:16]),
+                hypotheses=hypothesis_tuple,
+            )
 
         return ReasoningDecision.create(
-            action=base.action,
-            summary=base.summary,
-            basis_fact_ids=base.basis_fact_ids,
-            next_step_id=base.next_step_id,
-            requires_human=base.requires_human,
-            new_proposals=base.new_proposals,
+            action=ReasoningAction.COMPLETE,
+            summary="No unresolved high-value hypothesis remains; the mission goal is satisfied at current evidence depth.",
+            basis_fact_ids=tuple(node.id for node in self._facts(run)[:16]),
             hypotheses=hypothesis_tuple,
         )
