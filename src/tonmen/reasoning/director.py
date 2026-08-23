@@ -148,11 +148,10 @@ class MissionDirector:
 
     @staticmethod
     def _unresolved(hypotheses: tuple[Hypothesis, ...]) -> tuple[Hypothesis, ...]:
-        return tuple(
-            hypothesis
-            for hypothesis in hypotheses
-            if hypothesis.status in {HypothesisStatus.OPEN, HypothesisStatus.SUPPORTED}
-        )
+        # SUPPORTED is a resolved evidentiary state at the current depth. It may
+        # justify a validation capability while one remains, but after all such
+        # capabilities are exhausted it must not keep the Mission open forever.
+        return tuple(hypothesis for hypothesis in hypotheses if hypothesis.status is HypothesisStatus.OPEN)
 
     @classmethod
     def _attempted_actions(cls, plan: MissionPlan, run: MissionRun) -> set[tuple[str, str]]:
@@ -442,7 +441,6 @@ class MissionDirector:
             hypotheses.append(initial)
         hypothesis_tuple = tuple(hypotheses)
 
-        # A Director without a runtime is intentionally a compatibility facade.
         if self.runtime is None:
             return ReasoningDecision.create(
                 action=base.action,
