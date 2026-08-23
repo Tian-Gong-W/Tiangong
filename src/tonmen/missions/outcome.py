@@ -149,11 +149,7 @@ def _dynamic_execution(run: MissionRun, proposal_id: str) -> StepExecution | Non
 
 
 def classify_proposal_outcome(run: MissionRun, proposal: Any, accepted: bool) -> ActionOutcome:
-    """Classify the observable result of one late-bound proposal.
-
-    This intentionally relies only on persisted runtime state, so the result is
-    reconstructable after restart and does not depend on transient exception types.
-    """
+    """Classify one proposal from persisted runtime state after an execution attempt."""
     action_id = f"dynamic:{proposal.id}"
     execution = _dynamic_execution(run, proposal.id)
     proposal_node = run.graph.nodes.get(proposal.id)
@@ -190,12 +186,15 @@ def classify_proposal_outcome(run: MissionRun, proposal: Any, accepted: bool) ->
         )
 
     preflight = execution.metadata.get("preflight")
+    error = str(execution.error or "")
     if execution.state is StepExecutionState.WAITING_APPROVAL:
         kind = ActionOutcomeKind.APPROVAL_REQUIRED
     elif execution.state is StepExecutionState.DENIED:
         kind = ActionOutcomeKind.POLICY_DENIED
     elif execution.state is StepExecutionState.DEGRADED:
         kind = ActionOutcomeKind.DEGRADED
+    elif execution.state is StepExecutionState.FAILED and error.startswith("unknown tool:"):
+        kind = ActionOutcomeKind.TOOL_UNAVAILABLE
     elif execution.state is StepExecutionState.FAILED and isinstance(preflight, dict) and preflight.get("ready") is False:
         kind = ActionOutcomeKind.TOOL_UNAVAILABLE
     elif execution.state is StepExecutionState.FAILED:
@@ -221,7 +220,7 @@ def classify_proposal_outcome(run: MissionRun, proposal: Any, accepted: bool) ->
 
 
 def record_action_outcome(run: MissionRun, outcome: ActionOutcome) -> ActionOutcome:
-    """Persist a structured outcome in both the action record and evidence graph."""
+    """Persist a structured outcome in both the action record and provenance graph."""
     execution = next((entry for entry in run.steps if entry.id == outcome.action_id), None)
     if execution is not None:
         execution.metadata["action_outcome"] = outcome.as_dict()
