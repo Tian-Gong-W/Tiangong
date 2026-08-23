@@ -7,11 +7,13 @@ from http.server import ThreadingHTTPServer
 from importlib import resources
 from urllib.parse import unquote, urlparse
 
+from tonmen.agents import MissionPlanner
 from tonmen.core.config import TonmenConfig
+from tonmen.loop import MissionLoop, MissionLoopPolicy
 from tonmen.missions import MissionRunState, StepExecutionState
 
 from .mission_workspace import build_mission_workspace
-from .server import validate_console_host
+from .server import mission_payload, validate_console_host
 from .simple_view_server import DashboardState as SimpleViewDashboardState
 from .simple_view_server import SimpleViewDashboardHandler
 
@@ -30,7 +32,7 @@ _BASE_SCRIPTS = (
 
 
 class DashboardState(SimpleViewDashboardState):
-    """Adds Mission workspace projection and action-aware approval handling."""
+    """Adds Mission workspace projection and action-aware Console lifecycle."""
 
     def mission(self, run_id: str):
         with self._lock:
@@ -52,6 +54,61 @@ class DashboardState(SimpleViewDashboardState):
             (execution for execution in run.steps if execution.state is StepExecutionState.WAITING_APPROVAL),
             None,
         )
+
+    def _run_started_mission(self, runtime, plan, run, policy: MissionLoopPolicy) -> None:
+        try:
+            result = MissionLoop(runtime, policy, checkpoint=self._checkpoint).resume(plan, run)
+            self._checkpoint(plan, result.run)
+            self.events.publish(
+                "mission.background_completed",
+                mission_id=run.id,
+                plan_id=plan.id,
+                target=run.target,
+                state=result.run.state.value,
+                stop_reason=result.stop_reason.value,
+            )
+        except Exception as exc:
+            if run.state not in {MissionRunState.SUCCEEDED, MissionRunState.FAILED, MissionRunState.DENIED}:
+                run.finish(MissionRunState.FAILED)
+            self._checkpoint(plan, run)
+            self.events.publish(
+                "mission.background_failed",
+                mission_id=run.id,
+                plan_id=plan.id,
+                target=run.target,
+                error=str(exc)[:500],
+            )
+
+    def start_mission(self, target: str, policy: MissionLoopPolicy | None = None) -> dict:
+        """Accept a Mission quickly and execute its loop outside the HTTP request.
+
+        Reverse proxies and remote browsers should not need to keep one request open
+        for the full scan/reasoning duration. The returned payload is the persisted
+        RUNNING Mission; normal Console polling observes evidence and terminal state.
+        """
+        runtime = self.runtime
+        resolved_policy = policy or MissionLoopPolicy()
+        plan = MissionPlanner(runtime).plan(target)
+        for step in plan.steps:
+            if not step.requires_approval:
+                self._require_tool_ready(step.tool, step_id=step.id)
+
+        loop = MissionLoop(runtime, resolved_policy, checkpoint=self._checkpoint)
+        run = loop.coordinator.start(plan)
+        self._checkpoint(plan, run)
+
+        thread = threading.Thread(
+            target=self._run_started_mission,
+            args=(runtime, plan, run, resolved_policy),
+            name=f"tonmen-mission-{run.id[:8]}",
+            daemon=True,
+        )
+        thread.start()
+
+        payload = mission_payload(plan, run)
+        payload["stop_reason"] = "accepted_background"
+        payload["background"] = True
+        return payload
 
     def approve_mission(self, run_id: str) -> dict:
         """Approve either a frozen compatibility action or a dynamic ActionProposal."""
