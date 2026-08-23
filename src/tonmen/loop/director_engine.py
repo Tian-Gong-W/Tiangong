@@ -30,14 +30,17 @@ class MissionLoop(_LegacyMissionLoop):
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        # The runtime is essential: without it the Director intentionally degrades
-        # to the legacy compatibility facade and cannot rank Registry capabilities.
         self.director = MissionDirector(self.runtime)
         self.reasoner = self.director.reasoner
 
     @staticmethod
-    def _ledger(plan: MissionPlan, run: MissionRun) -> ActionLedger:
-        return ActionLedger(run.steps, legacy_slots=len(plan.steps))
+    def _ledger(run: MissionRun, plan: MissionPlan | None = None) -> ActionLedger:
+        legacy_slots = (
+            len(plan.steps)
+            if plan is not None
+            else sum(1 for entry in run.steps if not bool(entry.metadata.get("dynamic")))
+        )
+        return ActionLedger(run.steps, legacy_slots=legacy_slots)
 
     @staticmethod
     def _legacy_plan_complete(plan: MissionPlan, run: MissionRun) -> bool:
@@ -79,16 +82,23 @@ class MissionLoop(_LegacyMissionLoop):
         return False
 
     @classmethod
-    def _dynamic_execution(cls, plan: MissionPlan, run: MissionRun, proposal_id: str) -> StepExecution | None:
-        return cls._ledger(plan, run).dynamic_for_proposal(proposal_id)
+    def _dynamic_execution(
+        cls,
+        run: MissionRun,
+        proposal_id: str,
+        *,
+        plan: MissionPlan | None = None,
+    ) -> StepExecution | None:
+        return cls._ledger(run, plan).dynamic_for_proposal(proposal_id)
 
     def _materialize_dynamic_wait(
         self,
-        plan: MissionPlan,
         run: MissionRun,
         proposal: ActionProposal,
+        *,
+        plan: MissionPlan | None = None,
     ) -> StepExecution:
-        ledger = self._ledger(plan, run)
+        ledger = self._ledger(run, plan)
         action_id = f"dynamic:{proposal.id}"
         execution = ledger.dynamic_for_proposal(proposal.id)
         if execution is None:
@@ -143,17 +153,17 @@ class MissionLoop(_LegacyMissionLoop):
 
     def _schedule_one_proposal(
         self,
-        plan: MissionPlan,
         run: MissionRun,
         decision: ReasoningDecision,
         *,
         approval_tokens: Mapping[str, str],
+        plan: MissionPlan | None = None,
     ) -> int:
-        """Execute at most one candidate ActionProposal for this reasoning turn."""
+        """Execute at most one candidate proposal; keep the old helper call shape."""
         proposal = decision.new_proposals[0]
         action_id = f"dynamic:{proposal.id}"
         token = approval_tokens.get(action_id)
-        ledger = self._ledger(plan, run)
+        ledger = self._ledger(run, plan)
         existing = ledger.dynamic_for_proposal(proposal.id)
 
         if existing is not None and existing.state is StepExecutionState.WAITING_APPROVAL and not token:
@@ -161,14 +171,12 @@ class MissionLoop(_LegacyMissionLoop):
             return 0
 
         if existing is not None and existing.state is StepExecutionState.WAITING_APPROVAL and token:
-            # Coordinator still materializes the executing record. Remove only the
-            # parked dynamic placeholder; legacy slots are immutable ledger prefix.
             ledger.remove_dynamic(existing)
             run.state = MissionRunState.RUNNING
 
         accepted = self.coordinator.execute_proposal(run, proposal, approval_token=token)
         if accepted and run.state is MissionRunState.WAITING_APPROVAL:
-            self._materialize_dynamic_wait(plan, run, proposal)
+            self._materialize_dynamic_wait(run, proposal, plan=plan)
             return 0
         return 1 if accepted else 0
 
@@ -250,7 +258,7 @@ class MissionLoop(_LegacyMissionLoop):
             key = self._decision_key(decision)
             repeated[key] = repeated.get(key, 0) + 1
             evidence_before = len(run.evidence)
-            states_before = self._ledger(plan, run).state_signature()
+            states_before = self._ledger(run, plan).state_signature()
             evidence_added = 0
 
             if decision.action is ReasoningAction.NO_ACTION:
@@ -285,10 +293,10 @@ class MissionLoop(_LegacyMissionLoop):
                     )
                 selected = decision.new_proposals[0]
                 scheduled = self._schedule_one_proposal(
-                    plan,
                     run,
                     decision,
                     approval_tokens=approval_tokens,
+                    plan=plan,
                 )
                 executions += scheduled
                 evidence_added = len(run.evidence) - evidence_before
@@ -417,12 +425,12 @@ class MissionLoop(_LegacyMissionLoop):
                         decision=decision,
                     )
 
-                ledger = self._ledger(plan, run)
+                ledger = self._ledger(run, plan)
                 jobs_before = {entry.id: entry.job_id for entry in ledger}
                 self._advance_legacy_once(plan, run, approval_tokens=approval_tokens)
                 executions += sum(
                     1
-                    for entry in self._ledger(plan, run)
+                    for entry in self._ledger(run, plan)
                     if entry.job_id is not None and jobs_before.get(entry.id) != entry.job_id
                 )
                 evidence_added = len(run.evidence) - evidence_before
@@ -451,7 +459,9 @@ class MissionLoop(_LegacyMissionLoop):
             self._record_council_round(plan, run, session_id=session_id, decision=decision, phase="live")
             self._checkpoint(plan, run)
 
-            if report.converged and decision.action is not ReasoningAction.COMPLETE:
+            states_after = self._ledger(run, plan).state_signature()
+            no_progress = evidence_added == 0 and states_before == states_after
+            if report.converged and no_progress and decision.action is not ReasoningAction.COMPLETE:
                 return self._result(
                     plan,
                     run,
@@ -462,8 +472,6 @@ class MissionLoop(_LegacyMissionLoop):
                     decision=decision,
                 )
 
-            states_after = self._ledger(plan, run).state_signature()
-            no_progress = evidence_added == 0 and states_before == states_after
             if repeated[key] > self.policy.max_repeat_decisions and no_progress:
                 return self._result(
                     plan,
