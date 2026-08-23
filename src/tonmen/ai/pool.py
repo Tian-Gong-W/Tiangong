@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import json
+import logging
 import os
 from time import monotonic
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from .hub import ProviderHub as _ProviderHub
-from .hub import RoutedReview
+from .hub import ProviderSpec, RoutedReview
+
+logger = logging.getLogger(__name__)
+
+JsonValidator = Callable[[Mapping[str, Any]], None]
 
 _PROVIDER_IDS = ("openai", "chatgpt", "google", "grok", "deepseek", "mistral")
 _ROLES = (
@@ -29,6 +35,12 @@ _ALLOWED_ACTIONS = {
     "finalize_report",
     "stop_for_human_review",
 }
+
+
+class JsonCorrectionError(RuntimeError):
+    def __init__(self, message: str, *, usage: Mapping[str, int]) -> None:
+        super().__init__(message)
+        self.usage = dict(usage)
 
 
 def _parse_int_map(raw: str) -> dict[str, int]:
@@ -58,6 +70,33 @@ def _enabled(name: str, default: bool = True) -> bool:
 
 def _confidence(value: float) -> float:
     return round(max(0.0, min(1.0, float(value))), 2)
+
+
+def _strict_json_object(text: str) -> Mapping[str, Any]:
+    result = json.loads(text.strip())
+    if not isinstance(result, dict):
+        raise ValueError("provider response JSON must be an object")
+    return result
+
+
+def _error_summary(exc: BaseException) -> str:
+    detail = " ".join(str(exc).split())
+    return f"{type(exc).__name__}: {detail}"[:800]
+
+
+def _correction_message(exc: BaseException) -> str:
+    return (
+        "SYSTEM INTERCEPT: Your previous output failed validation. "
+        f"{_error_summary(exc)}. "
+        "Fix it immediately and return ONLY the raw valid JSON matching the required schema and constraints."
+    )
+
+
+def _merge_usage(total: dict[str, int], current: Mapping[str, Any]) -> None:
+    for key in ("input_tokens", "output_tokens", "total_tokens"):
+        value = current.get(key)
+        if isinstance(value, int) and value >= 0:
+            total[key] = total.get(key, 0) + value
 
 
 class ProviderHub(_ProviderHub):
@@ -240,6 +279,184 @@ class ProviderHub(_ProviderHub):
         candidates = self.ordered_candidates(role)
         return candidates[0] if candidates else None
 
+    @staticmethod
+    def _validate_review_result(result: Mapping[str, Any]) -> None:
+        action = str(result.get("recommended_action") or "").strip().lower()
+        if action not in _ALLOWED_ACTIONS:
+            raise ValueError("subagent provider returned unsupported recommended_action")
+        try:
+            confidence = float(result.get("confidence", 0.5))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("subagent confidence must be a number between 0 and 1") from exc
+        if not 0 <= confidence <= 1:
+            raise ValueError("subagent confidence must be between 0 and 1")
+        summary = str(result.get("summary") or "").strip()
+        if not summary:
+            raise ValueError("subagent provider returned an empty summary")
+
+    def _http_complete_with_retries(
+        self,
+        spec: ProviderSpec,
+        model: str | None,
+        system: str,
+        payload: Mapping[str, Any],
+        *,
+        validator: JsonValidator,
+        max_retries: int,
+    ) -> tuple[Mapping[str, Any], dict[str, int], bool]:
+        if not isinstance(max_retries, int) or isinstance(max_retries, bool) or max_retries < 1:
+            raise ValueError("max_retries must be an integer >= 1")
+        if not spec.api_key_env or not spec.base_url:
+            raise RuntimeError("provider API configuration is incomplete")
+        key = os.getenv(spec.api_key_env, "").strip()
+        if not key:
+            raise RuntimeError(f"{spec.api_key_env} is not configured")
+        selected_model = model or spec.default_model
+        if not selected_model:
+            raise RuntimeError("provider model is not configured")
+
+        cumulative_usage: dict[str, int] = {}
+        last_error: BaseException | None = None
+
+        if spec.transport == "responses_api":
+            input_items: list[dict[str, Any]] = [
+                {"role": "system", "content": [{"type": "input_text", "text": system}]},
+                {
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": json.dumps(payload, ensure_ascii=False, separators=(",", ":"))}],
+                },
+            ]
+            for attempt in range(1, max_retries + 1):
+                raw = self._request_json(
+                    f"{spec.base_url}/responses",
+                    {"Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "application/json"},
+                    {"model": selected_model, "input": input_items},
+                )
+                text = raw.get("output_text")
+                if not isinstance(text, str):
+                    text = ""
+                    for item in raw.get("output", []) if isinstance(raw.get("output"), list) else []:
+                        if not isinstance(item, dict) or item.get("type") != "message":
+                            continue
+                        for part in item.get("content", []) if isinstance(item.get("content"), list) else []:
+                            if isinstance(part, dict) and part.get("type") == "output_text" and isinstance(part.get("text"), str):
+                                text = part["text"]
+                                break
+                usage_raw = raw.get("usage") if isinstance(raw.get("usage"), dict) else {}
+                _merge_usage(
+                    cumulative_usage,
+                    {
+                        "input_tokens": int(usage_raw.get("input_tokens") or 0),
+                        "output_tokens": int(usage_raw.get("output_tokens") or 0),
+                        "total_tokens": int(usage_raw.get("total_tokens") or 0),
+                    },
+                )
+                try:
+                    result = _strict_json_object(str(text or ""))
+                    validator(result)
+                    return result, cumulative_usage, False
+                except (json.JSONDecodeError, ValueError) as exc:
+                    last_error = exc
+                    if attempt >= max_retries:
+                        break
+                    logger.warning(
+                        "SYSTEM INTERCEPT provider=%s attempt=%d/%d validation_failed=%s",
+                        spec.id,
+                        attempt,
+                        max_retries,
+                        _error_summary(exc),
+                    )
+                    input_items.extend(
+                        [
+                            {"role": "assistant", "content": [{"type": "input_text", "text": str(text or "")}]},
+                            {"role": "system", "content": [{"type": "input_text", "text": _correction_message(exc)}]},
+                        ]
+                    )
+        else:
+            messages: list[dict[str, str]] = [
+                {"role": "system", "content": system},
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False, separators=(",", ":"))},
+            ]
+            for attempt in range(1, max_retries + 1):
+                raw = self._request_json(
+                    f"{spec.base_url}/chat/completions",
+                    {"Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "application/json"},
+                    {
+                        "model": selected_model,
+                        "messages": messages,
+                        "response_format": {"type": "json_object"},
+                    },
+                )
+                choices = raw.get("choices") if isinstance(raw.get("choices"), list) else []
+                message = choices[0].get("message") if choices and isinstance(choices[0], dict) else {}
+                text = message.get("content") if isinstance(message, dict) else ""
+                if isinstance(text, list):
+                    text = "".join(str(part.get("text", "")) for part in text if isinstance(part, dict))
+                usage_raw = raw.get("usage") if isinstance(raw.get("usage"), dict) else {}
+                input_tokens = int(usage_raw.get("prompt_tokens") or usage_raw.get("input_tokens") or 0)
+                output_tokens = int(usage_raw.get("completion_tokens") or usage_raw.get("output_tokens") or 0)
+                total_tokens = int(usage_raw.get("total_tokens") or input_tokens + output_tokens)
+                _merge_usage(
+                    cumulative_usage,
+                    {
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "total_tokens": total_tokens,
+                    },
+                )
+                try:
+                    result = _strict_json_object(str(text or ""))
+                    validator(result)
+                    return result, cumulative_usage, False
+                except (json.JSONDecodeError, ValueError) as exc:
+                    last_error = exc
+                    if attempt >= max_retries:
+                        break
+                    logger.warning(
+                        "SYSTEM INTERCEPT provider=%s attempt=%d/%d validation_failed=%s",
+                        spec.id,
+                        attempt,
+                        max_retries,
+                        _error_summary(exc),
+                    )
+                    messages.extend(
+                        [
+                            {"role": "assistant", "content": str(text or "")},
+                            {"role": "user", "content": _correction_message(exc)},
+                        ]
+                    )
+
+        raise JsonCorrectionError(
+            f"{spec.id} failed JSON validation after {max_retries} attempts: "
+            f"{_error_summary(last_error or RuntimeError('validation failed'))}",
+            usage=cumulative_usage,
+        ) from last_error
+
+    def complete_json(
+        self,
+        provider_id: str,
+        model: str | None,
+        *,
+        system: str,
+        payload: Mapping[str, Any],
+        validator: JsonValidator | None = None,
+        max_retries: int = 3,
+    ) -> tuple[Mapping[str, Any], dict[str, int], bool]:
+        spec = self.spec(provider_id)
+        if spec.transport in {"responses_api", "chat_completions"}:
+            return self._http_complete_with_retries(
+                spec,
+                model,
+                system,
+                payload,
+                validator=validator or self._validate_review_result,
+                max_retries=max_retries,
+            )
+        result, token_usage, estimated = self._cli_complete(spec, model, system, payload)
+        if validator is not None:
+            validator(result)
+        return result, token_usage, estimated
+
     def review(
         self,
         role: str,
@@ -325,6 +542,11 @@ class ProviderHub(_ProviderHub):
                     error=recovery,
                 )
             except Exception as exc:
+                retry_usage = getattr(exc, "usage", None)
+                if isinstance(retry_usage, dict):
+                    usage.input_tokens += int(retry_usage.get("input_tokens") or 0)
+                    usage.output_tokens += int(retry_usage.get("output_tokens") or 0)
+                    usage.total_tokens += int(retry_usage.get("total_tokens") or 0)
                 usage.calls += 1
                 usage.failures += 1
                 failures.append(f"{provider_id}: {str(exc)[:140]}")
