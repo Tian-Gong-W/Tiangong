@@ -8,9 +8,12 @@ from .base import (
     ToolResult,
     ToolSpec,
 )
+from .capability import CapabilityRequest, CapabilityResolution
 from .registry import ToolRegistry
 
 __all__ = [
+    "CapabilityRequest",
+    "CapabilityResolution",
     "CapabilitySpec",
     "CostEstimate",
     "RiskLevel",

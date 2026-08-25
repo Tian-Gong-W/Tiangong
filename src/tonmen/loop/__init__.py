@@ -13,6 +13,13 @@ class MissionLoop(_DirectorMissionLoop):
         self.director = MissionDirector(self.runtime, reasoner=self.reasoner)
         self.reasoner = self.director.reasoner
 
+    def _emit(self, event_type, run, **data) -> None:
+        # Mission target belongs to the event envelope. Keep proposal/action target
+        # separate so late-bound events never collide with the envelope keyword.
+        if "target" in data:
+            data = {"action_target": data["target"], **{key: value for key, value in data.items() if key != "target"}}
+        super()._emit(event_type, run, **data)
+
     def _schedule_one_proposal(self, run, decision, *, approval_tokens, plan=None) -> int:
         proposal = decision.new_proposals[0]
         scheduled = super()._schedule_one_proposal(
