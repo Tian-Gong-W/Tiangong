@@ -9,7 +9,9 @@
     status: null,
     scope: null,
     refreshing: false,
-    polling: false
+    polling: false,
+    currentViewSignature: null,
+    scopeViewSignature: null
   };
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
   const api = async (url, options = {}) => {
@@ -22,11 +24,35 @@
   const toast = (message, error = false) => { const el = $("#toast"); if (!el) return; el.textContent = message; el.className = `toast show${error ? " error" : ""}`; clearTimeout(toast.t); toast.t = setTimeout(() => el.className = "toast", 3200); };
   const fmtTime = (iso) => { if (!iso) return "—"; const d = new Date(iso); return Number.isNaN(d.valueOf()) ? "—" : d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"}); };
 
+  function missionViewSignature(m) {
+    if (!m) return "none";
+    return JSON.stringify({
+      id: m.id,
+      state: m.state,
+      target: m.target,
+      finished_at: m.finished_at,
+      steps: (m.steps || []).map(step => [
+        step.id,
+        step.tool,
+        step.target,
+        step.state,
+        step.error,
+        step.evidence_id,
+        step.rationale
+      ]),
+      evidence: (m.evidence || []).map(item => [item.id, item.tool, item.exit_code, item.finished_at]),
+      observations: (m.observations || []).map(item => [item.id, item.captured_at, item.summary])
+    });
+  }
+
   // 授权目标列表：只显示干净目标名，不要符号和序号
   function renderScope() {
     const list = $("#scope-list");
     if (!list || !state.scope) return;
     const items = state.scope.allowed || [];
+    const signature = JSON.stringify(items.map(item => [item.rule || "", !!item.default]));
+    if (state.scopeViewSignature === signature) return;
+    state.scopeViewSignature = signature;
     if (!items.length) {
       list.innerHTML = `<div class="muted">暂无授权目标</div>`;
       return;
@@ -43,6 +69,7 @@
     $$("[data-remove-scope]").forEach(btn => btn.addEventListener("click", async () => {
       try {
         state.scope = await api("/api/scope/remove", {method:"POST", body:{target: btn.dataset.removeScope}});
+        state.scopeViewSignature = null;
         renderScope();
         toast(`已移除：${btn.dataset.removeScope}`);
       } catch (e) { toast(e.message, true); }
@@ -112,9 +139,22 @@
     if (resumeBtn) resumeBtn.disabled = !(m && m.state === "running");
   }
 
+  function renderMissionIfChanged(loaded) {
+    const signature = missionViewSignature(loaded);
+    state.current = loaded;
+    if (state.currentViewSignature === signature) return false;
+    state.currentViewSignature = signature;
+    renderApproval(loaded);
+    renderChronicle(loaded);
+    updateDeck(loaded);
+    return true;
+  }
+
   async function loadMission(id) {
     if (!id) {
       state.current = null;
+      if (state.currentViewSignature === "none") return;
+      state.currentViewSignature = "none";
       renderApproval(null);
       renderChronicle(null);
       updateDeck(null);
@@ -122,12 +162,10 @@
     }
     try {
       const loaded = await api(`/api/missions/${encodeURIComponent(id)}`);
-      state.current = loaded;
-      renderApproval(loaded);
-      renderChronicle(loaded);
-      updateDeck(loaded);
+      renderMissionIfChanged(loaded);
     } catch (e) {
       state.current = null;
+      state.currentViewSignature = null;
       renderApproval(null);
       renderChronicle(null);
       updateDeck(null);
@@ -173,8 +211,9 @@
     if (!confirm("确认批准当前等待的步骤？批准仅绑定当前工具和目标，且为一次性。")) return;
     try {
       toast("正在批准并继续执行…");
-      state.current = await api(`/api/missions/${state.current.id}/approve`, {method:"POST", body:{}});
-      await refreshAll(state.current.id);
+      const accepted = await api(`/api/missions/${state.current.id}/approve`, {method:"POST", body:{}});
+      if (accepted?.id) renderMissionIfChanged(accepted);
+      await refreshAll(state.current?.id);
       toast("批准已完成，任务状态已更新。");
     } catch (e) { toast(e.message, true); }
   }
@@ -183,8 +222,9 @@
     if (!state.current) return;
     try {
       toast("正在续行…");
-      state.current = await api(`/api/missions/${state.current.id}/resume`, {method:"POST", body:{}});
-      await refreshAll(state.current.id);
+      const resumed = await api(`/api/missions/${state.current.id}/resume`, {method:"POST", body:{}});
+      if (resumed?.id) renderMissionIfChanged(resumed);
+      await refreshAll(state.current?.id);
       toast("任务已续行。");
     } catch (e) { toast(e.message, true); }
   }
@@ -246,7 +286,7 @@
           max_repeat_decisions: 2
         }
       });
-      state.current = m;
+      renderMissionIfChanged(m);
       await refreshAll(m.id);
       toast(m.state === "failed" ? "任务执行失败，请查看证据。" : "任务已启动。", m.state === "failed");
     } catch (err) { toast(err.message, true); }
@@ -260,6 +300,7 @@
     if (!target) return;
     try {
       state.scope = await api("/api/scope/add", {method:"POST", body:{target}});
+      state.scopeViewSignature = null;
       if (input) input.value = "";
       renderScope();
       toast(`已加入授权：${target}`);
@@ -274,6 +315,7 @@
     if (!target) return;
     try {
       state.scope = await api("/api/scope/add", {method:"POST", body:{target}});
+      state.scopeViewSignature = null;
       if (input) input.value = "";
       renderScope();
       toast(`已加入授权：${target}`);
@@ -294,5 +336,5 @@
     } finally {
       state.polling = false;
     }
-  }, 5000);
+  }, 15000);
 })();

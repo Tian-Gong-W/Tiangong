@@ -90,16 +90,22 @@
   }
 
   function setPage(route, body, actions = "") {
-    if (pageState.route !== route) return;
+    if (pageState.route !== route) return false;
+    const signature = `${actions}\u0000${body}`;
+    if (pageState.cache[route] === signature) return false;
+    pageState.cache[route] = signature;
     root.innerHTML = pageShell(route, body, actions);
     bindCommonActions();
+    return true;
   }
 
   function loading(route) {
+    delete pageState.cache[route];
     root.innerHTML = pageShell(route, `<div class="module-card"><div class="module-empty"><b>正在加载…</b></div></div>`);
   }
 
   function errorPage(route, error) {
+    delete pageState.cache[route];
     root.innerHTML = pageShell(route, `<div class="module-error">${esc(error.message || error)}</div>`);
   }
 
@@ -144,8 +150,8 @@
     const detail = selected ? await missionDetail(selected) : null;
     const rows = list.map(item => `<tr class="selectable ${item.id === selected ? "selected" : ""}" data-select-run="${esc(item.id)}"><td>${esc(short(item.id))}</td><td>${esc(item.target)}</td><td><span class="module-badge ${stateTone(item.state)}">${esc(stateName(item.state))}</span></td><td>${esc(fmt(item.started_at))}</td></tr>`).join("");
     const detailHtml = detail ? `<div class="detail-title"><div><strong>${esc(detail.target)}</strong><br><small>任务 ${esc(detail.id)}</small></div><span class="module-badge ${stateTone(detail.state)}">${esc(stateName(detail.state))}</span></div>${stepsBlock(detail)}<div style="height:10px"></div><div class="module-card"><div class="module-card-head"><h2>执行内容</h2></div><div class="module-card-body">${evidenceBlock(detail.evidence)}</div></div>` : `<div class="module-empty"><b>尚无任务</b>请先在总览页执行任务。</div>`;
-    setPage(route, `${stats(list)}<div style="height:10px"></div><div class="module-grid two"><section class="module-card"><div class="module-card-head"><h2>任务列表</h2><small>${list.length} 个</small></div><div class="module-table-wrap"><table class="module-table"><thead><tr><th>编号</th><th>目标</th><th>状态</th><th>开始时间</th></tr></thead><tbody>${rows || `<tr><td colspan="4">暂无任务</td></tr>`}</tbody></table></div></section><section class="module-card"><div class="module-card-head"><h2>任务详情</h2></div><div class="module-card-body">${detailHtml}</div></section></div>`, actionToolbar(detail?.state === "running" ? `<button class="primary" data-resume-run="${esc(detail.id)}">续行</button>` : detail?.state === "waiting_approval" ? `<button class="danger" data-approve-run="${esc(detail.id)}">批准当前步骤</button>` : detail?.state === "failed" ? `<button class="primary" data-retry-target="${esc(detail.target)}">重新执行</button>` : ""));
-    bindMissionSelection();
+    const changed = setPage(route, `${stats(list)}<div style="height:10px"></div><div class="module-grid two"><section class="module-card"><div class="module-card-head"><h2>任务列表</h2><small>${list.length} 个</small></div><div class="module-table-wrap"><table class="module-table"><thead><tr><th>编号</th><th>目标</th><th>状态</th><th>开始时间</th></tr></thead><tbody>${rows || `<tr><td colspan="4">暂无任务</td></tr>`}</tbody></table></div></section><section class="module-card"><div class="module-card-head"><h2>任务详情</h2></div><div class="module-card-body">${detailHtml}</div></section></div>`, actionToolbar(detail?.state === "running" ? `<button class="primary" data-resume-run="${esc(detail.id)}">续行</button>` : detail?.state === "waiting_approval" ? `<button class="danger" data-approve-run="${esc(detail.id)}">批准当前步骤</button>` : detail?.state === "failed" ? `<button class="primary" data-retry-target="${esc(detail.target)}">重新执行</button>` : ""));
+    if (changed) bindMissionSelection();
   }
 
   async function renderTools() {
@@ -225,7 +231,6 @@
       if (!force) loading(route);
       try {
         await (renderers[route] || renderMissions)();
-        document.getElementById("module-updated")?.replaceChildren(document.createTextNode(nowText()));
       } catch (error) {
         if (pageState.route === route) errorPage(route, error);
       }
@@ -305,7 +310,7 @@
   setInterval(() => {
     if (document.hidden || pageState.busy || pageState.rendering || pageState.route === "/") return;
     renderRoute(true);
-  }, 2500);
+  }, 15000);
 
   renderRoute();
 })();
