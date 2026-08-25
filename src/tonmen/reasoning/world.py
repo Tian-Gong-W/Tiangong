@@ -168,7 +168,7 @@ class WorldModel:
         observed_set = set(observed_products)
         needs: list[EvidenceNeed] = []
         for hypothesis in hypotheses:
-            if hypothesis.status is not HypothesisStatus.OPEN:
+            if hypothesis.status not in {HypothesisStatus.OPEN, HypothesisStatus.SUPPORTED}:
                 continue
             metadata = dict(hypothesis.metadata)
             required = tuple(str(item) for item in metadata.get("required_products", ()) if str(item))
