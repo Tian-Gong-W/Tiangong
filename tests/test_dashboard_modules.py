@@ -45,7 +45,8 @@ def test_module_workspace_assets_are_packaged_and_routed():
         assert route in js
 
     assert "setInterval" in js
-    assert "2500" in js
+    assert "15000" in js
+    assert "if (pageState.cache[route] === signature) return false" in js
     assert "执行内容" in js
     assert "stdout" in js
     assert "stderr" in js
