@@ -1,0 +1,13 @@
+{
+  "name": "tiangong-topmen-one-launcher",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "node extract.mjs && cd app && npm ci && npm run build",
+    "start": "cd app && npm run start"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16"
+  }
+}
