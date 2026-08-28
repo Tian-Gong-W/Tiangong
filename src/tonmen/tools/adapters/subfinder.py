@@ -22,9 +22,15 @@ class SubfinderAdapter(ToolAdapter):
 
     def validate(self, request: ToolRequest) -> None:
         reject_unknown_parameters(request.parameters, set())
-        target = validate_host_target(request.target)
+        target = validate_host_target(request.target).rstrip(".").lower()
         if target.replace(".", "").isdigit() or ":" in target:
             raise ValueError("subfinder requires a DNS hostname, not an IP literal")
+        # Passive subdomain enumeration has no meaningful scope for localhost or
+        # other single-label hostnames. Requiring a DNS-style root avoids spending
+        # discovery budget on synthetic/local targets while real domains remain
+        # available to the Director when their Scope rule permits them.
+        if target == "localhost" or "." not in target:
+            raise ValueError("subfinder requires a DNS root domain")
 
     def build_argv(self, request: ToolRequest) -> tuple[str, ...]:
         self.validate(request)
