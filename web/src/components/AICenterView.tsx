@@ -1,476 +1,78 @@
-import React, { useState } from 'react';
-import {
-  Cpu,
-  Sparkles,
-  ShieldCheck,
-  Zap,
-  Sliders,
-  CheckCircle2,
-  AlertTriangle,
-  GitBranch,
-  Terminal,
-  Save,
-  Compass,
-  Layers,
-  GitCommit,
-  ExternalLink,
-  Bot,
-  Flame,
-  Check,
-  Anchor,
-  ListOrdered,
-  RefreshCw,
-} from 'lucide-react';
-import { AIModelConfig, ArtexConfig } from '../types';
+import React, { useEffect, useState } from 'react';
+import { Bot, KeyRound, LoaderCircle, RefreshCw, Save, ShieldCheck, Trash2 } from 'lucide-react';
 
 interface AICenterViewProps {
-  config: AIModelConfig;
-  onUpdateConfig: (newConfig: AIModelConfig) => void;
+  data: Record<string, any>;
+  lead: Record<string, any>;
+  onSave: (values: Record<string, unknown>) => Promise<void>;
+  onProbe: (provider: string) => Promise<void>;
+  onSaveKey: (provider: string, value: string) => Promise<void>;
+  onClearKey: (provider: string) => Promise<void>;
 }
 
-export const AICenterView: React.FC<AICenterViewProps> = ({
-  config,
-  onUpdateConfig,
-}) => {
-  const [localConfig, setLocalConfig] = useState<AIModelConfig>(config);
-  const [saved, setSaved] = useState(false);
+export const AICenterView: React.FC<AICenterViewProps> = ({ data, lead, onSave, onProbe, onSaveKey, onClearKey }) => {
+  const settings = data.local_settings || {};
+  const providers = Array.isArray(data.providers) ? data.providers : [];
+  const [enabled, setEnabled] = useState(Boolean(lead.enabled));
+  const [model, setModel] = useState(String(settings.lead_model || lead.model || 'gpt-5.6'));
+  const [pool, setPool] = useState<string[]>(Array.isArray(settings.pool) ? settings.pool : []);
+  const [keys, setKeys] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  useEffect(() => {
+    setEnabled(Boolean(lead.enabled));
+    setModel(String(data.local_settings?.lead_model || lead.model || 'gpt-5.6'));
+    setPool(Array.isArray(data.local_settings?.pool) ? data.local_settings.pool : []);
+  }, [data, lead]);
 
-  const handleSave = () => {
-    onUpdateConfig(localConfig);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  };
-
-  const cairn = localConfig.cairnSearchConfig || {
-    searchStrategy: 'heuristic_astar',
-    workerBackend: 'claude_code',
-    originTarget: '10.240.0.1 (DMZ Entrypoint)',
-    goalState: 'Active Directory Domain Controller (Domain Admin Privileges)',
-    factCount: 18,
-    intentCount: 6,
-    hintCount: 4,
-    pruningThreshold: 0.85,
-    maxSearchDepth: 10,
-    backtrackingEnabled: true,
-  };
-
-  const artex = localConfig.artexConfig || {
-    plannerModel: 'ARTEX-MultiAgent-Planner-v3.2',
-    maxSubTasks: 12,
-    autoAnchoring: true,
-    dualGraphSync: true,
-    crossTaskAssetInheritance: true,
-    replanOnFailure: true,
-  };
-
-  const updateCairn = (field: string, value: any) => {
-    setLocalConfig({
-      ...localConfig,
-      cairnSearchConfig: {
-        ...cairn,
-        [field]: value,
-      },
-    });
-  };
-
-  const updateArtex = (field: string, value: any) => {
-    setLocalConfig({
-      ...localConfig,
-      artexConfig: {
-        ...artex,
-        [field]: value,
-      },
-    });
+  const act = async (id: string, action: () => Promise<void>) => {
+    setBusy(id);
+    setError('');
+    try { await action(); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); } finally { setBusy(''); }
   };
 
   return (
-    <div className="flex-1 p-5 md:p-8 overflow-y-auto text-slate-100 space-y-6 max-w-5xl mx-auto z-10 relative pb-12">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold">
-              ARTEX × CAIRN × 雲頂天宮
-            </span>
-            <span className="text-xs text-slate-400 font-mono">
-              S̶h̶e̶l̶l̶ R̴e̴n 智能体协同与规划控制中心
-            </span>
-          </div>
-          <h1 className="text-xl font-bold text-white tracking-wide flex items-center gap-2">
-            S̶h̶e̶l̶l̶ R̴e̴n 智能体架构与双图规划引擎
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            整合 ARTEX 双图架构与共享任务清单 + Cairn 状态空间启发式搜索与确定性事实推演
-          </p>
+    <div className="flex-1 p-6 md:p-8 overflow-y-auto text-slate-100 space-y-5 max-w-6xl mx-auto">
+      <div className="border-b border-slate-800 pb-4"><h1 className="text-xl font-bold flex items-center gap-2"><Bot className="w-4 h-4 text-purple-400" />AI Provider Hub</h1><p className="text-xs text-slate-400 mt-1">显示 Tiangong ProviderHub 的实际配置、连接和历史用量</p></div>
+      {error && <div className="rounded-xl border border-rose-500/30 bg-rose-950/30 p-3 text-xs text-rose-300">{error}</div>}
+      <div className="p-5 rounded-2xl bg-slate-900/85 border border-slate-800 space-y-4">
+        <div className="flex items-center justify-between"><div><div className="text-sm font-bold">Lead AI</div><div className="text-xs text-slate-500 mt-1">执行、批准、范围及计划变更权限均为 false</div></div><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} className="accent-purple-500" />启用 OpenAI Lead</label></div>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <label className="text-xs text-slate-400">模型<input value={model} onChange={(event) => setModel(event.target.value)} className="mt-1.5 w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2.5 text-slate-100 font-mono" /></label>
+          <div className="text-xs text-slate-400">当前状态<div className="mt-1.5 rounded-xl bg-slate-950 border border-slate-800 px-3 py-2.5 font-mono text-slate-200">{lead.provider || 'disabled'} · {lead.key_configured ? 'Key 已配置' : 'Key 未配置'}</div></div>
         </div>
-
-        <button
-          onClick={handleSave}
-          className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition-all shadow-md flex items-center gap-2 self-start sm:self-auto cursor-pointer"
-        >
-          <Save className="w-4 h-4" />
-          {saved ? '配置已保存生效' : '保存智能体配置'}
-        </button>
+        <button onClick={() => act('settings', () => onSave({ lead_enabled: enabled, lead_model: model, pool }))} className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-xs font-bold flex items-center gap-1.5"><Save className="w-3.5 h-3.5" />保存到后端</button>
       </div>
 
-      {/* 1. ARTEX Dual-Graph & Multi-Agent Planner Integration */}
-      <div className="p-6 rounded-2xl bg-slate-900/85 backdrop-blur-sm border border-cyan-500/30 space-y-5 shadow-xl">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Anchor className="w-4 h-4 text-cyan-400" />
-            <h2 className="text-sm font-bold text-white">
-              ARTEX 双图联动与 Planner 规划器配置
-            </h2>
-          </div>
-          <div className="flex items-center gap-2">
-            <a
-              href="https://artex-demo.vercel.app/"
-              target="_blank"
-              rel="noreferrer"
-              className="text-[11px] font-mono text-cyan-300 hover:text-cyan-200 flex items-center gap-1 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20"
-            >
-              ARTEX 演示 <ExternalLink className="w-3 h-3" />
-            </a>
-            <a
-              href="https://github.com/Autumn-27/ARTEX"
-              target="_blank"
-              rel="noreferrer"
-              className="text-[11px] font-mono text-cyan-300 hover:text-cyan-200 flex items-center gap-1 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20"
-            >
-              Autumn-27/ARTEX 源码 <ExternalLink className="w-3 h-3" />
-            </a>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-300">
-              Planner 规划模型 (Shared To-Do List Planner):
-            </label>
-            <select
-              value={artex.plannerModel}
-              onChange={(e) => updateArtex('plannerModel', e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-100 font-mono focus:border-cyan-500/50"
-            >
-              <option value="ARTEX-MultiAgent-Planner-v3.2">ARTEX-MultiAgent-Planner-v3.2 (推荐)</option>
-              <option value="ARTEX-Stealth-RedTeam-v1">ARTEX-Stealth-RedTeam-v1 (低流量避障模式)</option>
-              <option value="ARTEX-Aggressive-Poc-v2">ARTEX-Aggressive-Poc-v2 (靶场快速突破)</option>
-            </select>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-300">
-              单次规划最大子任务步长 (Max Sub-Tasks per Plan):
-            </label>
-            <input
-              type="number"
-              min="4"
-              max="30"
-              value={artex.maxSubTasks}
-              onChange={(e) => updateArtex('maxSubTasks', parseInt(e.target.value) || 12)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-100 font-mono focus:border-cyan-500/50"
-            />
-          </div>
-        </div>
-
-        {/* Toggles */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-          <label className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800 cursor-pointer">
-            <div>
-              <div className="text-xs font-bold text-slate-200">
-                启用双图自动锚定 (Auto-Anchoring)
+      <div className="grid md:grid-cols-2 gap-4">
+        {providers.map((provider: any) => {
+          const apiKey = provider.auth_mode === 'api_key';
+          const configured = Boolean(provider.key_configured || provider.local_secret?.configured);
+          return (
+            <div key={provider.id} className="p-5 rounded-2xl bg-slate-900/85 border border-slate-800 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div><div className="text-sm font-bold text-white">{provider.label}</div><div className="text-[11px] text-slate-500 font-mono mt-1">{provider.transport} · {provider.default_model || 'CLI'}</div></div>
+                <span className={`text-[10px] font-bold ${configured || provider.last_probe?.ready ? 'text-emerald-400' : 'text-amber-400'}`}>{provider.last_probe?.ready ? 'READY' : configured ? 'CONFIGURED' : 'NOT CONFIGURED'}</span>
               </div>
-              <div className="text-[10px] text-slate-400">
-                将探索图中的 Intent/Fact 自动映射至 Asset Graph 端口端点
+              <div className="grid grid-cols-3 gap-2 text-center text-[10px]">
+                <div className="p-2 rounded-lg bg-slate-950"><span className="block text-slate-500">调用</span>{provider.usage?.calls || 0}</div>
+                <div className="p-2 rounded-lg bg-slate-950"><span className="block text-slate-500">Tokens</span>{provider.usage?.total_tokens || 0}</div>
+                <div className="p-2 rounded-lg bg-slate-950"><span className="block text-slate-500">失败</span>{provider.usage?.failures || 0}</div>
               </div>
+              <label className="text-xs flex items-center gap-2"><input type="checkbox" checked={pool.includes(provider.id)} onChange={(event) => setPool((current) => event.target.checked ? [...current.filter((id) => id !== provider.id), provider.id] : current.filter((id) => id !== provider.id))} className="accent-purple-500" />加入 Council Provider 池</label>
+              {apiKey ? (
+                <div className="space-y-2">
+                  <div className="relative"><KeyRound className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /><input type="password" value={keys[provider.id] || ''} onChange={(event) => setKeys({ ...keys, [provider.id]: event.target.value })} placeholder={configured ? '已配置；输入新值可替换' : '输入 API Key'} className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs" /></div>
+                  <div className="flex gap-2"><button disabled={!keys[provider.id] || busy === provider.id} onClick={() => act(provider.id, async () => { await onSaveKey(provider.id, keys[provider.id]); setKeys({ ...keys, [provider.id]: '' }); })} className="flex-1 py-2 rounded-lg bg-cyan-600 disabled:opacity-40 text-xs font-bold">{busy === provider.id ? '处理中…' : '安全保存 Key'}</button>{configured && <button onClick={() => act(provider.id, () => onClearKey(provider.id))} className="p-2 rounded-lg bg-rose-500/10 text-rose-300"><Trash2 className="w-4 h-4" /></button>}</div>
+                </div>
+              ) : <div className="text-xs text-slate-500">{provider.setup_hint || (provider.installed ? 'CLI 已安装' : 'CLI 未安装')}</div>}
+              <button onClick={() => act(`probe:${provider.id}`, () => onProbe(provider.id))} className="w-full py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs flex items-center justify-center gap-1.5">{busy === `probe:${provider.id}` ? <LoaderCircle className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}检查连接</button>
             </div>
-            <input
-              type="checkbox"
-              checked={artex.autoAnchoring}
-              onChange={(e) => updateArtex('autoAnchoring', e.target.checked)}
-              className="w-4 h-4 accent-cyan-500"
-            />
-          </label>
-
-          <label className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800 cursor-pointer">
-            <div>
-              <div className="text-xs font-bold text-slate-200">
-                跨任务资产真值库继承 (Cross-Task Shared Truth)
-              </div>
-              <div className="text-[10px] text-slate-400">
-                不同渗透任务之间共享已确认的全局资产树与存活拓扑
-              </div>
-            </div>
-            <input
-              type="checkbox"
-              checked={artex.crossTaskAssetInheritance}
-              onChange={(e) => updateArtex('crossTaskAssetInheritance', e.target.checked)}
-              className="w-4 h-4 accent-cyan-500"
-            />
-          </label>
-        </div>
+          );
+        })}
       </div>
-
-      {/* 2. Cairn State Space Search Engine Integration */}
-      <div className="p-6 rounded-2xl bg-slate-900/85 backdrop-blur-sm border border-purple-500/30 space-y-5 shadow-xl">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Compass className="w-4 h-4 text-purple-400" />
-            <h2 className="text-sm font-bold text-white">
-              Cairn 状态空间搜索配置 (State-Space Search Engine)
-            </h2>
-          </div>
-          <a
-            href="https://github.com/oritera/Cairn"
-            target="_blank"
-            rel="noreferrer"
-            className="text-[11px] font-mono text-purple-300 hover:text-purple-200 flex items-center gap-1 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20"
-          >
-            oritera/Cairn 源码 <ExternalLink className="w-3 h-3" />
-          </a>
-        </div>
-
-        {/* Origin & Goal Definition */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
-              <span>起点状态 (Origin State):</span>
-              <span className="text-[10px] text-cyan-400 font-mono">入口/DMZ</span>
-            </label>
-            <input
-              type="text"
-              value={cairn.originTarget}
-              onChange={(e) => updateCairn('originTarget', e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-100 font-mono focus:border-purple-500/50"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
-              <span>目标状态 (Goal State):</span>
-              <span className="text-[10px] text-amber-400 font-mono">靶心目标</span>
-            </label>
-            <input
-              type="text"
-              value={cairn.goalState}
-              onChange={(e) => updateCairn('goalState', e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-100 font-mono focus:border-purple-500/50"
-            />
-          </div>
-        </div>
-
-        {/* Search Strategy & Worker Backend */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-300">
-              启发式路径搜索策略：
-            </label>
-            <select
-              value={cairn.searchStrategy}
-              onChange={(e) => updateCairn('searchStrategy', e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-100 font-mono focus:border-purple-500/50"
-            >
-              <option value="heuristic_astar">A* 启发式剪枝搜索 (推荐 - 速度与完备性最优)</option>
-              <option value="mcts_goal_oriented">MCTS 蒙特卡洛目标导向树搜索 (对抗环境防 WAF)</option>
-              <option value="depth_first_path">目标优先深度优先遍历 (针对单点高危突破)</option>
-              <option value="breadth_first_recon">广度优先全量资产扫描 (信息搜集阶段)</option>
-            </select>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-300">
-              执行 Worker 后端：
-            </label>
-            <select
-              value={cairn.workerBackend}
-              onChange={(e) => updateCairn('workerBackend', e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-100 font-mono focus:border-purple-500/50"
-            >
-              <option value="claude_code">Claude Code Worker (Cairn 原生集成终端智能体)</option>
-              <option value="codex_reasoner">OpenAI Codex / Reasoner (高阶漏洞利用链生成)</option>
-              <option value="pi_agent">Pi Agent (轻量级探测与快速事实搜集)</option>
-              <option value="sandbox_container">安全沙箱 PoC 执行环境 (本地沙箱容器)</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Backtracking & Pruning */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-          <label className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800 cursor-pointer">
-            <div>
-              <div className="text-xs font-bold text-slate-200">
-                支持状态空间自动回溯 (Backtracking)
-              </div>
-              <div className="text-[10px] text-slate-400">
-                遇到 WAF 拦截或死胡同时自动回退至上一有效分支
-              </div>
-            </div>
-            <input
-              type="checkbox"
-              checked={cairn.backtrackingEnabled}
-              onChange={(e) => updateCairn('backtrackingEnabled', e.target.checked)}
-              className="w-4 h-4 accent-purple-500"
-            />
-          </label>
-
-          <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
-            <div className="flex justify-between text-xs font-bold text-slate-200">
-              <span>剪枝置信度阈值 (Pruning)</span>
-              <span className="font-mono text-purple-300">{cairn.pruningThreshold}</span>
-            </div>
-            <input
-              type="range"
-              min="0.5"
-              max="0.99"
-              step="0.05"
-              value={cairn.pruningThreshold}
-              onChange={(e) => updateCairn('pruningThreshold', parseFloat(e.target.value))}
-              className="w-full accent-purple-500 cursor-pointer"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* 3. S̶h̶e̶l̶l̶ R̴e̴n 大模型底座 */}
-      <div className="p-6 rounded-2xl bg-slate-900/85 backdrop-blur-sm border border-slate-800 space-y-5 shadow-xl">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-amber-400" />
-            <h2 className="text-sm font-bold text-white">S̶h̶e̶l̶l̶ R̴e̴n 底座模型与攻防思维链</h2>
-          </div>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-            S̶h̶e̶l̶l̶ R̴e̴n READY
-          </span>
-        </div>
-
-        <div className="space-y-3">
-          <label className="text-xs font-semibold text-slate-300 block">
-            当前激活的 S̶h̶e̶l̶l̶ R̴e̴n 模型：
-          </label>
-          <select
-            value={localConfig.activeModel}
-            onChange={(e) =>
-              setLocalConfig({ ...localConfig, activeModel: e.target.value })
-            }
-            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-amber-500/50"
-          >
-            {localConfig.availableModels.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* 4. Autonomy Level */}
-      <div className="p-6 rounded-2xl bg-slate-900/85 backdrop-blur-sm border border-slate-800 space-y-5 shadow-xl">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Sliders className="w-4 h-4 text-cyan-400" />
-            <h2 className="text-sm font-bold text-white">自主攻击与越界审批策略</h2>
-          </div>
-          <span className="text-xs font-mono text-amber-300">
-            {localConfig.autonomyLevel === 'semi_auto'
-              ? '半自动模式 (高危需指挥官授权)'
-              : localConfig.autonomyLevel === 'full_auto'
-              ? '全自主攻防 (完全放行)'
-              : '专家向导模式'}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {[
-            {
-              id: 'semi_auto',
-              title: '半自动 (Semi-Auto)',
-              desc: '常规探测自主推进，涉及越界扩展与破坏性提权必须通过人工确认放行。',
-            },
-            {
-              id: 'full_auto',
-              title: '全自动 (Full-Autonomous)',
-              desc: 'S̶h̶e̶l̶l̶ R̴e̴n 自主制定攻击链并直接执行 PoC，适用于授权闭环靶场环境。',
-            },
-            {
-              id: 'guided',
-              title: '专家向导 (Guided)',
-              desc: 'S̶h̶e̶l̶l̶ R̴e̴n 仅提供推理建议与 Payload 推荐，每一步工具执行需人工手动触发。',
-            },
-          ].map((lvl) => (
-            <div
-              key={lvl.id}
-              onClick={() =>
-                setLocalConfig({
-                  ...localConfig,
-                  autonomyLevel: lvl.id as any,
-                })
-              }
-              className={`p-4 rounded-xl border transition-all cursor-pointer select-none space-y-2 ${
-                localConfig.autonomyLevel === lvl.id
-                  ? 'bg-amber-500/10 border-amber-400 shadow-md ring-1 ring-amber-500/30'
-                  : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
-              }`}
-            >
-              <div className="text-xs font-bold text-white">{lvl.title}</div>
-              <p className="text-[11px] text-slate-400 leading-relaxed">{lvl.desc}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* 5. Safety Guardrails & Anti-Hallucination */}
-      <div className="p-6 rounded-2xl bg-slate-900/85 backdrop-blur-sm border border-slate-800 space-y-4 shadow-xl">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          <h2 className="text-sm font-bold text-white">安全红线与抗幻觉双重校验</h2>
-        </div>
-
-        <div className="space-y-3">
-          <label className="flex items-center justify-between p-3.5 rounded-xl bg-slate-950 border border-slate-800 cursor-pointer">
-            <div>
-              <div className="text-xs font-bold text-slate-200">
-                强制事实验证 (Anti-Hallucination Double Check)
-              </div>
-              <div className="text-[11px] text-slate-400">
-                漏洞必须通过确定性回显二次测试，杜绝 S̶h̶e̶l̶l̶ R̴e̴n 虚报自嗨
-              </div>
-            </div>
-            <input
-              type="checkbox"
-              checked={localConfig.antiHallucinationDoubleCheck}
-              onChange={(e) =>
-                setLocalConfig({
-                  ...localConfig,
-                  antiHallucinationDoubleCheck: e.target.checked,
-                })
-              }
-              className="w-4 h-4 accent-amber-500"
-            />
-          </label>
-
-          <label className="flex items-center justify-between p-3.5 rounded-xl bg-slate-950 border border-slate-800 cursor-pointer">
-            <div>
-              <div className="text-xs font-bold text-slate-200">
-                严格遵循授权边界 (Scope Guard)
-              </div>
-              <div className="text-[11px] text-slate-400">
-                探测超出初始目标网段时自动触发 Mission Grant 阻断审批
-              </div>
-            </div>
-            <input
-              type="checkbox"
-              checked={localConfig.safetyGuardrails}
-              onChange={(e) =>
-                setLocalConfig({
-                  ...localConfig,
-                  safetyGuardrails: e.target.checked,
-                })
-              }
-              className="w-4 h-4 accent-amber-500"
-            />
-          </label>
-        </div>
-      </div>
+      {providers.length === 0 && <div className="p-10 text-center rounded-2xl border border-dashed border-slate-700 text-sm text-slate-500">后端没有 Provider 记录</div>}
+      <div className="text-[11px] text-slate-500 flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5" />浏览器不读取已保存的密钥值，API 返回仅包含配置状态。</div>
     </div>
   );
 };

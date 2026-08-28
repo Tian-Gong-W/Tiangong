@@ -1,112 +1,24 @@
 import React from 'react';
-import {
-  Server,
-  Activity,
-  CheckCircle2,
-  Cpu,
-  Zap,
-  Shield,
-  Terminal,
-  RefreshCw,
-  Plus,
-} from 'lucide-react';
+import { RefreshCw, Server, Wrench } from 'lucide-react';
 import { ExecutionNode } from '../types';
 
 interface NodesGlobalViewProps {
   nodes: ExecutionNode[];
+  tools: any[];
+  executionMode: string;
+  onProbe: (id: string) => Promise<void>;
 }
 
-export const NodesGlobalView: React.FC<NodesGlobalViewProps> = ({ nodes }) => {
-  return (
-    <div className="flex-1 p-6 md:p-8 overflow-y-auto bg-slate-950 text-slate-100 space-y-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <Server className="w-4 h-4 text-cyan-400" />
-            <h1 className="text-xl font-bold text-white tracking-wide">
-              执行节点与工具池 (Nodes & Tools)
-            </h1>
-          </div>
-          <p className="text-xs text-slate-400">
-            分布式攻防执行探针、内网 C2 枢纽与工具运行环境状态
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 text-xs">
-          <span className="px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-mono">
-            在线 Worker: {nodes.filter((n) => n.status === 'online').length}/{nodes.length}
-          </span>
-        </div>
-      </div>
-
-      {/* Nodes Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {nodes.map((node) => (
-          <div
-            key={node.id}
-            className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4 shadow-xl"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
-                  <Server className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white">{node.name}</h3>
-                  <span className="text-xs text-slate-400 font-mono">
-                    {node.ip} · {node.region}
-                  </span>
-                </div>
-              </div>
-
-              <span
-                className={`text-[11px] font-mono px-2 py-0.5 rounded-full flex items-center gap-1 ${
-                  node.status === 'online'
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                    : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                }`}
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                {node.status === 'online' ? '运行就绪' : '离线'}
-              </span>
-            </div>
-
-            {/* Performance Stats */}
-            <div className="grid grid-cols-3 gap-2 p-3 bg-slate-950 rounded-xl border border-slate-800/80 text-xs font-mono text-center">
-              <div>
-                <span className="text-[10px] text-slate-500 block">CPU 负载</span>
-                <span className="text-slate-200 font-bold">{node.cpuUsage}%</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-500 block">内存占用</span>
-                <span className="text-slate-200 font-bold">{node.memUsage}%</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-500 block">当前运行任务</span>
-                <span className="text-cyan-300 font-bold">{node.activeTasks}</span>
-              </div>
-            </div>
-
-            {/* Installed Toolset Tags */}
-            <div>
-              <span className="text-[11px] font-semibold text-slate-400 block mb-2">
-                已挂载工具套件：
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {node.tools.map((tool) => (
-                  <span
-                    key={tool}
-                    className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700"
-                  >
-                    {tool}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
+export const NodesGlobalView: React.FC<NodesGlobalViewProps> = ({ nodes, tools, executionMode, onProbe }) => (
+  <div className="flex-1 p-6 md:p-8 overflow-y-auto text-slate-100 space-y-6 max-w-7xl mx-auto">
+    <div className="border-b border-slate-800 pb-4"><h1 className="text-xl font-bold flex items-center gap-2"><Server className="w-4 h-4 text-cyan-400" />执行节点与工具</h1><p className="text-xs text-slate-400 mt-1">执行模式：{executionMode} · Worker 与工具状态均来自后端探测</p></div>
+    <section className="space-y-3"><h2 className="text-xs font-bold text-slate-300">Worker Fleet ({nodes.length})</h2>
+      {nodes.length === 0 ? <div className="p-10 text-center rounded-2xl border border-dashed border-slate-700 bg-slate-900/40"><div className="text-sm text-slate-300">没有配置远程 Worker</div><div className="text-xs text-slate-500 mt-1">当前使用本地执行模式，不显示模拟节点。</div></div> : (
+        <div className="grid md:grid-cols-2 gap-3">{nodes.map((node) => <div key={node.id} className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3"><div className="flex justify-between"><div><div className="font-bold">{node.name}</div><div className="text-xs font-mono text-slate-500 mt-1">{node.ip} · {node.location || 'region 未配置'}</div></div><span className={`text-[10px] font-bold ${node.status === 'online' ? 'text-emerald-400' : 'text-amber-400'}`}>{node.status}</span></div><div className="text-xs text-slate-400">inflight: {node.activeTasks} · ready tools: {node.installedTools.length}</div><button onClick={() => onProbe(node.id)} className="px-3 py-1.5 rounded-lg bg-slate-800 text-xs flex items-center gap-1"><RefreshCw className="w-3 h-3" />主动探测</button></div>)}</div>
+      )}
+    </section>
+    <section className="space-y-3"><h2 className="text-xs font-bold text-slate-300">本地 Tool Registry ({tools.filter((tool) => tool.available).length}/{tools.length} ready)</h2>
+      {tools.length === 0 ? <div className="text-xs text-slate-500">工具注册表为空</div> : <div className="grid md:grid-cols-3 gap-3">{tools.map((tool) => <div key={tool.name} className="p-4 rounded-2xl bg-slate-900 border border-slate-800"><div className="flex justify-between"><span className="font-mono text-sm flex items-center gap-1.5"><Wrench className="w-3.5 h-3.5 text-cyan-400" />{tool.name}</span><span className={`text-[10px] font-bold ${tool.available ? 'text-emerald-400' : 'text-amber-400'}`}>{tool.available ? 'READY' : 'NOT READY'}</span></div><div className="text-xs text-slate-500 mt-2">{tool.description}</div>{!tool.available && <div className="text-[10px] text-amber-300 mt-3">{tool.readiness?.detail}</div>}</div>)}</div>}
+    </section>
+  </div>
+);

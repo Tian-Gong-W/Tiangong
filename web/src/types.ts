@@ -24,7 +24,7 @@ export interface VerificationProof {
   verified: boolean;
   verifiedAt: string;
   method: string;
-  reproducibilityRate: number; // e.g. 100%
+  reproducibilityRate?: number;
   antiHallucinationCheck: string;
   verifierWorker: string;
 }
@@ -185,12 +185,16 @@ export interface Task {
   chainEdges: ChainEdge[];
   assetTree: AssetDomain;
   reportReady: boolean;
+  backendState?: string;
+  report?: Record<string, any>;
+  reportMarkdown?: string;
+  workspace?: Record<string, any>;
 }
 
 export interface WorkerNode {
   id: string;
   name: string;
-  role: 'C2 Control' | 'Scanner Worker' | 'AI Inference Node' | 'Cloud Edge' | 'Cairn State Worker';
+  role: 'C2 Control' | 'Scanner Worker' | 'AI Inference Node' | 'Cloud Edge';
   ip: string;
   location: string;
   status: 'online' | 'busy' | 'offline';
@@ -203,93 +207,15 @@ export interface WorkerNode {
 
 export type ExecutionNode = WorkerNode;
 
-export interface CairnStateSearchConfig {
-  searchStrategy: 'heuristic_astar' | 'mcts_goal_oriented' | 'depth_first_path' | 'breadth_first_recon';
-  workerBackend: 'claude_code' | 'codex_reasoner' | 'pi_agent' | 'sandbox_container';
-  originTarget: string;
-  goalState: string;
-  factCount: number;
-  intentCount: number;
-  hintCount: number;
-  pruningThreshold: number; // e.g. 0.85
-  maxSearchDepth: number;
-  backtrackingEnabled: boolean;
-  factGraphWorkbenchUrl?: string;
-}
+export type MissionDetail = Record<string, any>;
 
-export interface FactItem {
-  id: string;
-  type: 'fact' | 'intent' | 'hint';
-  title: string;
-  description: string;
-  source: string;
-  confidence: number;
-  verified: boolean;
-  timestamp: string;
-  tags: string[];
+export interface ControlPlaneSnapshot {
+  status: Record<string, any>;
+  tasks: Task[];
+  findings: Finding[];
+  tools: Record<string, any>;
+  guard: Record<string, any>;
+  settings: Record<string, any>;
+  providers: Record<string, any>;
+  workers: Record<string, any>;
 }
-
-export interface ArtexPlannerItem {
-  id: string;
-  order: number;
-  title: string;
-  phase: 'recon' | 'fingerprint' | 'poc_verify' | 'privilege_escalation' | 'lateral_movement' | 'exfiltration';
-  status: 'pending' | 'in_progress' | 'succeeded' | 'backtracked' | 'blocked';
-  targetAnchor: string;
-  confidence: number;
-  assignedWorker: string;
-  rationale: string;
-  duration?: string;
-  outputPreview?: string;
-}
-
-export interface ArtexAnchor {
-  id: string;
-  explorationNodeId: string;
-  assetTarget: string;
-  assetType: 'domain' | 'subdomain' | 'ip' | 'service' | 'endpoint' | 'credential';
-  anchorReason: string;
-}
-
-export interface ArtexDualGraphNode {
-  id: string;
-  type: 'goal' | 'intent' | 'fact' | 'finding' | 'hint';
-  title: string;
-  description: string;
-  status: 'active' | 'confirmed' | 'pruned' | 'pending';
-  confidence: number;
-  anchoredAssetId?: string;
-  anchoredAssetLabel?: string;
-}
-
-export interface ArtexDualGraphEdge {
-  id: string;
-  from: string;
-  to: string;
-  relation: 'spawns' | 'derived_from' | 'yields' | 'proves';
-}
-
-export interface ArtexConfig {
-  plannerModel: string;
-  maxSubTasks: number;
-  autoAnchoring: boolean;
-  dualGraphSync: boolean;
-  crossTaskAssetInheritance: boolean;
-  replanOnFailure: boolean;
-}
-
-export interface AIModelConfig {
-  activeModel: string;
-  availableModels: string[];
-  autonomyLevel: 'semi_auto' | 'full_auto' | 'guided';
-  reasoningBranch: string;
-  temperature: number;
-  safetyGuardrails: boolean;
-  maxTokensPerPlan: number;
-  contextRounds: number;
-  antiHallucinationDoubleCheck: boolean;
-  promptProfile: 'Stealth Red Team' | 'Aggressive PoC' | 'Standard Audit';
-  cairnSearchConfig?: CairnStateSearchConfig;
-  artexConfig?: ArtexConfig;
-}
-

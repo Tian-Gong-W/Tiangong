@@ -81,11 +81,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'ai' as NavId,
-      name: 'S̶h̶e̶l̶l̶ R̴e̴n',
-      enName: 'S̶h̶e̶l̶l̶ R̴e̴n / Cairn',
+      name: 'AI 配置',
+      enName: 'Provider Hub',
       icon: Cpu,
-      badge: 'Cairn',
-      badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
     },
     {
       id: 'nodes' as NavId,
@@ -110,11 +108,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   雲頂天宮
                 </span>
                 <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 font-semibold">
-                  CAIRN
+                  LIVE
                 </span>
               </div>
               <p className="text-[10px] text-slate-400 font-mono truncate">
-                S̶h̶e̶l̶l̶ R̴e̴n 状态空间控制台
+                Tiangong 实时控制台
               </p>
             </div>
           </div>
@@ -165,12 +163,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Footer Area: Cluster State & System Settings */}
       <div className="p-3 border-t border-slate-800/80 bg-slate-950/40 space-y-2">
-        {/* Node & S̶h̶e̶l̶l̶ R̴e̴n quick status capsule */}
+        {/* Control plane state capsule */}
         <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 text-xs">
           <div className="flex items-center justify-between text-slate-400 mb-1.5">
             <span className="flex items-center gap-1.5 text-slate-300 font-medium">
               <Activity className="w-3.5 h-3.5 text-emerald-400" />
-              S̶h̶e̶l̶l̶ R̴e̴n 认知
+              控制面 API
             </span>
             <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1">
               <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping" />
@@ -178,7 +176,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </span>
           </div>
           <p className="text-[10px] text-amber-300/90 truncate font-mono">
-            雲頂天宮-Cairn-v3.5
+            Backend connected
           </p>
         </div>
 
@@ -211,4 +209,3 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </aside>
   );
 };
-
