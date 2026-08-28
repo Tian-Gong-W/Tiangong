@@ -253,6 +253,8 @@ class MissionDirector(_LegacyCapabilityDirector):
                 **dict(proposal.metadata),
                 "capability_request": request.as_dict(),
                 "capability_resolution": resolution.as_dict(),
+                "guaranteed_products": list(candidate.spec.produces),
+                "optional_products": list(candidate.spec.optional_produces),
                 "adapter_late_bound": True,
             },
         )
