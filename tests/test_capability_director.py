@@ -51,6 +51,17 @@ def test_builtin_capabilities_self_describe_and_declared_defaults_validate(tmp_p
         adapter.validate(ToolRequest(tool=spec.name, target="localhost", parameters=dict(spec.default_parameters)))
 
 
+def test_extended_discovery_expands_registry_without_rewriting_frozen_plan(tmp_path, monkeypatch):
+    monkeypatch.setenv("TONMEN_EXTENDED_DISCOVERY", "1")
+    runtime = _runtime(tmp_path)
+    registry_tools = {adapter.spec.name for adapter in runtime.registry}
+
+    assert {"nmap", "httpx", "nuclei", "subfinder", "katana"}.issubset(registry_tools)
+
+    plan = MissionPlanner(runtime).plan("localhost")
+    assert [step.tool for step in plan.steps] == ["nmap", "httpx", "nuclei"]
+
+
 def test_director_can_choose_cheaper_capability_outside_frozen_plan_order(tmp_path):
     runtime = _runtime(tmp_path)
     plan = MissionPlanner(runtime).plan("localhost")
@@ -77,13 +88,15 @@ def test_builtin_director_progression_is_cost_and_evidence_ranked(tmp_path):
 
     first = MissionDirector(runtime).decide_next(plan, run)
     selected_first = next(step for step in plan.steps if step.id == first.next_step_id)
-    assert selected_first.tool == "httpx"
+    assert selected_first.tool == "nmap"
 
     execution = next(item for item in run.steps if item.step_id == selected_first.id)
     execution.state = StepExecutionState.SUCCEEDED
+    _add_service_fact(run, "localhost", 80, "http")
+
     second = MissionDirector(runtime).decide_next(plan, run)
     selected_second = next(step for step in plan.steps if step.id == second.next_step_id)
-    assert selected_second.tool == "subfinder"
+    assert selected_second.tool == "httpx"
 
 
 def _add_domain_fact(run: MissionRun, host: str) -> None:
