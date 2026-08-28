@@ -61,13 +61,19 @@ class MissionDirector(_LegacyCapabilityDirector):
 
     @classmethod
     def _observed_products(cls, run: MissionRun, target: str | None = None) -> set[str]:
-        # Keep WorldModel's global vocabulary while preserving the target-aware
-        # filtering contract introduced by the capability Director. Without this
-        # compatible signature, fallback decisions crash when they inspect a
-        # specific origin or discovered host.
+        # Keep WorldModel's product vocabulary even when filtering to one derived
+        # target. A finding is also the durable result of a validation observation,
+        # and a WEB fact carries HTTP + technology observation semantics. Losing
+        # those aliases here made an already validated origin appear incomplete and
+        # could trigger a duplicate approval-gated validation action.
         if target is None:
             return set(WorldModel.from_run(run).observed_products)
-        return _LegacyCapabilityDirector._observed_products(run, target)
+        products = set(_LegacyCapabilityDirector._observed_products(run, target))
+        if "finding" in products:
+            products.add("validation_observation")
+        if "web_observation" in products:
+            products.update({"http_observation", "technology_observation"})
+        return products
 
     def _capability_request(
         self,
