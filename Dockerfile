@@ -8,17 +8,17 @@ RUN npm run build
 
 FROM python:3.12-slim
 
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app/src
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates nmap \
     && rm -rf /var/lib/apt/lists/*
 
-COPY src/ ./src/
 COPY pyproject.toml README.md LICENSE ./
+COPY src/ ./src/
+RUN pip install --no-cache-dir .
 COPY --from=web-build /build/web/dist ./web/dist/
 
 EXPOSE 8080
-CMD ["python", "-m", "tonmen.web_server"]
+CMD ["python", "-u", "-m", "tonmen.web_server"]
