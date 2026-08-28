@@ -59,9 +59,15 @@ class MissionDirector(_LegacyCapabilityDirector):
         registry = self.runtime.registry if self.runtime is not None else None
         return set(self._world(run, registry).observed_modalities)
 
-    @staticmethod
-    def _observed_products(run: MissionRun) -> set[str]:
-        return set(WorldModel.from_run(run).observed_products)
+    @classmethod
+    def _observed_products(cls, run: MissionRun, target: str | None = None) -> set[str]:
+        # Keep WorldModel's global vocabulary while preserving the target-aware
+        # filtering contract introduced by the capability Director. Without this
+        # compatible signature, fallback decisions crash when they inspect a
+        # specific origin or discovered host.
+        if target is None:
+            return set(WorldModel.from_run(run).observed_products)
+        return _LegacyCapabilityDirector._observed_products(run, target)
 
     def _capability_request(
         self,
@@ -139,33 +145,46 @@ class MissionDirector(_LegacyCapabilityDirector):
         world = self._world(run, self.runtime.registry)
         request = self._capability_request(plan, run, hypotheses)
         resolver = CapabilityResolver(self.runtime.registry, self.runtime.policy)
-        resolutions = resolver.rank(request, world=world)
-        observed_products = set(world.observed_products)
         observed_modalities = set(world.observed_modalities)
         candidates: list[_CapabilityCandidate] = []
+        seen: set[tuple[str, str]] = set()
 
-        for resolution in resolutions:
-            spec = self.runtime.registry.get(resolution.tool).spec
-            gain, missing = self._information_gain(
-                spec,
-                observed_modalities=observed_modalities,
-                observed_products=observed_products,
-            )
-            if gain <= 0:
-                continue
-            candidates.append(
-                _RequestedCandidate(
-                    spec=spec,
-                    target=resolution.target,
-                    parameters=dict(resolution.parameters),
-                    missing_products=missing,
-                    information_gain=gain,
-                    utility=resolution.score * max(0.1, gain),
-                    requires_approval=resolution.requires_approval,
-                    request=request,
-                    resolution=resolution,
+        # Resolve the abstract evidence need over every evidence-derived target that
+        # is meaningful for each adapter. Policy is still evaluated by the resolver,
+        # so a discovered hostname/origin does not become executable unless Scope
+        # independently authorizes it.
+        for adapter in self.runtime.registry:
+            spec = adapter.spec
+            for target in self._candidate_targets(plan, run, spec):
+                scoped_request = replace(request, target=target)
+                resolutions = resolver.rank(scoped_request, world=world)
+                resolution = next((item for item in resolutions if item.tool == spec.name), None)
+                if resolution is None:
+                    continue
+                key = (resolution.tool, resolution.target)
+                if key in seen:
+                    continue
+                seen.add(key)
+                gain, missing = self._information_gain(
+                    spec,
+                    observed_modalities=observed_modalities,
+                    observed_products=self._observed_products(run, resolution.target),
                 )
-            )
+                if gain <= 0:
+                    continue
+                candidates.append(
+                    _RequestedCandidate(
+                        spec=spec,
+                        target=resolution.target,
+                        parameters=dict(resolution.parameters),
+                        missing_products=missing,
+                        information_gain=gain,
+                        utility=resolution.score * max(0.1, gain),
+                        requires_approval=resolution.requires_approval,
+                        request=scoped_request,
+                        resolution=resolution,
+                    )
+                )
 
         candidates.sort(key=lambda item: (item.utility, item.information_gain), reverse=True)
         return candidates
@@ -220,7 +239,7 @@ class MissionDirector(_LegacyCapabilityDirector):
             gain, _ = self._information_gain(
                 spec,
                 observed_modalities=self._observed_modalities(plan, run),
-                observed_products=self._observed_products(run),
+                observed_products=self._observed_products(run, planned.target),
             )
             if gain <= 0:
                 return ReasoningDecision.create(
