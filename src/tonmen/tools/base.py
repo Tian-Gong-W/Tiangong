@@ -44,8 +44,10 @@ class CostEstimate:
 class CapabilitySpec:
     """Semantic contract exposed to the Mission Director.
 
-    Capability metadata describes what an adapter accepts and can produce. The
-    Director ranks this contract; the concrete adapter remains an execution detail.
+    ``produces`` lists evidence products guaranteed by a successful execution.
+    ``optional_produces`` lists products that may appear only when the observed
+    condition exists. Keeping those semantics separate prevents a successful
+    negative validation from being mistaken for missing evidence and retried.
     """
 
     name: str
@@ -55,6 +57,7 @@ class CapabilitySpec:
     capabilities: tuple[str, ...] = ()
     accepts: tuple[str, ...] = ()
     produces: tuple[str, ...] = ()
+    optional_produces: tuple[str, ...] = ()
     modalities: tuple[str, ...] = ()
     estimated_cost: CostEstimate = field(default_factory=CostEstimate)
     replayable: bool = True
