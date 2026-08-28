@@ -12,6 +12,7 @@ class FactKind(str, Enum):
     SERVICE = "service"
     WEB = "web"
     ENDPOINT = "endpoint"
+    VALIDATION = "validation"
     FINDING = "finding"
 
 
