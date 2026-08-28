@@ -7,7 +7,7 @@ RUN npm ci --no-audit --no-fund
 COPY web/ ./
 RUN npm run build
 
-FROM golang:1.25-bookworm AS security-tools
+FROM golang:1.26-bookworm AS security-tools
 
 ENV CGO_ENABLED=0
 RUN mkdir -p /out \
@@ -35,7 +35,7 @@ RUN httpx -version \
     && katana -version \
     && nuclei -version \
     && nuclei -ut -silent \
-    && find "$TONMEN_NUCLEI_TEMPLATES" -type f \( -name '*.yaml' -o -name '*.yml' \) -print -quit | grep -q .
+    && find "$TONMEN_NUCLEI_TEMPLATES" -type f -name '*.yaml' -print -quit | grep -q .
 
 COPY pyproject.toml README.md LICENSE ./
 COPY src/ ./src/
