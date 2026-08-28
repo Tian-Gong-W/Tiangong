@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
 from tonmen.missions import ActionOutcome, ActionOutcomeKind, MissionRun, StepExecutionState
 
@@ -65,9 +66,41 @@ class WorldModel:
     def environmental_outcomes(self) -> tuple[ActionOutcome, ...]:
         return tuple(item for item in self.action_outcomes if item.environmental)
 
+    @staticmethod
+    def _target_identity(target: str) -> tuple[str | None, str, int | None]:
+        text = str(target or "").strip()
+        parsed = urlparse(text if "://" in text else f"//{text}")
+        host = (parsed.hostname or text).rstrip(".").lower()
+        if "://" not in text:
+            return None, host, None
+        scheme = parsed.scheme.lower()
+        try:
+            port = parsed.port or (443 if scheme == "https" else 80 if scheme == "http" else None)
+        except ValueError:
+            port = None
+        return scheme, host, port
+
+    @classmethod
+    def _same_attempt_target(cls, left: str, right: str) -> bool:
+        if str(left) == str(right):
+            return True
+        left_scheme, left_host, left_port = cls._target_identity(left)
+        right_scheme, right_host, right_port = cls._target_identity(right)
+        if not left_host or left_host != right_host:
+            return False
+        # A compatibility action may use a bare hostname while evidence reveals the
+        # concrete HTTP origin. Treat that as the same attempted logical target so a
+        # successful httpx/nuclei action is not re-proposed merely to add a scheme.
+        if left_scheme is None or right_scheme is None:
+            return True
+        return left_scheme == right_scheme and left_port == right_port
+
     def was_attempted(self, tool: str, target: str) -> bool:
-        key = (str(tool).strip().lower(), str(target))
-        return key in set(self.attempted_actions)
+        normalized_tool = str(tool).strip().lower()
+        return any(
+            attempted_tool == normalized_tool and self._same_attempt_target(attempted_target, target)
+            for attempted_tool, attempted_target in self.attempted_actions
+        )
 
     def is_capability_blocked(self, tool: str, target: str) -> bool:
         normalized = str(tool).strip().lower()
