@@ -9,8 +9,8 @@ from tonmen.reasoning import Hypothesis, HypothesisStatus, MissionDirector, Reas
 from tonmen.tools import CostEstimate, RiskLevel, ToolAdapter, ToolRequest, ToolSpec
 
 
-def _runtime(tmp_path):
-    return TonmenRuntime.sentinel(TonmenConfig(workspace=tmp_path, allowed_targets=("localhost",)))
+def _runtime(tmp_path, allowed_targets=("localhost",)):
+    return TonmenRuntime.sentinel(TonmenConfig(workspace=tmp_path, allowed_targets=allowed_targets))
 
 
 class _CheapObservationAdapter(ToolAdapter):
@@ -58,7 +58,6 @@ def test_director_can_choose_cheaper_capability_outside_frozen_plan_order(tmp_pa
     run = MissionRun.create(plan)
     run.state = MissionRunState.RUNNING
 
-    assert plan.steps[0].tool == "nmap"
     assert all(step.tool != "cheap-observer" for step in plan.steps)
 
     decision = MissionDirector(runtime).decide_next(plan, run)
@@ -77,13 +76,41 @@ def test_builtin_director_progression_is_cost_and_evidence_ranked(tmp_path):
     run.state = MissionRunState.RUNNING
 
     first = MissionDirector(runtime).decide_next(plan, run)
-    selected = next(step for step in plan.steps if step.id == first.next_step_id)
-    assert selected.tool == "nmap"
+    selected_first = next(step for step in plan.steps if step.id == first.next_step_id)
+    assert selected_first.tool == "httpx"
 
-    run.steps[0].state = StepExecutionState.SUCCEEDED
+    execution = next(item for item in run.steps if item.step_id == selected_first.id)
+    execution.state = StepExecutionState.SUCCEEDED
     second = MissionDirector(runtime).decide_next(plan, run)
-    selected = next(step for step in plan.steps if step.id == second.next_step_id)
-    assert selected.tool == "httpx"
+    selected_second = next(step for step in plan.steps if step.id == second.next_step_id)
+    assert selected_second.tool == "subfinder"
+
+
+def _add_domain_fact(run: MissionRun, host: str) -> None:
+    run.graph.add_node(
+        GraphNode(
+            id=f"domain:{host}",
+            kind="intelligence.domain",
+            label=f"Subdomain observed: {host}",
+            metadata={"target": host, "data": {"host": host}, "evidence_id": "e-subfinder"},
+        )
+    )
+
+
+def test_discovered_subdomain_becomes_candidate_only_when_scope_covers_it(tmp_path):
+    wildcard_runtime = _runtime(tmp_path / "wild", ("example.test", "*.example.test"))
+    plan = MissionPlan.create("example.test", [])
+    run = MissionRun.create(plan)
+    run.state = MissionRunState.RUNNING
+    _add_domain_fact(run, "api.example.test")
+
+    wildcard_candidates = MissionDirector(wildcard_runtime)._rank_capabilities(plan, run, ())
+    assert any(item.spec.name == "httpx" and item.target == "api.example.test" for item in wildcard_candidates)
+    assert any(item.spec.name == "nmap" and item.target == "api.example.test" for item in wildcard_candidates)
+
+    exact_runtime = _runtime(tmp_path / "exact", ("example.test",))
+    exact_candidates = MissionDirector(exact_runtime)._rank_capabilities(plan, run, ())
+    assert not any(item.target == "api.example.test" for item in exact_candidates)
 
 
 def test_unresolved_hypothesis_without_executable_capability_is_not_false_completion(tmp_path):
@@ -95,6 +122,8 @@ def test_unresolved_hypothesis_without_executable_capability_is_not_false_comple
         [
             StepExecution("dynamic:httpx", "httpx", "localhost", StepExecutionState.SUCCEEDED, metadata={"dynamic": True}),
             StepExecution("dynamic:nmap", "nmap", "localhost", StepExecutionState.SUCCEEDED, metadata={"dynamic": True}),
+            StepExecution("dynamic:subfinder", "subfinder", "localhost", StepExecutionState.SUCCEEDED, metadata={"dynamic": True}),
+            StepExecution("dynamic:katana", "katana", "localhost", StepExecutionState.SUCCEEDED, metadata={"dynamic": True}),
         ]
     )
     hypothesis = Hypothesis.create(
