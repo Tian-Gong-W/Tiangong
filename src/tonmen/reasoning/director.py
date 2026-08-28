@@ -13,6 +13,8 @@ from .engine import MissionReasoner
 from .model import ActionProposal, Hypothesis, HypothesisStatus, ReasoningAction, ReasoningDecision
 
 _TARGET_CANDIDATE_LIMIT = 8
+_WEB_LIKELY_PORTS = {80, 443, 3000, 5000, 5601, 8000, 8001, 8080, 8081, 8088, 8443, 8888, 9000, 9090, 9200, 9443}
+_TLS_LIKELY_PORTS = {443, 8443, 9443}
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,15 +29,11 @@ class _CapabilityCandidate:
 
 
 class MissionDirector:
-    """Single next-action authority for a mission.
+    """Choose the next evidence-producing governed action for a Mission.
 
-    The Director asks which registered capability can cheaply produce evidence the
-    current world model does not yet contain. Frozen plan order is compatibility
-    data only; runtime action state comes from the ActionLedger.
-
-    Observed domains and web surfaces may become follow-on targets, but observation
-    never grants authority: every derived target is validated by the adapter and
-    evaluated by the central Scope / risk policy again before it can be proposed.
+    Facts may expand the search space, but never authority. Every derived domain,
+    service origin or web surface is revalidated by its adapter and re-evaluated by
+    central Scope / risk policy before it can become an action proposal.
     """
 
     def __init__(self, runtime: TonmenRuntime | None = None, reasoner: MissionReasoner | None = None) -> None:
@@ -130,13 +128,66 @@ class MissionDirector:
         return tuple(values)
 
     @classmethod
+    def _same_target_identity(cls, left: str, right: str) -> bool:
+        """Host-level identity for fact attribution and Scope-related reasoning."""
+        if left == right:
+            return True
+        return cls._host_target(left).strip().lower() == cls._host_target(right).strip().lower()
+
+    @staticmethod
+    def _origin_identity(target: str) -> tuple[str, str, int] | None:
+        text = str(target or "").strip()
+        if "://" not in text:
+            return None
+        parsed = urlparse(text)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            return None
+        try:
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        except ValueError:
+            return None
+        return parsed.scheme, parsed.hostname.rstrip(".").lower(), int(port)
+
+    @classmethod
+    def _same_action_target(cls, left: str, right: str) -> bool:
+        """Execution identity keeps distinct schemes/ports distinct for web tools."""
+        if left == right:
+            return True
+        left_origin = cls._origin_identity(left)
+        right_origin = cls._origin_identity(right)
+        if left_origin is not None or right_origin is not None:
+            return left_origin is not None and right_origin is not None and left_origin == right_origin
+        return cls._same_target_identity(left, right)
+
+    @classmethod
+    def _web_origin_from_service(cls, node) -> str | None:
+        metadata = dict(node.metadata)
+        data = metadata.get("data") if isinstance(metadata.get("data"), dict) else {}
+        try:
+            port = int(data.get("port"))
+        except (TypeError, ValueError):
+            return None
+        service = str(data.get("service") or "").strip().lower()
+        if "http" not in service and port not in _WEB_LIKELY_PORTS:
+            return None
+        raw_host = str(metadata.get("target") or data.get("scanned_address") or "").strip()
+        if not raw_host:
+            return None
+        host = cls._host_target(raw_host).rstrip(".").lower()
+        if not host:
+            return None
+        scheme = "https" if ("https" in service or "ssl" in service or "tls" in service or port in _TLS_LIKELY_PORTS) else "http"
+        authority = f"[{host}]" if ":" in host and not host.startswith("[") else host
+        default_port = 443 if scheme == "https" else 80
+        return f"{scheme}://{authority}" if port == default_port else f"{scheme}://{authority}:{port}"
+
+    @classmethod
     def _candidate_targets(cls, plan: MissionPlan, run: MissionRun, spec: CapabilitySpec) -> tuple[str, ...]:
         capabilities = set(spec.capabilities)
         base = cls._target_for(spec, plan.target)
         values: list[str] = [base]
 
-        # Passive subdomain enumeration is rooted at the explicitly requested
-        # mission target; do not recursively enumerate every discovered child.
+        # Subdomain enumeration stays rooted at the requested mission target.
         if "domain.enumerate" in capabilities or "subdomain.discover" in capabilities:
             return (base,)
 
@@ -149,6 +200,10 @@ class MissionDirector:
                 {"host.scan", "port.scan", "service.detect", "http.probe", "http.metadata", "technology.detect"}
             ):
                 candidate = str(data.get("host") or metadata.get("target") or "").strip()
+            elif node.kind == "intelligence.service" and capabilities.intersection(
+                {"http.probe", "http.metadata", "technology.detect"}
+            ):
+                candidate = cls._web_origin_from_service(node)
             elif node.kind == "intelligence.web" and capabilities.intersection(
                 {"web.crawl", "endpoint.discover", "javascript.endpoint.discover", "vulnerability.validate", "finding.generate"}
             ):
@@ -157,7 +212,7 @@ class MissionDirector:
             if not candidate:
                 continue
             candidate = cls._target_for(spec, candidate)
-            if candidate and candidate not in values:
+            if candidate and not any(cls._same_action_target(candidate, existing) for existing in values):
                 values.append(candidate)
             if len(values) >= _TARGET_CANDIDATE_LIMIT:
                 break
@@ -175,7 +230,11 @@ class MissionDirector:
                 continue
             data = node.metadata.get("data", {})
             service = str(data.get("service", "")).lower() if isinstance(data, dict) else ""
-            if "http" in service:
+            try:
+                port = int(data.get("port")) if isinstance(data, dict) else 0
+            except (TypeError, ValueError):
+                port = 0
+            if "http" in service or port in _WEB_LIKELY_PORTS:
                 http_services.append(node)
         return (web_facts + http_services)[:16]
 
@@ -225,15 +284,26 @@ class MissionDirector:
         return observed
 
     @classmethod
+    def _fact_matches_target(cls, node, target: str) -> bool:
+        values = cls._fact_values(node)
+        if not values:
+            return False
+        if cls._origin_identity(target) is not None and node.kind in {
+            "intelligence.web",
+            "intelligence.endpoint",
+            "intelligence.finding",
+        }:
+            return any(cls._same_action_target(value, target) for value in values)
+        return any(cls._same_target_identity(value, target) for value in values)
+
+    @classmethod
     def _observed_products(cls, run: MissionRun, target: str | None = None) -> set[str]:
         products: set[str] = set()
         for node in run.graph.nodes.values():
             if not node.kind.startswith("intelligence."):
                 continue
-            if target is not None:
-                values = cls._fact_values(node)
-                if not any(cls._same_target_identity(value, target) for value in values):
-                    continue
+            if target is not None and not cls._fact_matches_target(node, target):
+                continue
             kind = node.kind.removeprefix("intelligence.")
             products.add("finding" if kind == "finding" else f"{kind}_observation")
         return products
@@ -261,15 +331,9 @@ class MissionDirector:
         if spec.produces and not missing_products:
             return 0.0, ()
         novelty = (len(missing_products) / len(spec.produces)) if spec.produces else 0.5
-        modality_novelty = 1.0 if spec.modalities and any(m not in observed_modalities for m in spec.modalities) else 0.0
+        modality_novelty = 1.0 if spec.modalities and any(item not in observed_modalities for item in spec.modalities) else 0.0
         gain = by_risk[spec.risk] * (0.75 + (0.35 * novelty) + (0.10 * modality_novelty))
         return min(1.0, gain), missing_products
-
-    @classmethod
-    def _same_target_identity(cls, left: str, right: str) -> bool:
-        if left == right:
-            return True
-        return cls._host_target(left).strip().lower() == cls._host_target(right).strip().lower()
 
     def _rank_capabilities(
         self,
@@ -295,7 +359,7 @@ class MissionDirector:
             for target in self._candidate_targets(plan, run, spec):
                 tool_name = spec.name.strip().lower()
                 if any(
-                    done_tool == tool_name and self._same_target_identity(done_target, target)
+                    done_tool == tool_name and self._same_action_target(done_target, target)
                     for done_tool, done_target in attempted
                 ):
                     continue
@@ -332,13 +396,13 @@ class MissionDirector:
 
     @classmethod
     def _matching_pending_step(cls, plan: MissionPlan, run: MissionRun, candidate: _CapabilityCandidate):
-        """Reuse only the next legacy slot; never let Coordinator order override Director selection."""
+        """Reuse only the next legacy slot; never let compatibility order override Director selection."""
         for planned, execution in iter_plan_executions(plan, run):
             if execution.state is not StepExecutionState.PENDING:
                 continue
             if (
                 planned.tool.strip().lower() == candidate.spec.name.strip().lower()
-                and cls._same_target_identity(planned.target, candidate.target)
+                and cls._same_action_target(planned.target, candidate.target)
             ):
                 return planned, execution
             return None
@@ -370,8 +434,8 @@ class MissionDirector:
             )
 
         hypothesis_id = next(
-            (h.id for h in hypotheses if h.status is HypothesisStatus.SUPPORTED),
-            next((h.id for h in hypotheses if h.status is HypothesisStatus.OPEN), None),
+            (item.id for item in hypotheses if item.status is HypothesisStatus.SUPPORTED),
+            next((item.id for item in hypotheses if item.status is HypothesisStatus.OPEN), None),
         )
         proposal = ActionProposal.create(
             tool=candidate.spec.name,
@@ -399,7 +463,7 @@ class MissionDirector:
                     "output_bytes": candidate.spec.estimated_cost.output_bytes,
                 },
                 "authority": "mission_director",
-                "derived_target": not self._same_target_identity(candidate.target, plan.target),
+                "derived_target": not self._same_action_target(candidate.target, plan.target),
             },
         )
         return ReasoningDecision.create(
@@ -520,7 +584,10 @@ class MissionDirector:
             if pair is not None:
                 planned, _ = pair
                 attempted = self._attempted_actions(plan, run)
-                if (planned.tool.strip().lower(), planned.target) in attempted:
+                if any(
+                    tool == planned.tool.strip().lower() and self._same_action_target(target, planned.target)
+                    for tool, target in attempted
+                ):
                     return ReasoningDecision.create(
                         action=ReasoningAction.SKIP,
                         summary="Equivalent capability evidence already exists; skip the frozen compatibility action.",
