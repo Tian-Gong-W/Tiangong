@@ -8,8 +8,10 @@ from uuid import uuid4
 
 class FactKind(str, Enum):
     HOST = "host"
+    DOMAIN = "domain"
     SERVICE = "service"
     WEB = "web"
+    ENDPOINT = "endpoint"
     FINDING = "finding"
 
 
