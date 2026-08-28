@@ -12,7 +12,7 @@ class _LaterButCheaperAdapter(ToolAdapter):
     spec = ToolSpec(
         name="later-cheap-observer",
         category="observation.synthetic",
-        description="Cheaper evidence capability deliberately placed late in compatibility planning",
+        description="Cheaper evidence capability deliberately kept outside compatibility planning",
         risk=RiskLevel.PASSIVE,
         capabilities=("evidence.observe",),
         accepts=("host",),
@@ -31,15 +31,15 @@ class _LaterButCheaperAdapter(ToolAdapter):
         return ("later-cheap-observer", str(request.target))
 
 
-def test_later_frozen_capability_becomes_dynamic_instead_of_executing_wrong_first_step(tmp_path):
+def test_supplemental_capability_stays_out_of_frozen_plan_and_is_late_bound(tmp_path):
     runtime = TonmenRuntime.sentinel(TonmenConfig(workspace=tmp_path, allowed_targets=("localhost",)))
     runtime.registry.register(_LaterButCheaperAdapter())
     plan = MissionPlanner(runtime).plan("localhost")
     run = MissionRun.create(plan)
     run.state = MissionRunState.RUNNING
 
-    assert plan.steps[0].tool == "nmap"
-    assert any(step.tool == "later-cheap-observer" for step in plan.steps[1:])
+    assert [step.tool for step in plan.steps] == ["nmap", "httpx", "nuclei"]
+    assert all(step.tool != "later-cheap-observer" for step in plan.steps)
 
     decision = MissionDirector(runtime).decide_next(plan, run)
 
