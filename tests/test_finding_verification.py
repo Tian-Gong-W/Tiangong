@@ -115,9 +115,8 @@ def test_matching_product_fingerprint_supports_attribution_without_changing_evid
 
 def test_intelligence_parser_persists_verification_and_backend_identity():
     nuclei = _evidence("nuclei", json.dumps(_nuclei_record()) + "\n")
-    finding = parse_evidence(nuclei)[0]
+    finding = next(fact for fact in parse_evidence(nuclei) if fact.kind.value == "finding")
 
-    assert finding.kind.value == "finding"
     assert finding.confidence == 0.75
     assert finding.data["observed_ip"] == "18.166.185.90"
     assert finding.data["verification"]["evidence_status"] == "confirmed"
