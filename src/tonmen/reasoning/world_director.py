@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from tonmen.missions import MissionPlan, MissionRun
+from tonmen.missions import MissionPlan, MissionRun, StepExecutionState, iter_plan_executions
 from tonmen.tools import CapabilityRequest, CapabilityResolution, RiskLevel
 from tonmen.tools.resolver import CapabilityResolver
 
 from .director import MissionDirector as _LegacyCapabilityDirector
-from .director import _CapabilityCandidate
+from .director import _CapabilityCandidate, _TARGET_CANDIDATE_LIMIT
 from .model import Hypothesis, HypothesisStatus, ReasoningAction, ReasoningDecision
 from .world import WorldModel
 
@@ -58,6 +58,40 @@ class MissionDirector(_LegacyCapabilityDirector):
     def _observed_modalities(self, plan: MissionPlan, run: MissionRun) -> set[str]:
         registry = self.runtime.registry if self.runtime is not None else None
         return set(self._world(run, registry).observed_modalities)
+
+    @classmethod
+    def _candidate_targets(cls, plan: MissionPlan, run: MissionRun, spec):
+        """Prefer an existing governed compatibility target before late binding.
+
+        Frozen plan order never becomes execution authority. But when the plan
+        already contains a pending slot for the same capability, its exact target
+        should be considered before inventing a semantically redundant dynamic
+        action. Evidence-derived origins and ports remain available afterwards, so
+        genuinely distinct surfaces can still be explored independently.
+        """
+        capabilities = set(spec.capabilities)
+        if "domain.enumerate" in capabilities or "subdomain.discover" in capabilities:
+            return super()._candidate_targets(plan, run, spec)
+
+        values: list[str] = []
+        tool_name = spec.name.strip().lower()
+        for planned, execution in iter_plan_executions(plan, run):
+            if execution.state not in {StepExecutionState.PENDING, StepExecutionState.WAITING_APPROVAL}:
+                continue
+            if planned.tool.strip().lower() != tool_name:
+                continue
+            candidate = cls._target_for(spec, planned.target)
+            if candidate and not any(cls._same_action_target(candidate, existing) for existing in values):
+                values.append(candidate)
+            if len(values) >= _TARGET_CANDIDATE_LIMIT:
+                return tuple(values)
+
+        for candidate in super()._candidate_targets(plan, run, spec):
+            if candidate and not any(cls._same_action_target(candidate, existing) for existing in values):
+                values.append(candidate)
+            if len(values) >= _TARGET_CANDIDATE_LIMIT:
+                break
+        return tuple(values)
 
     @classmethod
     def _observed_products(cls, run: MissionRun, target: str | None = None) -> set[str]:
