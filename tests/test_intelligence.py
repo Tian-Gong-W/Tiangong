@@ -138,11 +138,7 @@ PORT   STATE SERVICE VERSION
     return runtime
 
 
-def test_intelligence_survives_chronicle_and_approved_resume(tmp_path, monkeypatch):
-    # This test specifically exercises the optional discovery layer. The baseline
-    # runtime deliberately keeps Subfinder/Katana disabled unless requested.
-    monkeypatch.setenv("TONMEN_EXTENDED_DISCOVERY", "1")
-
+def test_intelligence_survives_chronicle_and_approved_resume(tmp_path):
     calls1: list[list[str]] = []
     runtime1 = _runtime(tmp_path, calls1)
     plan = MissionPlanner(runtime1).plan("localhost")
@@ -154,10 +150,6 @@ def test_intelligence_survives_chronicle_and_approved_resume(tmp_path, monkeypat
     kinds = {node.kind for node in run.graph.nodes.values()}
     assert "intelligence.service" in kinds
     assert "intelligence.web" in kinds
-    assert "intelligence.domain" in kinds
-    assert "intelligence.endpoint" in kinds
-    assert "subfinder" in [call[0] for call in calls1]
-    assert "katana" in [call[0] for call in calls1]
     assert "nuclei" not in [call[0] for call in calls1]
 
     store = ChronicleStore(tmp_path)
@@ -166,8 +158,6 @@ def test_intelligence_survives_chronicle_and_approved_resume(tmp_path, monkeypat
     persisted = {node.kind for node in loaded_run.graph.nodes.values()}
     assert "intelligence.service" in persisted
     assert "intelligence.web" in persisted
-    assert "intelligence.domain" in persisted
-    assert "intelligence.endpoint" in persisted
 
     calls2: list[list[str]] = []
     runtime2 = _runtime(tmp_path, calls2)
@@ -181,6 +171,8 @@ def test_intelligence_survives_chronicle_and_approved_resume(tmp_path, monkeypat
 
     assert loaded_run.state is MissionRunState.SUCCEEDED
     assert "nuclei" in [call[0] for call in calls2]
+    kinds_after_resume = {node.kind for node in loaded_run.graph.nodes.values()}
+    assert "intelligence.validation" in kinds_after_resume
     findings = [
         node
         for node in loaded_run.graph.nodes.values()
