@@ -44,7 +44,10 @@ class CapabilityResolver:
             if request.max_cost_units is not None and cost > request.max_cost_units:
                 continue
 
-            products = set(spec.produces)
+            # Optional products are valid reasons to select a capability (for
+            # example, Nuclei may discover a finding), but they are not guaranteed
+            # outcomes for information-gain accounting after execution.
+            products = set(spec.produces).union(spec.optional_produces)
             modalities = set(spec.modalities)
             capabilities = set(spec.capabilities)
             matched_products = tuple(product for product in request.required_products if product in products)
