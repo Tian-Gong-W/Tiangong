@@ -16,6 +16,15 @@ RUN mkdir -p /out \
     && GOBIN=/out go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@v2.16.0 \
     && GOBIN=/out go install github.com/projectdiscovery/katana/cmd/katana@v1.7.0
 
+FROM python:3.12-slim AS python-tests
+
+WORKDIR /test
+COPY pyproject.toml README.md LICENSE ./
+COPY src/ ./src/
+COPY tests/ ./tests/
+RUN pip install --no-cache-dir '.[dev]' \
+    && pytest -q
+
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1
