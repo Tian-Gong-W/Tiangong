@@ -1,0 +1,6 @@
+{
+  "name": "雲頂天宮",
+  "description": "基于 Cairn 状态空间启发式搜索与 S̶h̶e̶l̶l̶ R̴e̴n 智能体架构设计的自主渗透测试控制台，提供起点到目标路径搜索、事实/意图/线索图谱工作台、双重验证与证据保险箱。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
