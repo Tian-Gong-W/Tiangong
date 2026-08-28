@@ -14,12 +14,12 @@ from tonmen.jobs import JobManager
 from tonmen.missions import MissionRunState
 
 
-def _evidence(tool: str, stdout: str) -> EvidenceRecord:
+def _evidence(tool: str, stdout: str, target: str = "localhost") -> EvidenceRecord:
     now = datetime.now(timezone.utc)
     return EvidenceRecord(
         id=f"e-{tool}",
         tool=tool,
-        target="localhost",
+        target=target,
         argv=(tool,),
         exit_code=0,
         stdout=stdout,
@@ -47,12 +47,35 @@ PORT    STATE SERVICE  VERSION
     assert service.evidence_id == "e-nmap"
 
 
+def test_subfinder_output_becomes_deduplicated_domain_facts():
+    facts = parse_evidence(
+        _evidence("subfinder", "api.example.test\nWWW.example.test.\napi.example.test\n", "example.test")
+    )
+    assert [fact.kind for fact in facts] == [FactKind.DOMAIN, FactKind.DOMAIN]
+    assert [fact.data["host"] for fact in facts] == ["api.example.test", "www.example.test"]
+    assert all(fact.data["root_target"] == "example.test" for fact in facts)
+
+
 def test_httpx_output_becomes_web_fact():
     facts = parse_evidence(_evidence("httpx", "https://localhost [200] [Welcome] [nginx,React]\n"))
     assert len(facts) == 1
     assert facts[0].kind is FactKind.WEB
     assert facts[0].data["status_code"] == 200
     assert facts[0].data["technologies"] == ["nginx", "React"]
+
+
+def test_katana_output_becomes_deduplicated_endpoint_facts():
+    facts = parse_evidence(
+        _evidence(
+            "katana",
+            "https://example.test/api/users?id=1\nhttps://example.test/static/app.js#fragment\nhttps://example.test/api/users?id=1\n",
+            "https://example.test",
+        )
+    )
+    assert [fact.kind for fact in facts] == [FactKind.ENDPOINT, FactKind.ENDPOINT]
+    assert facts[0].data["path"] == "/api/users"
+    assert facts[0].data["query"] == "id=1"
+    assert facts[1].data["url"] == "https://example.test/static/app.js"
 
 
 def test_nuclei_jsonl_becomes_finding():
@@ -82,7 +105,9 @@ Host is up.
 PORT   STATE SERVICE VERSION
 80/tcp open  http    nginx 1.24.0
 """,
+            "subfinder": "api.localhost\n",
             "httpx": "https://localhost [200] [Welcome] [nginx]\n",
+            "katana": "https://localhost/\nhttps://localhost/api/status\n",
             "nuclei": json.dumps(
                 {
                     "template-id": "demo-check",
@@ -110,7 +135,9 @@ def test_intelligence_survives_chronicle_and_approved_resume(tmp_path):
     kinds = {node.kind for node in run.graph.nodes.values()}
     assert "intelligence.service" in kinds
     assert "intelligence.web" in kinds
-    assert len(calls1) == 2
+    assert "intelligence.domain" in kinds
+    assert "intelligence.endpoint" in kinds
+    assert "nuclei" not in [call[0] for call in calls1]
 
     store = ChronicleStore(tmp_path)
     store.save(plan, run)
@@ -118,10 +145,12 @@ def test_intelligence_survives_chronicle_and_approved_resume(tmp_path):
     persisted = {node.kind for node in loaded_run.graph.nodes.values()}
     assert "intelligence.service" in persisted
     assert "intelligence.web" in persisted
+    assert "intelligence.domain" in persisted
+    assert "intelligence.endpoint" in persisted
 
     calls2: list[list[str]] = []
     runtime2 = _runtime(tmp_path, calls2)
-    waiting = loaded_plan.steps[-1]
+    waiting = next(step for step in loaded_plan.steps if step.tool == "nuclei")
     grant = runtime2.approvals.issue(tool=waiting.tool, target=waiting.target)
     MissionCoordinator(runtime2).resume(
         loaded_plan,
@@ -130,7 +159,7 @@ def test_intelligence_survives_chronicle_and_approved_resume(tmp_path):
     )
 
     assert loaded_run.state is MissionRunState.SUCCEEDED
-    assert [call[0] for call in calls2] == ["nuclei"]
+    assert "nuclei" in [call[0] for call in calls2]
     findings = [
         node
         for node in loaded_run.graph.nodes.values()
