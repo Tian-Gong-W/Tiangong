@@ -51,10 +51,14 @@ class MissionPlanner:
     @staticmethod
     def _legacy_priority(spec: CapabilitySpec) -> int:
         semantics = set(spec.capabilities)
+        if "domain.enumerate" in semantics or "subdomain.discover" in semantics:
+            return 5
         if "host.scan" in semantics or "port.scan" in semantics:
             return 10
         if "http.probe" in semantics:
             return 20
+        if "web.crawl" in semantics or "endpoint.discover" in semantics:
+            return 25
         if spec.risk >= RiskLevel.VALIDATION:
             return 30
         return 100
