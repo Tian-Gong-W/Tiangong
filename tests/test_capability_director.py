@@ -97,6 +97,21 @@ def _add_domain_fact(run: MissionRun, host: str) -> None:
     )
 
 
+def _add_service_fact(run: MissionRun, host: str, port: int, service: str) -> None:
+    run.graph.add_node(
+        GraphNode(
+            id=f"service:{host}:{port}",
+            kind="intelligence.service",
+            label=f"{port}/tcp open {service}",
+            metadata={
+                "target": host,
+                "data": {"port": port, "protocol": "tcp", "service": service, "scanned_address": host},
+                "evidence_id": "e-nmap",
+            },
+        )
+    )
+
+
 def test_discovered_subdomain_becomes_candidate_only_when_scope_covers_it(tmp_path):
     wildcard_runtime = _runtime(tmp_path / "wild", ("example.test", "*.example.test"))
     plan = MissionPlan.create("example.test", [])
@@ -111,6 +126,45 @@ def test_discovered_subdomain_becomes_candidate_only_when_scope_covers_it(tmp_pa
     exact_runtime = _runtime(tmp_path / "exact", ("example.test",))
     exact_candidates = MissionDirector(exact_runtime)._rank_capabilities(plan, run, ())
     assert not any(item.target == "api.example.test" for item in exact_candidates)
+
+
+def test_web_service_facts_create_explicit_http_origins(tmp_path):
+    runtime = _runtime(tmp_path)
+    plan = MissionPlan.create("localhost", [])
+    run = MissionRun.create(plan)
+    run.state = MissionRunState.RUNNING
+    _add_service_fact(run, "localhost", 8080, "http-proxy")
+    _add_service_fact(run, "localhost", 8443, "ssl/http")
+
+    candidates = MissionDirector(runtime)._rank_capabilities(plan, run, ())
+    httpx_targets = {item.target for item in candidates if item.spec.name == "httpx"}
+
+    assert "http://localhost:8080" in httpx_targets
+    assert "https://localhost:8443" in httpx_targets
+
+
+def test_attempted_web_origin_does_not_suppress_another_port(tmp_path):
+    runtime = _runtime(tmp_path)
+    plan = MissionPlan.create("localhost", [])
+    run = MissionRun.create(plan)
+    run.state = MissionRunState.RUNNING
+    _add_service_fact(run, "localhost", 8080, "http")
+    _add_service_fact(run, "localhost", 8443, "ssl/http")
+    run.steps.append(
+        StepExecution(
+            "dynamic:httpx:8080",
+            "httpx",
+            "http://localhost:8080",
+            StepExecutionState.SUCCEEDED,
+            metadata={"dynamic": True},
+        )
+    )
+
+    candidates = MissionDirector(runtime)._rank_capabilities(plan, run, ())
+    httpx_targets = {item.target for item in candidates if item.spec.name == "httpx"}
+
+    assert "http://localhost:8080" not in httpx_targets
+    assert "https://localhost:8443" in httpx_targets
 
 
 def test_unresolved_hypothesis_without_executable_capability_is_not_false_completion(tmp_path):
