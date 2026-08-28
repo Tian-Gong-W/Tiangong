@@ -23,7 +23,8 @@ COPY pyproject.toml README.md LICENSE ./
 COPY src/ ./src/
 COPY tests/ ./tests/
 RUN pip install --no-cache-dir '.[dev]' \
-    && pytest -q
+    && pytest -q \
+    && touch /test/.pytest-passed
 
 FROM python:3.12-slim
 
@@ -46,6 +47,7 @@ RUN httpx -version \
     && nuclei -ut -silent \
     && find "$TONMEN_NUCLEI_TEMPLATES" -type f -name '*.yaml' -print -quit | grep -q .
 
+COPY --from=python-tests /test/.pytest-passed /tmp/pytest-passed
 COPY pyproject.toml README.md LICENSE ./
 COPY src/ ./src/
 RUN pip install --no-cache-dir .
