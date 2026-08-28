@@ -33,6 +33,11 @@ class MissionPlanner:
     next action. This projection remains for CLI/report compatibility and initial
     execution slots while that legacy surface is retired.
 
+    Discovery capabilities may be registered for late binding without becoming
+    mandatory frozen steps. The compatibility plan intentionally seeds only the
+    stable network scan, HTTP probe, and governed validation classes. Everything
+    else stays available to the evidence-driven Director as a dynamic action.
+
     DNS resolution never grants execution authority. Direct resolved-IP fanout is
     explicit and bounded: TONMEN_RESOLVED_IP_COVERAGE=1 must be set, every concrete
     IP must already be independently allowed by TargetScope, and one Mission never
@@ -51,17 +56,21 @@ class MissionPlanner:
     @staticmethod
     def _legacy_priority(spec: CapabilitySpec) -> int:
         semantics = set(spec.capabilities)
-        if "domain.enumerate" in semantics or "subdomain.discover" in semantics:
-            return 5
         if "host.scan" in semantics or "port.scan" in semantics:
             return 10
         if "http.probe" in semantics:
             return 20
-        if "web.crawl" in semantics or "endpoint.discover" in semantics:
-            return 25
         if spec.risk >= RiskLevel.VALIDATION:
             return 30
         return 100
+
+    @staticmethod
+    def _compatibility_seed(spec: CapabilitySpec) -> bool:
+        semantics = set(spec.capabilities)
+        return bool(
+            {"host.scan", "port.scan", "http.probe"}.intersection(semantics)
+            or spec.risk >= RiskLevel.VALIDATION
+        )
 
     @staticmethod
     def _target_for(spec: CapabilitySpec, target: str) -> str:
@@ -87,7 +96,10 @@ class MissionPlanner:
         eligible_direct_targets = [item for item in authorized_addresses if item != host]
         coverage_enabled = _resolved_ip_coverage_enabled()
 
-        adapters = sorted(self.runtime.registry, key=lambda item: self._legacy_priority(item.spec))
+        adapters = sorted(
+            (adapter for adapter in self.runtime.registry if self._compatibility_seed(adapter.spec)),
+            key=lambda item: self._legacy_priority(item.spec),
+        )
         base_slots = max(1, len(adapters))
         max_extra_backends = max(0, 16 - base_slots)
         direct_coverage_targets = eligible_direct_targets[:max_extra_backends] if coverage_enabled else []
