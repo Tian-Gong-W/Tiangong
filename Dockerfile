@@ -18,6 +18,7 @@ RUN mkdir -p /out \
 
 FROM python:3.12-slim AS python-tests
 
+ENV TONMEN_EXTENDED_DISCOVERY=0
 WORKDIR /test
 COPY pyproject.toml README.md LICENSE ./
 COPY src/ ./src/
@@ -30,6 +31,7 @@ FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1
 ENV TONMEN_NUCLEI_TEMPLATES=/root/nuclei-templates
+ENV TONMEN_EXTENDED_DISCOVERY=1
 
 WORKDIR /app
 RUN apt-get update \
