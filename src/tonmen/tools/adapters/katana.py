@@ -14,20 +14,23 @@ class KatanaAdapter(ToolAdapter):
         accepts=("url", "host"),
         produces=("endpoint_observation",),
         modalities=("http", "text"),
-        estimated_cost=CostEstimate(wall_seconds=12, network_requests=20),
+        estimated_cost=CostEstimate(wall_seconds=18, network_requests=40),
         replayable=True,
         isolation_profile="scoped_network",
-        default_parameters=(("depth", 2), ("javascript", True),),
+        default_parameters=(("depth", 3), ("javascript", True), ("rate_limit", 20)),
     )
 
     def validate(self, request: ToolRequest) -> None:
-        reject_unknown_parameters(request.parameters, {"depth", "javascript"})
+        reject_unknown_parameters(request.parameters, {"depth", "javascript", "rate_limit"})
         validate_web_target(request.target)
-        depth = request.parameters.get("depth", 2)
+        depth = request.parameters.get("depth", 3)
         if not isinstance(depth, int) or not 1 <= depth <= 4:
             raise ValueError("depth must be an integer from 1 to 4")
         if not isinstance(request.parameters.get("javascript", True), bool):
             raise ValueError("javascript must be boolean")
+        rate_limit = request.parameters.get("rate_limit", 20)
+        if not isinstance(rate_limit, int) or not 1 <= rate_limit <= 50:
+            raise ValueError("rate_limit must be an integer from 1 to 50")
 
     def build_argv(self, request: ToolRequest) -> tuple[str, ...]:
         self.validate(request)
@@ -35,8 +38,9 @@ class KatanaAdapter(ToolAdapter):
             "katana",
             "-u", str(request.target),
             "-silent",
-            "-d", str(request.parameters.get("depth", 2)),
+            "-d", str(request.parameters.get("depth", 3)),
             "-kf", "robotstxt,sitemapxml",
+            "-rl", str(request.parameters.get("rate_limit", 20)),
         ]
         if request.parameters.get("javascript", True):
             argv.append("-jc")
