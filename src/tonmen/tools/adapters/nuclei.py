@@ -7,6 +7,7 @@ from tonmen.tools.base import CostEstimate, RiskLevel, ToolAdapter, ToolReadines
 from tonmen.tools.validation import reject_unknown_parameters, validate_web_target
 
 _ALLOWED_SEVERITIES = {"info", "low", "medium", "high", "critical"}
+_DEFAULT_SEVERITIES = ("low", "medium", "high", "critical")
 
 
 def _template_root() -> Path:
@@ -33,11 +34,11 @@ class NucleiAdapter(ToolAdapter):
         accepts=("url", "host"),
         produces=("validation_observation", "finding"),
         modalities=("http", "json"),
-        estimated_cost=CostEstimate(wall_seconds=30, network_requests=10),
+        estimated_cost=CostEstimate(wall_seconds=30, network_requests=12),
         replayable=True,
         isolation_profile="scoped_network",
         requires_approval=True,
-        default_parameters=(("severity", ("medium", "high", "critical")), ("rate_limit", 10), ("timeout", 10)),
+        default_parameters=(("severity", _DEFAULT_SEVERITIES), ("rate_limit", 10), ("timeout", 10)),
     )
 
     def readiness(self) -> ToolReadiness:
@@ -66,7 +67,7 @@ class NucleiAdapter(ToolAdapter):
     def validate(self, request: ToolRequest) -> None:
         reject_unknown_parameters(request.parameters, {"severity", "rate_limit", "timeout"})
         validate_web_target(request.target)
-        severity = request.parameters.get("severity", ("medium", "high", "critical"))
+        severity = request.parameters.get("severity", _DEFAULT_SEVERITIES)
         if isinstance(severity, str):
             values = tuple(part.strip().lower() for part in severity.split(",") if part.strip())
         elif isinstance(severity, (tuple, list)):
@@ -75,7 +76,7 @@ class NucleiAdapter(ToolAdapter):
             raise ValueError("severity must be a string or sequence")
         if not values or any(value not in _ALLOWED_SEVERITIES for value in values):
             raise ValueError("unsupported nuclei severity")
-        rate_limit = request.parameters.get("rate_limit", 25)
+        rate_limit = request.parameters.get("rate_limit", 10)
         timeout = request.parameters.get("timeout", 10)
         if not isinstance(rate_limit, int) or not 1 <= rate_limit <= 50:
             raise ValueError("rate_limit must be an integer from 1 to 50")
@@ -84,7 +85,7 @@ class NucleiAdapter(ToolAdapter):
 
     def build_argv(self, request: ToolRequest) -> tuple[str, ...]:
         self.validate(request)
-        severity = request.parameters.get("severity", ("medium", "high", "critical"))
+        severity = request.parameters.get("severity", _DEFAULT_SEVERITIES)
         if isinstance(severity, str):
             severity_text = ",".join(part.strip().lower() for part in severity.split(",") if part.strip())
         else:
@@ -94,6 +95,6 @@ class NucleiAdapter(ToolAdapter):
             "-u", str(request.target),
             "-jsonl",
             "-severity", severity_text,
-            "-rate-limit", str(request.parameters.get("rate_limit", 25)),
+            "-rate-limit", str(request.parameters.get("rate_limit", 10)),
             "-timeout", str(request.parameters.get("timeout", 10)),
         )
