@@ -12,6 +12,8 @@ from tonmen.tools import CapabilitySpec, RiskLevel, ToolRequest
 from .engine import MissionReasoner
 from .model import ActionProposal, Hypothesis, HypothesisStatus, ReasoningAction, ReasoningDecision
 
+_TARGET_CANDIDATE_LIMIT = 8
+
 
 @dataclass(frozen=True, slots=True)
 class _CapabilityCandidate:
@@ -30,6 +32,10 @@ class MissionDirector:
     The Director asks which registered capability can cheaply produce evidence the
     current world model does not yet contain. Frozen plan order is compatibility
     data only; runtime action state comes from the ActionLedger.
+
+    Observed domains and web surfaces may become follow-on targets, but observation
+    never grants authority: every derived target is validated by the adapter and
+    evaluated by the central Scope / risk policy again before it can be proposed.
     """
 
     def __init__(self, runtime: TonmenRuntime | None = None, reasoner: MissionReasoner | None = None) -> None:
@@ -112,12 +118,57 @@ class MissionDirector:
     def _facts(run: MissionRun):
         return [node for node in run.graph.nodes.values() if node.kind.startswith("intelligence.")]
 
+    @staticmethod
+    def _fact_values(node) -> tuple[str, ...]:
+        metadata = dict(node.metadata)
+        data = metadata.get("data") if isinstance(metadata.get("data"), dict) else {}
+        values: list[str] = []
+        for value in (metadata.get("target"), data.get("host"), data.get("url")):
+            text = str(value or "").strip()
+            if text and text not in values:
+                values.append(text)
+        return tuple(values)
+
+    @classmethod
+    def _candidate_targets(cls, plan: MissionPlan, run: MissionRun, spec: CapabilitySpec) -> tuple[str, ...]:
+        capabilities = set(spec.capabilities)
+        base = cls._target_for(spec, plan.target)
+        values: list[str] = [base]
+
+        # Passive subdomain enumeration is rooted at the explicitly requested
+        # mission target; do not recursively enumerate every discovered child.
+        if "domain.enumerate" in capabilities or "subdomain.discover" in capabilities:
+            return (base,)
+
+        for node in cls._facts(run):
+            metadata = dict(node.metadata)
+            data = metadata.get("data") if isinstance(metadata.get("data"), dict) else {}
+            candidate: str | None = None
+
+            if node.kind == "intelligence.domain" and capabilities.intersection(
+                {"host.scan", "port.scan", "service.detect", "http.probe", "http.metadata", "technology.detect"}
+            ):
+                candidate = str(data.get("host") or metadata.get("target") or "").strip()
+            elif node.kind == "intelligence.web" and capabilities.intersection(
+                {"web.crawl", "endpoint.discover", "javascript.endpoint.discover", "vulnerability.validate", "finding.generate"}
+            ):
+                candidate = str(data.get("url") or metadata.get("target") or "").strip()
+
+            if not candidate:
+                continue
+            candidate = cls._target_for(spec, candidate)
+            if candidate and candidate not in values:
+                values.append(candidate)
+            if len(values) >= _TARGET_CANDIDATE_LIMIT:
+                break
+        return tuple(values)
+
     @classmethod
     def _approval_basis(cls, run: MissionRun, spec: CapabilitySpec):
         facts = cls._facts(run)
         if "vulnerability.validate" not in set(spec.capabilities):
             return facts[:16]
-        web_facts = [node for node in facts if node.kind == "intelligence.web"]
+        web_facts = [node for node in facts if node.kind in {"intelligence.web", "intelligence.endpoint"}]
         http_services = []
         for node in facts:
             if node.kind != "intelligence.service":
@@ -148,9 +199,6 @@ class MissionDirector:
 
     @staticmethod
     def _unresolved(hypotheses: tuple[Hypothesis, ...]) -> tuple[Hypothesis, ...]:
-        # SUPPORTED is a resolved evidentiary state at the current depth. It may
-        # justify a validation capability while one remains, but after all such
-        # capabilities are exhausted it must not keep the Mission open forever.
         return tuple(hypothesis for hypothesis in hypotheses if hypothesis.status is HypothesisStatus.OPEN)
 
     @classmethod
@@ -176,12 +224,16 @@ class MissionDirector:
             observed.update(spec.modalities)
         return observed
 
-    @staticmethod
-    def _observed_products(run: MissionRun) -> set[str]:
+    @classmethod
+    def _observed_products(cls, run: MissionRun, target: str | None = None) -> set[str]:
         products: set[str] = set()
         for node in run.graph.nodes.values():
             if not node.kind.startswith("intelligence."):
                 continue
+            if target is not None:
+                values = cls._fact_values(node)
+                if not any(cls._same_target_identity(value, target) for value in values):
+                    continue
             kind = node.kind.removeprefix("intelligence.")
             products.add("finding" if kind == "finding" else f"{kind}_observation")
         return products
@@ -213,6 +265,12 @@ class MissionDirector:
         gain = by_risk[spec.risk] * (0.75 + (0.35 * novelty) + (0.10 * modality_novelty))
         return min(1.0, gain), missing_products
 
+    @classmethod
+    def _same_target_identity(cls, left: str, right: str) -> bool:
+        if left == right:
+            return True
+        return cls._host_target(left).strip().lower() == cls._host_target(right).strip().lower()
+
     def _rank_capabilities(
         self,
         plan: MissionPlan,
@@ -223,7 +281,6 @@ class MissionDirector:
             return []
         attempted = self._attempted_actions(plan, run)
         observed_modalities = self._observed_modalities(plan, run)
-        observed_products = self._observed_products(run)
         supported = self._supported(hypotheses)
         candidates: list[_CapabilityCandidate] = []
 
@@ -233,46 +290,45 @@ class MissionDirector:
                 continue
             if spec.risk >= RiskLevel.VALIDATION and not supported:
                 continue
-            target = self._target_for(spec, plan.target)
-            if (spec.name.strip().lower(), target) in attempted:
-                continue
             parameters = dict(spec.default_parameters)
-            request = ToolRequest(tool=spec.name, target=target, parameters=parameters)
-            try:
-                adapter.validate(request)
-            except ValueError:
-                continue
-            policy = self.runtime.policy.evaluate(spec, request)
-            if policy.decision is Decision.DENY:
-                continue
-            gain, missing = self._information_gain(
-                spec,
-                observed_modalities=observed_modalities,
-                observed_products=observed_products,
-            )
-            if gain <= 0:
-                continue
-            cost = spec.estimated_cost.effective_units
-            approval_penalty = 1.15 if policy.decision is Decision.REQUIRE_APPROVAL or spec.requires_approval else 1.0
-            candidates.append(
-                _CapabilityCandidate(
-                    spec=spec,
-                    target=target,
-                    parameters=parameters,
-                    missing_products=missing,
-                    information_gain=gain,
-                    utility=gain / (cost * approval_penalty),
-                    requires_approval=(policy.decision is Decision.REQUIRE_APPROVAL or spec.requires_approval),
+
+            for target in self._candidate_targets(plan, run, spec):
+                tool_name = spec.name.strip().lower()
+                if any(
+                    done_tool == tool_name and self._same_target_identity(done_target, target)
+                    for done_tool, done_target in attempted
+                ):
+                    continue
+                request = ToolRequest(tool=spec.name, target=target, parameters=parameters)
+                try:
+                    adapter.validate(request)
+                except ValueError:
+                    continue
+                policy = self.runtime.policy.evaluate(spec, request)
+                if policy.decision is Decision.DENY:
+                    continue
+                gain, missing = self._information_gain(
+                    spec,
+                    observed_modalities=observed_modalities,
+                    observed_products=self._observed_products(run, target),
                 )
-            )
+                if gain <= 0:
+                    continue
+                cost = spec.estimated_cost.effective_units
+                approval_penalty = 1.15 if policy.decision is Decision.REQUIRE_APPROVAL or spec.requires_approval else 1.0
+                candidates.append(
+                    _CapabilityCandidate(
+                        spec=spec,
+                        target=target,
+                        parameters=parameters,
+                        missing_products=missing,
+                        information_gain=gain,
+                        utility=gain / (cost * approval_penalty),
+                        requires_approval=(policy.decision is Decision.REQUIRE_APPROVAL or spec.requires_approval),
+                    )
+                )
         candidates.sort(key=lambda item: (item.utility, item.information_gain), reverse=True)
         return candidates
-
-    @classmethod
-    def _same_target_identity(cls, left: str, right: str) -> bool:
-        if left == right:
-            return True
-        return cls._host_target(left).strip().lower() == cls._host_target(right).strip().lower()
 
     @classmethod
     def _matching_pending_step(cls, plan: MissionPlan, run: MissionRun, candidate: _CapabilityCandidate):
@@ -298,8 +354,9 @@ class MissionDirector:
         basis = tuple(node.id for node in self._facts(run)[:16])
         need = ", ".join(candidate.missing_products) or "novel evidence"
         summary = (
-            f"Select capability {candidate.spec.name}: produce {need}; expected information gain "
-            f"{candidate.information_gain:.2f} at cost {candidate.spec.estimated_cost.effective_units:.2f}."
+            f"Select scope-checked capability {candidate.spec.name} for {candidate.target}: produce {need}; "
+            f"expected information gain {candidate.information_gain:.2f} at cost "
+            f"{candidate.spec.estimated_cost.effective_units:.2f}."
         )
         match = self._matching_pending_step(plan, run, candidate)
         if match is not None:
@@ -342,6 +399,7 @@ class MissionDirector:
                     "output_bytes": candidate.spec.estimated_cost.output_bytes,
                 },
                 "authority": "mission_director",
+                "derived_target": not self._same_target_identity(candidate.target, plan.target),
             },
         )
         return ReasoningDecision.create(
@@ -480,7 +538,7 @@ class MissionDirector:
                 gain, _ = self._information_gain(
                     spec,
                     observed_modalities=self._observed_modalities(plan, run),
-                    observed_products=self._observed_products(run),
+                    observed_products=self._observed_products(run, planned.target),
                 )
                 if gain <= 0:
                     return ReasoningDecision.create(
