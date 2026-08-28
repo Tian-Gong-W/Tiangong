@@ -1,5 +1,6 @@
 from .convergence import ConvergenceDetector, ConvergenceReport
 from .engine import MissionReasoner
+from .knowledge_director import MissionDirector
 from .model import (
     ActionProposal,
     Hypothesis,
@@ -8,7 +9,6 @@ from .model import (
     ReasoningDecision,
 )
 from .world import EvidenceNeed, WorldModel
-from .world_director import MissionDirector
 
 __all__ = [
     "ActionProposal",
