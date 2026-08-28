@@ -125,10 +125,16 @@ PORT   STATE SERVICE VERSION
     return runtime
 
 
-def test_intelligence_survives_chronicle_and_approved_resume(tmp_path):
+def test_intelligence_survives_chronicle_and_approved_resume(tmp_path, monkeypatch):
+    # This test specifically exercises the optional discovery layer. The baseline
+    # runtime deliberately keeps Subfinder/Katana disabled unless requested.
+    monkeypatch.setenv("TONMEN_EXTENDED_DISCOVERY", "1")
+
     calls1: list[list[str]] = []
     runtime1 = _runtime(tmp_path, calls1)
     plan = MissionPlanner(runtime1).plan("localhost")
+    assert [step.tool for step in plan.steps] == ["nmap", "httpx", "nuclei"]
+
     run = MissionCoordinator(runtime1).run(plan)
 
     assert run.state is MissionRunState.WAITING_APPROVAL
@@ -137,6 +143,8 @@ def test_intelligence_survives_chronicle_and_approved_resume(tmp_path):
     assert "intelligence.web" in kinds
     assert "intelligence.domain" in kinds
     assert "intelligence.endpoint" in kinds
+    assert "subfinder" in [call[0] for call in calls1]
+    assert "katana" in [call[0] for call in calls1]
     assert "nuclei" not in [call[0] for call in calls1]
 
     store = ChronicleStore(tmp_path)
