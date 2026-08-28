@@ -79,13 +79,31 @@ const chainType = (kind: string): ChainNode['type'] => {
   return 'reasoning';
 };
 
-const chainStatus = (state: string, kind: string): ChainNode['status'] => {
-  if (kind === 'finding') return 'confirmed';
+const chainStatus = (item: Record<string, any>): ChainNode['status'] => {
+  const kind = String(item.kind || '');
+  const state = String(item.state || '');
+  if (kind === 'finding') {
+    const evidenceStatus = String(item.evidence_status || '');
+    if (evidenceStatus === 'confirmed') return 'confirmed';
+    if (['failed', 'rejected', 'denied'].includes(evidenceStatus)) return 'alert';
+    return 'pending';
+  }
   if (['succeeded', 'degraded', 'confirmed'].includes(state)) return 'confirmed';
   if (['running', 'active'].includes(state)) return 'active';
   if (['failed', 'denied', 'blocked'].includes(state)) return 'alert';
   return 'pending';
 };
+
+function rawFindings(detail: Record<string, any>): any[] {
+  const report = asRecord(detail.report);
+  if (Array.isArray(report.aggregated_findings)) return report.aggregated_findings;
+  const workspaceFindings = asRecord(detail.workspace).findings;
+  return Array.isArray(workspaceFindings) ? workspaceFindings : [];
+}
+
+function findingId(item: any, index: number): string {
+  return String(item.id || item.template_id || `finding-${index}`);
+}
 
 function mapChain(detail: Record<string, any>): { nodes: ChainNode[]; edges: ChainEdge[] } {
   const exploration = asRecord(asRecord(detail.workspace).exploration);
@@ -97,7 +115,7 @@ function mapChain(detail: Record<string, any>): { nodes: ChainNode[]; edges: Cha
       label: String(item.title || item.label || item.id),
       subLabel: String(item.tool || item.kind || ''),
       type: chainType(String(item.kind || '')),
-      status: chainStatus(String(item.state || ''), String(item.kind || '')),
+      status: chainStatus(item),
       details: String(item.detail || ''),
       evidenceId: item.evidence_id ? String(item.evidence_id) : undefined,
       severity: item.severity
@@ -106,11 +124,11 @@ function mapChain(detail: Record<string, any>): { nodes: ChainNode[]; edges: Cha
             : 'INFO') as ChainNode['severity']
         : undefined,
     })),
-    edges: rawEdges.map((item: any, index: number) => ({
+    edges: rawEdges.map((item: any) => ({
       from: String(item.source),
       to: String(item.target),
       label: String(item.relation || ''),
-      animated: index < 1,
+      animated: false,
     })),
   };
 }
@@ -135,14 +153,15 @@ function mapAssets(detail: Record<string, any>): AssetDomain {
       const relatedFindings = findings.filter((finding: any) =>
         edges.some((edge: any) => edge.source === host.id && edge.target === finding.id),
       );
+      const scanned = host.coverage_status === 'scanned';
       return {
         ip: String(host.title || host.id),
-        status: relatedFindings.length ? 'has_vuln' : host.coverage_status === 'scanned' ? 'checked' : 'unchecked',
+        status: relatedFindings.length ? 'has_vuln' : scanned ? 'checked' : 'unchecked',
         services: hostServices.map((service: any) => ({
           port: Number(service.port || 0),
           protocol: String(service.protocol || ''),
           service: String(service.service || service.title || ''),
-          status: 'checked',
+          status: scanned ? 'checked' : 'unchecked',
           findingIds: relatedFindings.map((finding: any) => String(finding.id).replace(/^asset:finding:/, '')),
         })),
       };
@@ -153,12 +172,19 @@ function mapAssets(detail: Record<string, any>): AssetDomain {
 function mapEvents(detail: Record<string, any>): ExecutionEvent[] {
   const steps = Array.isArray(detail.steps) ? detail.steps : [];
   const evidence = Array.isArray(detail.evidence) ? detail.evidence : [];
+  const findings = rawFindings(detail);
   return steps.map((step: any, index: number) => {
     const proof = evidence.find((item: any) => item.id === step.evidence_id);
     const start = proof?.started_at || detail.started_at;
     const finish = proof?.finished_at;
     const elapsed = start && finish ? Math.max(0, new Date(finish).getTime() - new Date(start).getTime()) : 0;
     const raw = [proof?.stdout, proof?.stderr].filter(Boolean).join('\n');
+    const relatedFindingIds = step.evidence_id
+      ? findings
+          .map((item: any, findingIndex: number) => ({ item, id: findingId(item, findingIndex) }))
+          .filter(({ item }: any) => Array.isArray(item.evidence_ids) && item.evidence_ids.includes(step.evidence_id))
+          .map(({ id }: any) => id)
+      : [];
     return {
       id: String(step.id || `step-${index}`),
       timestamp: String(start || ''),
@@ -173,11 +199,14 @@ function mapEvents(detail: Record<string, any>): ExecutionEvent[] {
       outputSummary: String(step.error || (proof ? `exit ${proof.exit_code}` : '尚无执行证据')),
       rawOutput: raw,
       evidenceId: step.evidence_id ? String(step.evidence_id) : undefined,
+      findingId: relatedFindingIds[0],
+      findingIds: relatedFindingIds.length ? relatedFindingIds : undefined,
+      traceType: relatedFindingIds.length ? 'initial_discovery' : String(step.tool || '') === 'nmap' ? 'recon' : undefined,
       workerTrace: proof
         ? {
             workerId: String(step.metadata?.worker_id || 'local'),
             command: Array.isArray(proof.argv) ? proof.argv.join(' ') : '',
-            exitCode: Number(proof.exit_code || 0),
+            exitCode: Number(proof.exit_code ?? 0),
             executionTimeMs: elapsed,
           }
         : undefined,
@@ -186,16 +215,12 @@ function mapEvents(detail: Record<string, any>): ExecutionEvent[] {
 }
 
 function mapFindings(detail: Record<string, any>, taskName: string): Finding[] {
-  const report = asRecord(detail.report);
-  const raw = Array.isArray(report.aggregated_findings)
-    ? report.aggregated_findings
-    : Array.isArray(asRecord(detail.workspace).findings)
-      ? asRecord(detail.workspace).findings
-      : [];
+  const raw = rawFindings(detail);
   const evidence = Array.isArray(detail.evidence) ? detail.evidence : [];
   return raw.map((item: any, index: number) => {
     const itemEvidence = evidence.filter((proof: any) => (item.evidence_ids || []).includes(proof.id));
-    const verified = item.evidence_status === 'confirmed';
+    const evidenceStatus = String(item.evidence_status || 'unverified');
+    const verified = evidenceStatus === 'confirmed';
     const severity = String(item.severity || 'INFO').toUpperCase() as Finding['severity'];
     const firstPayload = Array.isArray(item.instances) ? item.instances[0] : null;
     const backends = Array.isArray(item.affected_backends)
@@ -212,12 +237,12 @@ function mapFindings(detail: Record<string, any>, taskName: string): Finding[] {
       isVerified: verified,
     }));
     return {
-      id: String(item.id || item.template_id || `finding-${index}`),
+      id: findingId(item, index),
       taskId: String(detail.id),
       taskName,
       title: String(item.name || item.template_id || '未命名发现'),
       severity: ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'].includes(severity) ? severity : 'INFO',
-      status: verified ? 'confirmed' : 'candidate',
+      status: verified ? 'confirmed' : ['pending', 'verifying'].includes(evidenceStatus) ? 'verifying' : 'candidate',
       affectedAsset: String(backends.join(', ') || detail.target || ''),
       affectedUrl: String(firstPayload?.matched_at || firstPayload?.url || detail.target || ''),
       cve: item.classification?.['cve-id']?.[0] || undefined,
@@ -227,11 +252,11 @@ function mapFindings(detail: Record<string, any>, taskName: string): Finding[] {
       impact: String(item.impact || ''),
       verification: {
         verified,
-        verifiedAt: dateText(firstPayload?.timestamp),
-        method: String(item.evidence_status || 'unverified'),
+        verifiedAt: verified ? dateText(firstPayload?.timestamp || detail.finished_at) : '—',
+        method: evidenceStatus,
         reproducibilityRate: undefined,
         antiHallucinationCheck: String(item.attribution_status || 'unverified'),
-        verifierWorker: 'TONMEN evidence pipeline',
+        verifierWorker: String(item.verifier_worker || '—'),
       },
       evidenceList,
       pocCommand: Array.isArray(itemEvidence[0]?.argv) ? itemEvidence[0].argv.join(' ') : '',
@@ -245,7 +270,7 @@ export function missionToTask(mission: MissionDetail): { task: Task; findings: F
   const detail = asRecord(mission);
   const report = asRecord(detail.report);
   const steps = Array.isArray(detail.steps) ? detail.steps : [];
-  const completed = steps.filter((step: any) => ['succeeded', 'degraded', 'failed', 'denied'].includes(step.state)).length;
+  const completed = steps.filter((step: any) => ['succeeded', 'degraded', 'failed', 'denied', 'skipped'].includes(step.state)).length;
   const active = steps.find((step: any) => ['running', 'waiting_approval'].includes(step.state)) ||
     steps.find((step: any) => step.state === 'pending') || steps.at(-1);
   const name = `Mission · ${detail.target || String(detail.id).slice(0, 8)}`;
@@ -363,19 +388,25 @@ export const probeWorker = (worker: string) => post<any>(`/api/workers/${encodeU
 
 export function mapWorkers(payload: Record<string, any>): WorkerNode[] {
   const workers = Array.isArray(payload.workers) ? payload.workers : [];
-  return workers.map((worker: any) => ({
-    id: String(worker.id),
-    name: String(worker.label || worker.name || worker.id),
-    role: 'Scanner Worker',
-    ip: String(worker.url || ''),
-    location: String(worker.region || ''),
-    status: worker.last_probe?.ready ? 'online' : worker.enabled === false ? 'offline' : 'busy',
-    cpuUsage: Number(worker.last_probe?.capacity?.cpu_usage || 0),
-    memUsage: Number(worker.last_probe?.capacity?.memory_usage || 0),
-    activeTasks: Number(worker.scheduler?.inflight || 0),
-    latencyMs: Number(worker.last_probe?.latency_ms || 0),
-    installedTools: Object.entries(worker.last_probe?.tools || {})
-      .filter(([, value]: any) => value?.ready)
-      .map(([name]) => name),
-  }));
+  return workers.map((worker: any) => {
+    const probe = worker.last_probe;
+    const ready = Boolean(probe?.ready);
+    const inflight = Number(worker.scheduler?.inflight || 0);
+    const status: WorkerNode['status'] = !probe || worker.enabled === false ? 'offline' : ready ? (inflight > 0 ? 'busy' : 'online') : 'offline';
+    return {
+      id: String(worker.id),
+      name: String(worker.label || worker.name || worker.id),
+      role: 'Scanner Worker',
+      ip: String(worker.url || ''),
+      location: String(worker.region || probe?.region || ''),
+      status,
+      cpuUsage: 0,
+      memUsage: 0,
+      activeTasks: inflight,
+      latencyMs: Number(probe?.latency_ms || 0),
+      installedTools: Object.entries(probe?.tools || {})
+        .filter(([, value]: any) => value?.ready)
+        .map(([name]) => name),
+    };
+  });
 }
