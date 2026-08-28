@@ -199,14 +199,36 @@ def _parse_katana(evidence: EvidenceRecord) -> list[IntelligenceFact]:
 
 
 def _parse_nuclei(evidence: EvidenceRecord) -> list[IntelligenceFact]:
-    facts: list[IntelligenceFact] = []
+    records: list[dict] = []
     for line in _nonempty_lines(evidence.stdout):
         try:
             item = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if not isinstance(item, dict):
-            continue
+        if isinstance(item, dict):
+            records.append(item)
+
+    # A successful bounded validation run is evidence even when it produces no
+    # vulnerability match. This fact says only that the validation execution
+    # completed and how many match records were parsed; it does not claim the
+    # target is globally safe and it never fabricates a Finding.
+    facts: list[IntelligenceFact] = [
+        IntelligenceFact.create(
+            kind=FactKind.VALIDATION,
+            source="nuclei",
+            target=evidence.target,
+            title=f"Nuclei validation completed: {len(records)} matched record(s)",
+            evidence_id=evidence.id,
+            data={
+                "finding_count": len(records),
+                "matched": bool(records),
+                "exit_code": evidence.exit_code,
+                "semantics": "bounded_validation_execution_completed",
+            },
+        )
+    ]
+
+    for item in records:
         info = item.get("info") if isinstance(item.get("info"), dict) else {}
         name = str(info.get("name") or item.get("template-id") or item.get("templateID") or "Nuclei finding")
         severity_text = str(info.get("severity") or "unknown").lower()
@@ -263,6 +285,7 @@ def summarize_facts(source: str, facts: list[IntelligenceFact], fallback: str) -
         FactKind.SERVICE,
         FactKind.WEB,
         FactKind.ENDPOINT,
+        FactKind.VALIDATION,
         FactKind.FINDING,
     )
     parts = [f"{counts[kind]} {kind.value}" for kind in order if counts.get(kind)]
