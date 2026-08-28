@@ -78,7 +78,7 @@ def test_katana_output_becomes_deduplicated_endpoint_facts():
     assert facts[1].data["url"] == "https://example.test/static/app.js"
 
 
-def test_nuclei_jsonl_becomes_finding():
+def test_nuclei_jsonl_becomes_validation_and_finding():
     line = json.dumps(
         {
             "template-id": "demo-check",
@@ -88,10 +88,23 @@ def test_nuclei_jsonl_becomes_finding():
         }
     )
     facts = parse_evidence(_evidence("nuclei", line + "\n"))
+    assert [fact.kind for fact in facts] == [FactKind.VALIDATION, FactKind.FINDING]
+    validation = facts[0]
+    finding = facts[1]
+    assert validation.data["finding_count"] == 1
+    assert validation.data["matched"] is True
+    assert finding.severity is Severity.HIGH
+    assert finding.data["template_id"] == "demo-check"
+
+
+def test_nuclei_empty_output_is_negative_validation_evidence_not_a_finding():
+    facts = parse_evidence(_evidence("nuclei", "", "https://localhost"))
     assert len(facts) == 1
-    assert facts[0].kind is FactKind.FINDING
-    assert facts[0].severity is Severity.HIGH
-    assert facts[0].data["template_id"] == "demo-check"
+    assert facts[0].kind is FactKind.VALIDATION
+    assert facts[0].target == "https://localhost"
+    assert facts[0].data["finding_count"] == 0
+    assert facts[0].data["matched"] is False
+    assert not any(fact.kind is FactKind.FINDING for fact in facts)
 
 
 def _runtime(tmp_path, calls):
