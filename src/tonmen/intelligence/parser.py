@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from typing import Iterable
+from urllib.parse import urlparse
 
 from tonmen.evidence import EvidenceRecord
 
@@ -18,6 +19,10 @@ _NMAP_REPORT_BARE = re.compile(r"^Nmap scan report for (?P<ip>(?:\d{1,3}\.){3}\d
 _NMAP_OTHER = re.compile(r"^Other addresses for .+ \(not scanned\):\s*(?P<addresses>.+)$", re.IGNORECASE)
 _HTTPX_URL = re.compile(r"^(?P<url>https?://\S+)")
 _HTTPX_GROUP = re.compile(r"\[([^\]]*)\]")
+_HOSTNAME = re.compile(
+    r"^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+"
+    r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"
+)
 _ANSI_ESCAPE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
 
 _SEVERITY = {
@@ -101,6 +106,27 @@ def _parse_nmap(evidence: EvidenceRecord) -> list[IntelligenceFact]:
     return facts
 
 
+def _parse_subfinder(evidence: EvidenceRecord) -> list[IntelligenceFact]:
+    facts: list[IntelligenceFact] = []
+    seen: set[str] = set()
+    for line in _nonempty_lines(evidence.stdout):
+        host = line.rstrip(".").lower()
+        if host in seen or not _HOSTNAME.fullmatch(host):
+            continue
+        seen.add(host)
+        facts.append(
+            IntelligenceFact.create(
+                kind=FactKind.DOMAIN,
+                source="subfinder",
+                target=host,
+                title=f"Subdomain observed: {host}",
+                evidence_id=evidence.id,
+                data={"host": host, "root_target": evidence.target},
+            )
+        )
+    return facts
+
+
 def _parse_httpx(evidence: EvidenceRecord) -> list[IntelligenceFact]:
     facts: list[IntelligenceFact] = []
     for line in _nonempty_lines(evidence.stdout):
@@ -136,6 +162,36 @@ def _parse_httpx(evidence: EvidenceRecord) -> list[IntelligenceFact]:
                     "status_code": status,
                     "title": title,
                     "technologies": technologies,
+                },
+            )
+        )
+    return facts
+
+
+def _parse_katana(evidence: EvidenceRecord) -> list[IntelligenceFact]:
+    facts: list[IntelligenceFact] = []
+    seen: set[str] = set()
+    for line in _nonempty_lines(evidence.stdout):
+        candidate = line.split()[0]
+        parsed = urlparse(candidate)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            continue
+        normalized = parsed._replace(fragment="").geturl()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        facts.append(
+            IntelligenceFact.create(
+                kind=FactKind.ENDPOINT,
+                source="katana",
+                target=normalized,
+                title=f"Endpoint observed: {normalized}",
+                evidence_id=evidence.id,
+                data={
+                    "url": normalized,
+                    "host": parsed.hostname.rstrip(".").lower(),
+                    "path": parsed.path or "/",
+                    "query": parsed.query,
                 },
             )
         )
@@ -184,8 +240,12 @@ def parse_evidence(evidence: EvidenceRecord) -> list[IntelligenceFact]:
     tool = evidence.tool.strip().lower()
     if tool == "nmap":
         return _parse_nmap(evidence)
+    if tool == "subfinder":
+        return _parse_subfinder(evidence)
     if tool == "httpx":
         return _parse_httpx(evidence)
+    if tool == "katana":
+        return _parse_katana(evidence)
     if tool == "nuclei":
         return _parse_nuclei(evidence)
     return []
@@ -197,6 +257,13 @@ def summarize_facts(source: str, facts: list[IntelligenceFact], fallback: str) -
     counts: dict[FactKind, int] = {}
     for fact in facts:
         counts[fact.kind] = counts.get(fact.kind, 0) + 1
-    order = (FactKind.HOST, FactKind.SERVICE, FactKind.WEB, FactKind.FINDING)
+    order = (
+        FactKind.HOST,
+        FactKind.DOMAIN,
+        FactKind.SERVICE,
+        FactKind.WEB,
+        FactKind.ENDPOINT,
+        FactKind.FINDING,
+    )
     parts = [f"{counts[kind]} {kind.value}" for kind in order if counts.get(kind)]
     return f"{source}: " + ", ".join(parts)
