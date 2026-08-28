@@ -28,8 +28,23 @@ class MissionCoordinator:
         self.reasoner = MissionReasoner()
 
     def _emit(self, event_type: str, run: MissionRun, **data: object) -> None:
-        if self.runtime.events is not None:
-            self.runtime.events.publish(event_type, mission_id=run.id, plan_id=run.plan_id, target=run.target, **data)
+        if self.runtime.events is None:
+            return
+        # Keep the Mission target as the stable event envelope. A late-bound
+        # proposal may act on a different, independently scoped host/origin; expose
+        # that as action_target instead of colliding with the envelope's target.
+        if "target" in data:
+            data = {
+                "action_target": data["target"],
+                **{key: value for key, value in data.items() if key != "target"},
+            }
+        self.runtime.events.publish(
+            event_type,
+            mission_id=run.id,
+            plan_id=run.plan_id,
+            target=run.target,
+            **data,
+        )
 
     def _check_scope(self, plan: MissionPlan) -> None:
         if self.runtime.scope is None or not self.runtime.scope.is_allowed(plan.target):
@@ -202,7 +217,6 @@ class MissionCoordinator:
             if proposal.id in run.graph.nodes:
                 run.graph.link(proposal.id, "realized_as", step_id)
 
-        # Tool must exist in registry
         try:
             adapter = self.runtime.registry.get(proposal.tool)
         except Exception as exc:
@@ -271,7 +285,6 @@ class MissionCoordinator:
                 self._record_execution_evidence(run, execution, job.outcome.evidence)
                 self._record_execution_route(run, execution, job.outcome)
                 execution.error = job.error or job.outcome.result.summary
-                # Low-risk discovery timeouts become degraded, not mission failure
                 if bool(job.outcome.result.evidence.get("timed_out")) and proposal.risk <= int(RiskLevel.DISCOVERY):
                     execution.state = StepExecutionState.DEGRADED
                     execution.metadata["degraded_reason"] = "discovery_timeout"
