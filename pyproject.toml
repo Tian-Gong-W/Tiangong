@@ -12,6 +12,7 @@ license = {text = "MIT"}
 authors = [{name = "Top-Men AI"}]
 keywords = ["security", "agent", "mcp", "automation"]
 dependencies = [
+  "psycopg[binary]>=3.2,<4",
   "tomli>=2.0; python_version < '3.11'",
 ]
 
