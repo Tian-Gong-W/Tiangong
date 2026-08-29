@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -10,10 +11,15 @@ from tonmen.missions import MissionRun
 from .attack_path import AttackPathHypothesis, AttackPathSynthesizer
 from .catalog import KnowledgeCatalog, KnowledgeMatch, KnowledgeQuery
 from .profile import OrganizationScale, TargetProfile
+from .store import KnowledgeStore
 
 
 def _dedupe(values) -> tuple[str, ...]:
     return tuple(dict.fromkeys(str(item) for item in values if str(item)))
+
+
+def _watch_key(target: str) -> str:
+    return hashlib.sha256(str(target).strip().casefold().encode("utf-8")).hexdigest()[:24]
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +52,62 @@ class KnowledgeBroker:
     def __init__(self, workspace: Path | str) -> None:
         self.workspace = Path(workspace)
 
+    def _remember_watch(
+        self,
+        profile: TargetProfile,
+        metadata: Mapping[str, Any],
+    ) -> None:
+        """Persist observed product interests for the independent daily crawler.
+
+        Failure to update the knowledge watch registry must never block a governed
+        mission decision; the Director can continue using already available facts.
+        """
+        product_names = _dedupe(
+            [
+                *(metadata.get("product_names") or ()),
+                *(metadata.get("products") or ()),
+                str(metadata.get("product_name") or ""),
+            ]
+        )
+        peer_entities = _dedupe(
+            [
+                *(metadata.get("peer_entities") or ()),
+                *(metadata.get("market_peers") or ()),
+                *(metadata.get("competitors") or ()),
+            ]
+        )
+        entity_names = _dedupe(
+            [
+                *(metadata.get("entity_names") or ()),
+                str(metadata.get("company") or ""),
+                str(metadata.get("vendor") or ""),
+            ]
+        )
+        sources = metadata.get("knowledge_sources")
+        knowledge_sources = list(sources) if isinstance(sources, list) else []
+        payload = {
+            "target_key": _watch_key(profile.target),
+            "target": profile.target,
+            "technologies": list(profile.technologies),
+            "industries": list(profile.industries),
+            "product_categories": list(profile.product_categories),
+            "product_names": list(product_names),
+            "entity_names": list(entity_names),
+            "peer_entities": list(peer_entities),
+            "knowledge_sources": knowledge_sources,
+            "organization_scale": profile.organization_scale.value,
+            "security_maturity": profile.security_maturity.value,
+            "surface_scale": profile.surface_scale.value,
+            "profile_confidence": profile.profile_confidence,
+            "source": "mission-profile",
+        }
+        try:
+            KnowledgeStore.for_workspace(self.workspace).upsert_watch_target(payload["target_key"], payload)
+        except Exception:
+            # Knowledge enrichment is advisory. Persistence outages must not change
+            # Scope/Policy/Approval behavior or stop evidence-driven execution.
+            return
+
     def context_for(
         self,
         run: MissionRun,
@@ -53,7 +115,9 @@ class KnowledgeBroker:
         metadata: Mapping[str, Any] | None = None,
         now: datetime | None = None,
     ) -> KnowledgeContext:
-        profile = TargetProfile.from_run(run, metadata=metadata)
+        resolved_metadata = dict(metadata or {})
+        profile = TargetProfile.from_run(run, metadata=resolved_metadata)
+        self._remember_watch(profile, resolved_metadata)
         scales: list[str] = []
         if profile.organization_scale is not OrganizationScale.UNKNOWN:
             scales.append(profile.organization_scale.value)
