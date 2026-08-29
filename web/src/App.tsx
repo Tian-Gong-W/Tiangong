@@ -4,7 +4,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, LoaderCircle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, LoaderCircle, Menu, RefreshCw, X } from 'lucide-react';
 import { ControlPlaneSnapshot, NavItemId } from './types';
 import {
   addScope,
@@ -48,6 +48,16 @@ const emptySnapshot: ControlPlaneSnapshot = {
   workers: { workers: [], execution_mode: 'local' },
 };
 
+const navLabels: Record<NavItemId, string> = {
+  dashboard: '仪表盘',
+  tasks: '任务',
+  findings: '发现',
+  assets: '资产',
+  ai: 'AI 配置',
+  nodes: '执行节点',
+  settings: '系统设置',
+};
+
 export default function App() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [activeNav, setActiveNav] = useState<NavItemId>('dashboard');
@@ -56,6 +66,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [isNewTaskOpen, setIsNewTaskOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimer = useRef<number | null>(null);
 
@@ -102,6 +113,15 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [isUnlocked, refresh]);
 
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileNavOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [mobileNavOpen]);
+
   const selectedTask = useMemo(
     () => snapshot.tasks.find((task) => task.id === selectedTaskId) || null,
     [snapshot.tasks, selectedTaskId],
@@ -137,34 +157,91 @@ export default function App() {
   const pendingApprovals = snapshot.tasks.filter((task) => task.status === 'waiting_approval').length;
   const runningTasks = snapshot.tasks.filter((task) => task.status === 'running').length;
 
-  return (
-    <div className="flex h-screen w-screen bg-slate-950 text-slate-100 overflow-hidden font-sans relative">
-      <LaicaiBackground />
-      <Sidebar
-        activeNav={activeNav}
-        onSelectNav={(id) => {
-          setActiveNav(id);
-          setSelectedTaskId(null);
-        }}
-        approvalsCount={pendingApprovals}
-        totalFindingsCount={snapshot.findings.length}
-        runningTasksCount={runningTasks}
-        onLock={() => {
-          forgetToken();
-          setIsUnlocked(false);
-        }}
-      />
+  const selectNav = (id: NavItemId) => {
+    setActiveNav(id);
+    setSelectedTaskId(null);
+    setMobileNavOpen(false);
+  };
 
-      <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
+  const sidebar = (
+    <Sidebar
+      activeNav={activeNav}
+      onSelectNav={selectNav}
+      approvalsCount={pendingApprovals}
+      totalFindingsCount={snapshot.findings.length}
+      runningTasksCount={runningTasks}
+      onLock={() => {
+        forgetToken();
+        setMobileNavOpen(false);
+        setIsUnlocked(false);
+      }}
+    />
+  );
+
+  return (
+    <div className="flex h-dvh min-h-dvh w-full max-w-full bg-slate-950 text-slate-100 overflow-hidden font-sans relative">
+      <LaicaiBackground />
+
+      <div className="hidden md:block shrink-0">
+        {sidebar}
+      </div>
+
+      {mobileNavOpen && (
+        <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label="移动导航">
+          <button
+            type="button"
+            aria-label="关闭导航"
+            onClick={() => setMobileNavOpen(false)}
+            className="absolute inset-0 bg-slate-950/75 backdrop-blur-sm"
+          />
+          <div className="relative h-full w-64 max-w-[84vw] shadow-2xl shadow-black/60">
+            {sidebar}
+            <button
+              type="button"
+              aria-label="关闭导航"
+              onClick={() => setMobileNavOpen(false)}
+              className="absolute right-2 top-3 p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/90"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      <main className="min-w-0 w-full flex-1 flex flex-col h-dvh overflow-hidden relative">
+        <header className="md:hidden h-14 shrink-0 px-3 border-b border-slate-800/90 bg-slate-950/92 backdrop-blur-xl flex items-center justify-between gap-3 z-30">
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              type="button"
+              aria-label="打开导航"
+              onClick={() => setMobileNavOpen(true)}
+              className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-200 active:scale-95 transition-transform"
+            >
+              <Menu className="w-4 h-4" />
+            </button>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="font-black text-amber-300 text-sm tracking-wider whitespace-nowrap">雲頂天宮</span>
+                <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30">LIVE</span>
+              </div>
+              <div className="text-[10px] text-slate-500 truncate">{selectedTask ? 'Mission 作战室' : navLabels[activeNav]}</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0 text-[10px] font-mono text-emerald-300">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            Backend
+          </div>
+        </header>
+
         {loadError && (
-          <div className="mx-5 mt-4 rounded-xl border border-rose-500/40 bg-rose-950/40 px-4 py-3 text-xs text-rose-200 flex items-center justify-between gap-3 z-20">
-            <span className="flex items-center gap-2"><AlertTriangle className="w-4 h-4" />{loadError}</span>
-            <button onClick={() => refresh()} className="flex items-center gap-1 text-white"><RefreshCw className="w-3.5 h-3.5" />重试</button>
+          <div className="mx-3 sm:mx-5 mt-3 sm:mt-4 rounded-xl border border-rose-500/40 bg-rose-950/40 px-3 sm:px-4 py-3 text-xs text-rose-200 flex items-center justify-between gap-3 z-20">
+            <span className="flex items-center gap-2 min-w-0"><AlertTriangle className="w-4 h-4 shrink-0" /><span className="truncate">{loadError}</span></span>
+            <button onClick={() => refresh()} className="flex items-center gap-1 text-white shrink-0"><RefreshCw className="w-3.5 h-3.5" />重试</button>
           </div>
         )}
         {loading && snapshot.tasks.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center text-sm text-slate-400 gap-2">
-            <LoaderCircle className="w-4 h-4 animate-spin" />正在读取 Tiangong 控制面数据…
+          <div className="flex-1 min-h-0 flex items-center justify-center text-sm text-slate-400 gap-2 px-4 text-center">
+            <LoaderCircle className="w-4 h-4 animate-spin shrink-0" />正在读取 Tiangong 控制面数据…
           </div>
         ) : selectedTask ? (
           <TaskWarRoom
@@ -174,7 +251,7 @@ export default function App() {
             onApprove={handleApprove}
           />
         ) : (
-          <>
+          <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
             {activeNav === 'dashboard' && (
               <DashboardView
                 tasks={snapshot.tasks}
@@ -267,11 +344,11 @@ export default function App() {
                 }}
               />
             )}
-          </>
+          </div>
         )}
 
         {toastMessage && (
-          <div className="fixed bottom-6 right-6 z-50 bg-slate-900 border border-cyan-500/50 text-cyan-200 px-4 py-2.5 rounded-xl shadow-2xl text-xs font-mono">
+          <div className="fixed left-3 right-3 sm:left-auto sm:right-6 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-[70] sm:max-w-md bg-slate-900 border border-cyan-500/50 text-cyan-200 px-4 py-2.5 rounded-xl shadow-2xl text-xs font-mono">
             {toastMessage}
           </div>
         )}
