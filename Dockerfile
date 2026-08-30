@@ -23,10 +23,13 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl tar gzip \
     && rm -rf /var/lib/apt/lists/*
 RUN npm install -g --omit=dev @openai/codex@0.151.0 @xai-official/grok@1.0.5
-RUN curl -fsSL https://github.com/google-antigravity/antigravity-cli/releases/download/1.1.22/agy_cli_linux_x64.tar.gz -o /tmp/agy.tgz \
+ARG AGY_VERSION=1.1.22
+ARG AGY_LINUX_X64_SHA256=1e1a219a86e75d7c6351f96d182ca2105302d5c34d8fa9c31265dc0adf24145f
+RUN curl -fL "https://github.com/google-antigravity/antigravity-cli/releases/download/${AGY_VERSION}/agy_cli_linux_x64.tar.gz" -o /tmp/agy.tgz \
+    && echo "${AGY_LINUX_X64_SHA256}  /tmp/agy.tgz" | sha256sum -c - \
     && mkdir -p /tmp/agy \
     && tar -xzf /tmp/agy.tgz -C /tmp/agy \
-    && AGY_BIN="$(find /tmp/agy -type f \( -name 'agy' -o -name 'agy_cli' \) | head -n 1)" \
+    && AGY_BIN="$(find /tmp/agy -type f \( -name 'antigravity' -o -name 'agy' -o -name 'agy_cli' \) | head -n 1)" \
     && test -n "$AGY_BIN" \
     && install -m 0755 "$AGY_BIN" /usr/local/bin/agy \
     && codex --version \
