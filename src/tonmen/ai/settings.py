@@ -105,9 +105,14 @@ def public_settings() -> dict[str, Any]:
     pool = values.get("pool", [])
     if not isinstance(pool, list):
         pool = []
+    lead_provider = str(values.get("lead_provider") or "disabled").strip().lower()
+    # A stored model is historical configuration, not current runtime state. When
+    # Lead AI is disabled, do not project a model into the Console as if one were
+    # selected or active. Re-selecting a provider can restore/set its model later.
+    lead_model = str(values.get("lead_model") or "") if lead_provider != "disabled" else ""
     return {
-        "lead_provider": str(values.get("lead_provider") or "disabled"),
-        "lead_model": str(values.get("lead_model") or "gpt-5.6"),
+        "lead_provider": lead_provider,
+        "lead_model": lead_model,
         "pool": [str(item) for item in pool],
         "path": str(_settings_path()),
         "secret_values_exposed": False,
@@ -120,7 +125,9 @@ def apply_local_ai_environment() -> None:
     if not os.getenv("TONMEN_AI_PROVIDER", "").strip():
         os.environ["TONMEN_AI_PROVIDER"] = str(settings["lead_provider"])
     if not os.getenv("TONMEN_AI_MODEL", "").strip():
-        os.environ["TONMEN_AI_MODEL"] = str(settings["lead_model"])
+        model = str(settings["lead_model"] or "").strip()
+        if model:
+            os.environ["TONMEN_AI_MODEL"] = model
     if not os.getenv("TONMEN_AI_POOL", "").strip():
         pool = [str(item) for item in settings.get("pool", []) if str(item).strip()]
         if pool:
