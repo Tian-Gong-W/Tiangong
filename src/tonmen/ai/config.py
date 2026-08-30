@@ -19,6 +19,9 @@ def _validate_provider_base_url(value: str, provider: str) -> str:
     if provider == "openai":
         if host != "api.openai.com" and not host.endswith(".api.openai.com"):
             raise ValueError("OpenAI base URL must use an official *.api.openai.com host")
+    elif provider == "deepseek":
+        if host != "api.deepseek.com":
+            raise ValueError("DeepSeek base URL must use the official api.deepseek.com host")
     elif provider == "mistral":
         if host != "api.mistral.ai":
             raise ValueError("Mistral base URL must use the official api.mistral.ai host")
@@ -47,9 +50,9 @@ class LeadAIConfig:
     precedence; the local Console settings/secret stores are fallback sources so a
     local operator can configure AI without restarting or editing shell profiles.
 
-    For Mistral, TONMEN pins a Studio Agent id + version and imports only its model,
-    instructions and safe completion settings. Agent tools/handoffs never receive
-    TONMEN execution authority.
+    OpenAI and DeepSeek use direct evidence-only API calls. For Mistral, TONMEN pins
+    a Studio Agent id + version and imports only its model, instructions and safe
+    completion settings. Agent tools/handoffs never receive TONMEN execution authority.
     """
 
     provider: str = "disabled"
@@ -63,15 +66,18 @@ class LeadAIConfig:
     @classmethod
     def from_env(cls) -> "LeadAIConfig":
         provider = _configured("TONMEN_AI_PROVIDER", get_setting("lead_provider", "disabled")).lower()
-        if provider not in {"disabled", "openai", "mistral"}:
-            raise ValueError("TONMEN_AI_PROVIDER must be 'disabled', 'openai', or 'mistral'")
+        if provider not in {"disabled", "openai", "deepseek", "mistral"}:
+            raise ValueError("TONMEN_AI_PROVIDER must be 'disabled', 'openai', 'deepseek', or 'mistral'")
 
         timeout = int(os.getenv("TONMEN_AI_TIMEOUT_SECONDS") or "30")
         if not 1 <= timeout <= 120:
             raise ValueError("TONMEN_AI_TIMEOUT_SECONDS must be between 1 and 120")
 
         explicit_key_env = (os.getenv("TONMEN_AI_KEY_ENV") or "").strip()
-        default_key_env = "MISTRAL_API_KEY" if provider == "mistral" else "OPENAI_API_KEY"
+        default_key_env = {
+            "mistral": "MISTRAL_API_KEY",
+            "deepseek": "DEEPSEEK_API_KEY",
+        }.get(provider, "OPENAI_API_KEY")
         key_env = explicit_key_env or default_key_env
 
         if provider == "mistral":
@@ -95,14 +101,30 @@ class LeadAIConfig:
                 agent_version=agent_version,
             )
 
+        if provider == "deepseek":
+            base_url = _validate_provider_base_url(
+                os.getenv("TONMEN_DEEPSEEK_BASE_URL") or "https://api.deepseek.com/v1",
+                "deepseek",
+            )
+            stored_model = get_setting("lead_model", "")
+            model = _configured("TONMEN_AI_MODEL", stored_model or "deepseek-v4-flash")
+            return cls(
+                provider="deepseek",
+                model=model,
+                base_url=base_url,
+                api_key_env=key_env,
+                timeout_seconds=timeout,
+            )
+
         base_url = os.getenv("TONMEN_OPENAI_BASE_URL") or "https://api.openai.com/v1"
         if provider == "openai":
             base_url = _validate_provider_base_url(base_url, "openai")
         else:
             base_url = base_url.strip().rstrip("/")
+        stored_model = get_setting("lead_model", "")
         return cls(
             provider=provider,
-            model=_configured("TONMEN_AI_MODEL", get_setting("lead_model", "gpt-5.6")),
+            model=_configured("TONMEN_AI_MODEL", stored_model or "gpt-5.6"),
             base_url=base_url,
             api_key_env=key_env,
             timeout_seconds=timeout,
