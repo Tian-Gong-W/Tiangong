@@ -9,7 +9,8 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from tonmen.core.config import TonmenConfig
-from tonmen.dashboard.mission_workspace_server import DashboardState, MissionWorkspaceDashboardHandler
+from tonmen.dashboard.mission_workspace_server import MissionWorkspaceDashboardHandler
+from tonmen.dashboard.provider_auth_state import DashboardState
 
 
 def _default_dist() -> Path:
