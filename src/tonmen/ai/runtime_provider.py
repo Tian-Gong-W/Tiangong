@@ -21,22 +21,18 @@ def _enabled(name: str, default: bool = False) -> bool:
 class ProviderHub(BaseProviderHub):
     """Production ProviderHub with authenticated readiness semantics.
 
-    Installing a browser-login CLI is not enough to make it routable. Readiness is
-    based on the official CLI's authentication probe. Google Antigravity is kept
+    Installing a browser-login CLI is not enough to make it routable. Candidate
+    construction remains side-effect free; real authentication is checked only when
+    the provider is selected or explicitly probed. Google Antigravity is kept
     authentication-capable but excluded from Council routing by default because its
-    current headless permission boundary is not accepted as a hard TONMEN execution
-    boundary. Operators may explicitly opt in after validating a suitable upstream
-    version with TONMEN_ANTIGRAVITY_HEADLESS_ALLOWED=1.
+    current headless permission boundary is not accepted as a hard TONMEN boundary.
+    Operators may explicitly opt in after validation with
+    TONMEN_ANTIGRAVITY_HEADLESS_ALLOWED=1.
     """
 
     _probe_cache: dict[str, tuple[float, dict[str, Any]]] = {}
     _cache_lock = threading.Lock()
     _cache_ttl_seconds = 5.0
-
-    def __init__(self, pool: tuple[str, ...] | None = None) -> None:
-        super().__init__(pool=pool)
-        if getattr(self, "pool_mode", "explicit") == "auto":
-            self.pool = tuple(provider_id for provider_id in self.pool if self.is_ready(provider_id))
 
     @classmethod
     def invalidate_probe(cls, provider_id: str | None = None) -> None:
@@ -88,7 +84,10 @@ class ProviderHub(BaseProviderHub):
         return result
 
     def authentication_status(self, provider_id: str, *, timeout: int = 3) -> dict[str, Any]:
-        return self.probe(provider_id, timeout=timeout)
+        # Keep this compatibility-friendly for callers/tests that replace `probe`
+        # with the historic `(provider_id)` signature. Production callers that need
+        # a specific timeout invoke `probe(..., timeout=...)` directly.
+        return self.probe(provider_id)
 
     def is_ready(self, provider_id: str) -> bool:
-        return bool(self.authentication_status(provider_id, timeout=3).get("runtime_ready"))
+        return bool(self.authentication_status(provider_id).get("runtime_ready"))
