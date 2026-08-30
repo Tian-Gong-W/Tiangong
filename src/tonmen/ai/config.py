@@ -50,9 +50,10 @@ class LeadAIConfig:
     precedence; the local Console settings/secret stores are fallback sources so a
     local operator can configure AI without restarting or editing shell profiles.
 
-    OpenAI and DeepSeek use direct evidence-only API calls. For Mistral, TONMEN pins
-    a Studio Agent id + version and imports only its model, instructions and safe
-    completion settings. Agent tools/handoffs never receive TONMEN execution authority.
+    OpenAI, DeepSeek and direct Mistral models are evidence-only API providers. When
+    both Mistral Agent id and version are supplied, TONMEN instead imports that pinned
+    Agent's model/instructions/safe completion settings. Agent tools/handoffs never
+    receive TONMEN execution authority.
     """
 
     provider: str = "disabled"
@@ -87,18 +88,26 @@ class LeadAIConfig:
             )
             agent_id = (os.getenv("TONMEN_MISTRAL_AGENT_ID") or "").strip()
             agent_version = _parse_agent_version(os.getenv("TONMEN_MISTRAL_AGENT_VERSION"))
-            if not agent_id:
-                raise ValueError("TONMEN_MISTRAL_AGENT_ID is required when TONMEN_AI_PROVIDER=mistral")
-            if agent_version is None:
-                raise ValueError("TONMEN_MISTRAL_AGENT_VERSION is required when TONMEN_AI_PROVIDER=mistral")
+            if bool(agent_id) != (agent_version is not None):
+                missing = "TONMEN_MISTRAL_AGENT_VERSION" if agent_id else "TONMEN_MISTRAL_AGENT_ID"
+                raise ValueError(f"{missing} is required when using a pinned Mistral Agent")
+            if agent_id and agent_version is not None:
+                return cls(
+                    provider="mistral",
+                    model=f"agent:{agent_id}@{agent_version}",
+                    base_url=base_url,
+                    api_key_env=key_env,
+                    timeout_seconds=timeout,
+                    agent_id=agent_id,
+                    agent_version=agent_version,
+                )
+            stored_model = get_setting("lead_model", "")
             return cls(
                 provider="mistral",
-                model=f"agent:{agent_id}@{agent_version}",
+                model=_configured("TONMEN_AI_MODEL", stored_model or "mistral-small-2603"),
                 base_url=base_url,
                 api_key_env=key_env,
                 timeout_seconds=timeout,
-                agent_id=agent_id,
-                agent_version=agent_version,
             )
 
         if provider == "deepseek":
