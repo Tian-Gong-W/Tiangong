@@ -50,7 +50,7 @@ RUN pip install --no-cache-dir '.[dev]' \
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1
-ENV TONMEN_NUCLEI_TEMPLATES=/root/nuclei-templates
+ENV TONMEN_NUCLEI_TEMPLATES=/data/provider-home/nuclei-templates
 ENV TONMEN_EXTENDED_DISCOVERY=1
 ENV HOME=/data/provider-home
 ENV TONMEN_AI_SETTINGS_FILE=/data/tonmen/ai-settings.json
