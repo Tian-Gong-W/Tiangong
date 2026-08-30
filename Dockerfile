@@ -22,7 +22,11 @@ FROM node:22-bookworm-slim AS ai-clis
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl tar gzip \
     && rm -rf /var/lib/apt/lists/*
-RUN npm install -g --omit=dev @openai/codex@0.151.0 @xai-official/grok@1.0.5
+RUN npm install -g --omit=dev @openai/codex@0.151.0 @xai-official/grok@1.0.5 \
+    && readlink /usr/local/bin/codex > /tmp/codex.link \
+    && readlink /usr/local/bin/grok > /tmp/grok.link \
+    && test -s /tmp/codex.link \
+    && test -s /tmp/grok.link
 ARG AGY_VERSION=1.1.22
 ARG AGY_LINUX_X64_SHA256=1e1a219a86e75d7c6351f96d182ca2105302d5c34d8fa9c31265dc0adf24145f
 RUN curl -fL "https://github.com/google-antigravity/antigravity-cli/releases/download/${AGY_VERSION}/agy_cli_linux_x64.tar.gz" -o /tmp/agy.tgz \
@@ -71,14 +75,17 @@ COPY --from=security-tools /out/nuclei /usr/local/bin/nuclei
 COPY --from=security-tools /out/subfinder /usr/local/bin/subfinder
 COPY --from=security-tools /out/katana /usr/local/bin/katana
 
-# Codex resolves its platform package relative to the npm package entrypoint.
-# Copy the complete global package tree, then recreate npm's symlink instead of
-# copying the symlink target as a standalone file into /usr/local/bin.
+# Codex and Grok resolve platform-specific sibling packages relative to their
+# npm package entrypoints. Preserve npm's actual symlink targets across stages
+# instead of copying the linked JavaScript entrypoints as standalone files.
 COPY --from=ai-clis /usr/local/bin/node /usr/local/bin/node
 COPY --from=ai-clis /usr/local/lib/node_modules /usr/local/lib/node_modules
-COPY --from=ai-clis /usr/local/bin/grok /usr/local/bin/grok
+COPY --from=ai-clis /tmp/codex.link /tmp/codex.link
+COPY --from=ai-clis /tmp/grok.link /tmp/grok.link
 COPY --from=ai-clis /usr/local/bin/agy /usr/local/bin/agy
-RUN ln -s ../lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex
+RUN ln -s "$(cat /tmp/codex.link)" /usr/local/bin/codex \
+    && ln -s "$(cat /tmp/grok.link)" /usr/local/bin/grok \
+    && rm -f /tmp/codex.link /tmp/grok.link
 
 # Nuclei updates into $HOME by default. Copy the verified template snapshot to
 # /opt so the runtime /data volume cannot mask the templates baked into image.
