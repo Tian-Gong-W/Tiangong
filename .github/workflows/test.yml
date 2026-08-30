@@ -67,3 +67,11 @@ jobs:
       - name: Build responsive console
         working-directory: web
         run: npm run build
+
+  production-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production image and verify pinned provider CLIs
+        run: docker build --progress=plain -t tiangong-provider-auth-ci .
