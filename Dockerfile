@@ -104,7 +104,14 @@ RUN httpx -version \
 COPY --from=python-tests /test/.pytest-passed /tmp/pytest-passed
 COPY pyproject.toml README.md LICENSE ./
 COPY src/ ./src/
-RUN pip install --no-cache-dir .
+# Railway builds occasionally see transient registry/PyPI stream resets. Retry the
+# whole bounded install instead of turning a one-off BrokenPipe into a failed release.
+RUN set -eu; \
+    for attempt in 1 2 3; do \
+        pip install --no-cache-dir --timeout 120 . && exit 0; \
+        if [ "$attempt" -eq 3 ]; then exit 1; fi; \
+        sleep $((attempt * 2)); \
+    done
 COPY --from=web-build /build/web/dist ./web/dist/
 
 EXPOSE 8080
