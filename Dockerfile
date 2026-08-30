@@ -50,9 +50,12 @@ RUN pip install --no-cache-dir '.[dev]' \
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1
-ENV TONMEN_NUCLEI_TEMPLATES=/data/provider-home/nuclei-templates
+ENV TONMEN_NUCLEI_TEMPLATES=/opt/nuclei-templates
 ENV TONMEN_EXTENDED_DISCOVERY=1
-ENV HOME=/data/provider-home
+# Railway mounts a persistent volume at /data. Use the mount root itself as
+# HOME so browser-login CLIs can always create their own state directories on
+# a fresh volume; do not depend on image-layer subdirectories hidden by mount.
+ENV HOME=/data
 ENV TONMEN_AI_SETTINGS_FILE=/data/tonmen/ai-settings.json
 ENV TONMEN_AI_SECRETS_FILE=/data/tonmen/ai-secrets.json
 
@@ -60,8 +63,8 @@ WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates nmap \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /data/provider-home /data/tonmen \
-    && chmod 700 /data/provider-home /data/tonmen
+    && mkdir -p /data /data/tonmen \
+    && chmod 700 /data /data/tonmen
 
 COPY --from=security-tools /out/httpx /usr/local/bin/httpx
 COPY --from=security-tools /out/nuclei /usr/local/bin/nuclei
@@ -77,11 +80,15 @@ COPY --from=ai-clis /usr/local/bin/grok /usr/local/bin/grok
 COPY --from=ai-clis /usr/local/bin/agy /usr/local/bin/agy
 RUN ln -s ../lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex
 
+# Nuclei updates into $HOME by default. Copy the verified template snapshot to
+# /opt so the runtime /data volume cannot mask the templates baked into image.
 RUN httpx -version \
     && subfinder -version \
     && katana -version \
     && nuclei -version \
     && nuclei -ut -silent \
+    && mkdir -p "$TONMEN_NUCLEI_TEMPLATES" \
+    && cp -a /data/nuclei-templates/. "$TONMEN_NUCLEI_TEMPLATES"/ \
     && find "$TONMEN_NUCLEI_TEMPLATES" -type f -name '*.yaml' -print -quit | grep -q . \
     && codex --version \
     && grok --version \
