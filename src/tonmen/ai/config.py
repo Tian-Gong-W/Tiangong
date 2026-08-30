@@ -57,8 +57,8 @@ class LeadAIConfig:
     """
 
     provider: str = "disabled"
-    model: str = "gpt-5.6"
-    base_url: str = "https://api.openai.com/v1"
+    model: str = ""
+    base_url: str = ""
     api_key_env: str = "OPENAI_API_KEY"
     timeout_seconds: int = 30
     agent_id: str | None = None
@@ -80,6 +80,17 @@ class LeadAIConfig:
             "deepseek": "DEEPSEEK_API_KEY",
         }.get(provider, "OPENAI_API_KEY")
         key_env = explicit_key_env or default_key_env
+
+        # Disabled means no active Lead selection. Do not invent or surface an
+        # OpenAI model merely because OpenAI is the legacy fallback provider.
+        if provider == "disabled":
+            return cls(
+                provider="disabled",
+                model="",
+                base_url="",
+                api_key_env=key_env,
+                timeout_seconds=timeout,
+            )
 
         if provider == "mistral":
             base_url = _validate_provider_base_url(
@@ -125,14 +136,13 @@ class LeadAIConfig:
                 timeout_seconds=timeout,
             )
 
-        base_url = os.getenv("TONMEN_OPENAI_BASE_URL") or "https://api.openai.com/v1"
-        if provider == "openai":
-            base_url = _validate_provider_base_url(base_url, "openai")
-        else:
-            base_url = base_url.strip().rstrip("/")
+        base_url = _validate_provider_base_url(
+            os.getenv("TONMEN_OPENAI_BASE_URL") or "https://api.openai.com/v1",
+            "openai",
+        )
         stored_model = get_setting("lead_model", "")
         return cls(
-            provider=provider,
+            provider="openai",
             model=_configured("TONMEN_AI_MODEL", stored_model or "gpt-5.6"),
             base_url=base_url,
             api_key_env=key_env,
