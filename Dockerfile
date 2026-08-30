@@ -68,13 +68,14 @@ COPY --from=security-tools /out/nuclei /usr/local/bin/nuclei
 COPY --from=security-tools /out/subfinder /usr/local/bin/subfinder
 COPY --from=security-tools /out/katana /usr/local/bin/katana
 
-# Codex and Grok npm packages ship native launchers behind Node package wrappers.
-# Keep the exact global package tree and Node runtime from the pinned ai-clis stage.
+# Codex resolves its platform package relative to the npm package entrypoint.
+# Copy the complete global package tree, then recreate npm's symlink instead of
+# copying the symlink target as a standalone file into /usr/local/bin.
 COPY --from=ai-clis /usr/local/bin/node /usr/local/bin/node
 COPY --from=ai-clis /usr/local/lib/node_modules /usr/local/lib/node_modules
-COPY --from=ai-clis /usr/local/bin/codex /usr/local/bin/codex
 COPY --from=ai-clis /usr/local/bin/grok /usr/local/bin/grok
 COPY --from=ai-clis /usr/local/bin/agy /usr/local/bin/agy
+RUN ln -s ../lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex
 
 RUN httpx -version \
     && subfinder -version \
