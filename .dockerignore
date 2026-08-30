@@ -1,0 +1,14 @@
+.git
+.github
+.pytest_cache
+__pycache__
+*.py[cod]
+*.egg-info
+.venv
+.tonmen
+tonmen.toml
+e2e-*.log
+pytest-full.log
+tonmen-doctor.log
+Dockerfile*
+.dockerignore
