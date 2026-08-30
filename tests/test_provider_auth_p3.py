@@ -29,6 +29,35 @@ def test_lead_provider_is_explicitly_persisted(tmp_path, monkeypatch):
     assert public_settings()["lead_provider"] == "deepseek"
 
 
+def test_disabled_lead_does_not_project_a_default_model(tmp_path, monkeypatch):
+    settings_file = tmp_path / "ai-settings.json"
+    monkeypatch.setenv("TONMEN_AI_SETTINGS_FILE", str(settings_file))
+    monkeypatch.delenv("TONMEN_AI_PROVIDER", raising=False)
+    monkeypatch.delenv("TONMEN_AI_MODEL", raising=False)
+
+    settings = public_settings()
+    config = LeadAIConfig.from_env()
+
+    assert settings["lead_provider"] == "disabled"
+    assert settings["lead_model"] == ""
+    assert config.provider == "disabled"
+    assert config.model == ""
+    assert config.base_url == ""
+
+
+def test_disabling_lead_hides_but_preserves_stored_model(tmp_path, monkeypatch):
+    settings_file = tmp_path / "ai-settings.json"
+    monkeypatch.setenv("TONMEN_AI_SETTINGS_FILE", str(settings_file))
+
+    update_settings(lead_provider="openai", lead_model="gpt-5.6")
+    disabled = update_settings(lead_enabled=False)
+
+    assert disabled["lead_provider"] == "disabled"
+    assert disabled["lead_model"] == ""
+    raw = json.loads(settings_file.read_text(encoding="utf-8"))
+    assert raw["lead_model"] == "gpt-5.6"
+
+
 def test_legacy_lead_enabled_remains_backward_compatible(tmp_path, monkeypatch):
     monkeypatch.setenv("TONMEN_AI_SETTINGS_FILE", str(tmp_path / "ai-settings.json"))
 
