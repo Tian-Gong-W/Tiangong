@@ -8,6 +8,7 @@ from typing import Any, Mapping
 from .secrets import hydrate_secret_environment
 
 _ALLOWED_PROVIDERS = {"openai", "chatgpt", "google", "grok", "deepseek", "mistral"}
+_ALLOWED_LEAD_PROVIDERS = {"disabled", "openai", "deepseek", "mistral"}
 _SECRET_ENVS = ("OPENAI_API_KEY", "DEEPSEEK_API_KEY", "MISTRAL_API_KEY")
 
 
@@ -53,16 +54,35 @@ def get_setting(name: str, default: Any = None) -> Any:
     return _load(_settings_path()).get(name, default)
 
 
-def update_settings(*, lead_enabled: bool | None = None, lead_model: str | None = None, pool: list[str] | None = None) -> dict[str, Any]:
+def update_settings(
+    *,
+    lead_enabled: bool | None = None,
+    lead_provider: str | None = None,
+    lead_model: str | None = None,
+    pool: list[str] | None = None,
+) -> dict[str, Any]:
     path = _settings_path()
     values = _load(path)
+
+    if lead_provider is not None:
+        provider = str(lead_provider).strip().lower()
+        if provider not in _ALLOWED_LEAD_PROVIDERS:
+            raise ValueError(f"unsupported Lead AI provider: {provider}")
+        values["lead_provider"] = provider
+
     if lead_enabled is not None:
-        values["lead_provider"] = "openai" if bool(lead_enabled) else "disabled"
+        if not bool(lead_enabled):
+            values["lead_provider"] = "disabled"
+        elif str(values.get("lead_provider") or "disabled").strip().lower() == "disabled":
+            # Backward compatibility for old clients that only sent lead_enabled.
+            values["lead_provider"] = "openai"
+
     if lead_model is not None:
         model = str(lead_model).strip()
         if not model or len(model) > 160:
             raise ValueError("Lead model name must be 1-160 characters")
         values["lead_model"] = model
+
     if pool is not None:
         clean: list[str] = []
         for item in pool:
@@ -75,6 +95,7 @@ def update_settings(*, lead_enabled: bool | None = None, lead_model: str | None 
             if provider not in clean:
                 clean.append(provider)
         values["pool"] = clean
+
     _write(path, values)
     return public_settings()
 
