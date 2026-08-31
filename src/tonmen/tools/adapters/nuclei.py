@@ -95,6 +95,8 @@ class NucleiAdapter(ToolAdapter):
             "nuclei",
             "-u", str(request.target),
             "-jsonl",
+            "-silent",
+            "-no-mhe",
             "-severity", severity_text,
             "-rate-limit", str(request.parameters.get("rate_limit", 10)),
             "-timeout", str(request.parameters.get("timeout", 10)),
