@@ -42,7 +42,9 @@ def test_console_start_returns_before_scanner_finishes(tmp_path, monkeypatch):
 
     # This timer keeps a regression from hanging the suite. If start_mission ever
     # becomes synchronous again, the call will only return after this fires and the
-    # assertion below will catch it.
+    # assertion below will catch it. The later started.wait is intentionally more
+    # tolerant because Docker's parallel Go/Node builds can delay Python thread
+    # scheduling without changing start_mission's asynchronous contract.
     fallback_release = threading.Timer(1.5, release.set)
     fallback_release.daemon = True
     fallback_release.start()
@@ -56,7 +58,7 @@ def test_console_start_returns_before_scanner_finishes(tmp_path, monkeypatch):
     assert payload["stop_reason"] == "accepted_background"
     assert payload["state"] == MissionRunState.RUNNING.value
     assert not release.is_set(), "start_mission waited for scanner execution instead of returning immediately"
-    assert started.wait(timeout=1), "background mission thread did not begin execution"
+    assert started.wait(timeout=3), "background mission thread did not begin execution"
 
     release.set()
     fallback_release.cancel()

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowRight, Play, Plus, Search, Target } from 'lucide-react';
+import { ArrowRight, Play, Plus, Search, Target, Trash2 } from 'lucide-react';
 import { Task } from '../types';
 
 interface TasksListViewProps {
@@ -7,9 +7,10 @@ interface TasksListViewProps {
   onSelectTask: (task: Task) => void;
   onOpenNewTaskModal: () => void;
   onResume: (taskId: string) => void;
+  onDelete: (task: Task) => void;
 }
 
-export const TasksListView: React.FC<TasksListViewProps> = ({ tasks, onSelectTask, onOpenNewTaskModal, onResume }) => {
+export const TasksListView: React.FC<TasksListViewProps> = ({ tasks, onSelectTask, onOpenNewTaskModal, onResume, onDelete }) => {
   const [query, setQuery] = useState('');
   const filtered = tasks.filter((task) => [task.name, task.target, task.code].some((value) => value.toLowerCase().includes(query.toLowerCase())));
   return (
@@ -23,21 +24,30 @@ export const TasksListView: React.FC<TasksListViewProps> = ({ tasks, onSelectTas
         <div className="p-12 text-center rounded-2xl border border-dashed border-slate-700 bg-slate-900/40"><div className="text-sm text-slate-300">没有任务记录</div><div className="text-xs text-slate-500 mt-1">后端为空时这里不会生成示例任务。</div></div>
       ) : (
         <div className="space-y-3">
-          {filtered.map((task) => (
-            <div key={task.id} className="p-5 rounded-2xl bg-slate-900/85 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <button onClick={() => onSelectTask(task)} className="text-left flex-1 min-w-0">
-                <div className="flex items-center gap-2"><span className="text-xs font-mono text-cyan-300">{task.code}</span><span className="text-sm font-bold truncate">{task.name}</span><span className="text-[10px] font-mono text-slate-400">{task.backendState}</span></div>
-                <div className="text-xs text-slate-400 mt-2 font-mono">{task.target}</div>
-                <div className="text-[11px] text-slate-500 mt-2">{task.completedSteps}/{task.totalSteps} 步 · {task.executionEvents.length} 条执行记录 · {task.assetsCount} 个观测资产</div>
-              </button>
-              <div className="flex gap-2">
-                {task.status === 'running' && task.progress < 100 && (
-                  <button onClick={() => onResume(task.id)} className="px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-1"><Play className="w-3 h-3" />恢复预算暂停任务</button>
-                )}
-                <button onClick={() => onSelectTask(task)} className="px-3 py-1.5 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-xs flex items-center gap-1">详情 <ArrowRight className="w-3 h-3" /></button>
+          {filtered.map((task) => {
+            const canDelete = task.status === 'completed' || task.status === 'failed';
+            return (
+              <div key={task.id} className="p-5 rounded-2xl bg-slate-900/85 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <button onClick={() => onSelectTask(task)} className="text-left flex-1 min-w-0">
+                  <div className="flex items-center gap-2"><span className="text-xs font-mono text-cyan-300">{task.code}</span><span className="text-sm font-bold truncate">{task.name}</span><span className="text-[10px] font-mono text-slate-400">{task.backendState}</span></div>
+                  <div className="text-xs text-slate-400 mt-2 font-mono">{task.target}</div>
+                  <div className="text-[11px] text-slate-500 mt-2">{task.completedSteps}/{task.totalSteps} 步 · {task.executionEvents.length} 条执行记录 · {task.assetsCount} 个观测资产</div>
+                </button>
+                <div className="flex flex-wrap gap-2">
+                  {task.status === 'running' && task.progress < 100 && (
+                    <button onClick={() => onResume(task.id)} className="px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-1"><Play className="w-3 h-3" />恢复预算暂停任务</button>
+                  )}
+                  {canDelete && (
+                    <button onClick={() => onDelete(task)} className="px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 hover:bg-rose-500/20 text-xs flex items-center gap-1"><Trash2 className="w-3 h-3" />删除</button>
+                  )}
+                  {!canDelete && (
+                    <button disabled title="运行中或候审批任务不能删除" className="px-3 py-1.5 rounded-lg bg-slate-800/50 border border-slate-700/60 text-slate-600 text-xs flex items-center gap-1 cursor-not-allowed"><Trash2 className="w-3 h-3" />删除</button>
+                  )}
+                  <button onClick={() => onSelectTask(task)} className="px-3 py-1.5 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-xs flex items-center gap-1">详情 <ArrowRight className="w-3 h-3" /></button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

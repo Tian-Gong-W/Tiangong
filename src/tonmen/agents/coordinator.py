@@ -384,7 +384,7 @@ class MissionCoordinator:
 
         if proposal.id in run.graph.nodes:
             node = run.graph.nodes[proposal.id]
-            run.graph.nodes[proposal.id] = GraphNode(
+            run.graph.nodes[node.id] = GraphNode(
                 id=node.id,
                 kind=node.kind,
                 label=node.label,
@@ -525,59 +525,71 @@ class MissionCoordinator:
                         execution.metadata["timed_out"] = True
                         execution.metadata["timeout_seconds"] = timeout_seconds
                         execution.metadata["timeout_attempts"] = int(execution.metadata.get("timeout_attempts") or 0) + 1
-                        # A bounded validation scan that timed out but produced partial
-                        # evidence (e.g. a long template run with early matches) must not
-                        # trap the Mission in an endless approve→timeout→approve cycle.
-                        # Degrade with the partial evidence preserved; a fresh grant is
-                        # only demanded on the FIRST retry, and a second timeout settles
-                        # the step as DEGRADED so the loop can continue.
                         retry_count = int(execution.metadata.get("timeout_attempts") or 0)
-                        if step.requires_approval and retry_count <= 1:
-                            execution.state = StepExecutionState.WAITING_APPROVAL
-                            execution.error = f"{execution.error}; fresh approval grant required to retry"
-                            execution.metadata["approval_retry_required"] = True
+
+                        # Approval-gated validation gets exactly one fresh-grant retry.
+                        # A second timeout settles as DEGRADED with partial evidence
+                        # preserved instead of looping forever.
+                        if step.requires_approval:
+                            if retry_count <= 1:
+                                execution.state = StepExecutionState.WAITING_APPROVAL
+                                execution.error = f"{execution.error}; fresh approval grant required to retry"
+                                execution.metadata["approval_retry_required"] = True
+                                execution.metadata["degraded_reason"] = "approval_gated_timeout"
+                                mission_run.state = MissionRunState.WAITING_APPROVAL
+                                self._emit(
+                                    "step.timeout_waiting_approval",
+                                    mission_run,
+                                    step_id=step.id,
+                                    tool=step.tool,
+                                    error=execution.error,
+                                    timeout_seconds=timeout_seconds,
+                                    evidence_id=job.outcome.evidence.id,
+                                    fresh_approval_required=True,
+                                )
+                                self._emit(
+                                    "approval.required",
+                                    mission_run,
+                                    step_id=step.id,
+                                    tool=step.tool,
+                                    step_target=step.target,
+                                    risk=step.risk,
+                                    reason="approval_gated_timeout_retry",
+                                    previous_evidence_id=job.outcome.evidence.id,
+                                )
+                                return mission_run
+
+                            execution.state = StepExecutionState.DEGRADED
+                            execution.metadata.pop("approval_retry_required", None)
                             execution.metadata["degraded_reason"] = "approval_gated_timeout"
-                            mission_run.state = MissionRunState.WAITING_APPROVAL
+                            mission_run.state = MissionRunState.RUNNING
                             self._emit(
-                                "step.timeout_waiting_approval",
+                                "step.degraded",
                                 mission_run,
                                 step_id=step.id,
                                 tool=step.tool,
                                 error=execution.error,
-                                timeout_seconds=timeout_seconds,
+                                reason="approval_gated_timeout",
                                 evidence_id=job.outcome.evidence.id,
-                                fresh_approval_required=True,
-                            )
-                            self._emit(
-                                "approval.required",
-                                mission_run,
-                                step_id=step.id,
-                                tool=step.tool,
-                                step_target=step.target,
-                                risk=step.risk,
-                                reason="approval_gated_timeout_retry",
-                                previous_evidence_id=job.outcome.evidence.id,
                             )
                             return mission_run
-                        # Second timeout (or non-gated tool): degrade, keep partial evidence.
-                        execution.state = StepExecutionState.DEGRADED
-                        execution.metadata["degraded_reason"] = "approval_gated_timeout"
-                        mission_run.state = MissionRunState.RUNNING
-                        self._emit(
-                            "step.degraded",
-                            mission_run,
-                            step_id=step.id,
-                            tool=step.tool,
-                            error=execution.error,
-                            reason="approval_gated_timeout",
-                            evidence_id=job.outcome.evidence.id,
-                        )
-                        return mission_run
+
+                        # Autonomous discovery timeouts are a separate semantic:
+                        # preserve partial evidence and continue to the next evidence
+                        # producer without inventing an approval requirement.
                         if step.risk <= int(RiskLevel.DISCOVERY):
                             execution.state = StepExecutionState.DEGRADED
                             execution.metadata["degraded_reason"] = "discovery_timeout"
                             mission_run.state = MissionRunState.RUNNING
-                            self._emit("step.degraded", mission_run, step_id=step.id, tool=step.tool, error=execution.error, reason="discovery_timeout", evidence_id=job.outcome.evidence.id)
+                            self._emit(
+                                "step.degraded",
+                                mission_run,
+                                step_id=step.id,
+                                tool=step.tool,
+                                error=execution.error,
+                                reason="discovery_timeout",
+                                evidence_id=job.outcome.evidence.id,
+                            )
                             return mission_run
                 else:
                     execution.error = job.error or "execution failed"
