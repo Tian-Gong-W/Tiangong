@@ -37,8 +37,8 @@ def test_config_has_longer_validation_timeout_and_supports_override(tmp_path):
     config = TonmenConfig(workspace=tmp_path)
     assert config.timeout_for("httpx") == 120
     assert config.timeout_for("nmap") == 300
-    assert config.timeout_for("nuclei") == 900
-    assert config.max_command_timeout_seconds == 900
+    assert config.timeout_for("nuclei") == 240
+    assert config.max_command_timeout_seconds == 300
 
     path = tmp_path / "tonmen.toml"
     path.write_text(
@@ -65,7 +65,7 @@ def test_executor_uses_tool_specific_timeout_for_nuclei():
         registry,
         PolicyEngine(),
         timeout_seconds=120,
-        tool_timeouts={"nuclei": 900},
+        tool_timeouts={"nuclei": 240},
         runner=runner,
         approvals=approvals,
     )
@@ -73,9 +73,9 @@ def test_executor_uses_tool_specific_timeout_for_nuclei():
     grant = approvals.issue(tool="nuclei", target="https://example.com")
     outcome = executor.execute(request, approval_token=grant.token)
 
-    assert captured["timeout"] == 900
+    assert captured["timeout"] == 240
     assert captured["shell"] is False
-    assert outcome.result.evidence["timeout_seconds"] == 900
+    assert outcome.result.evidence["timeout_seconds"] == 240
 
 
 def test_httpx_disables_color_and_parser_strips_ansi():
@@ -84,9 +84,9 @@ def test_httpx_disables_color_and_parser_strips_ansi():
 
     colored = (
         "https://example.com "
-        "[\x1b[32m200\x1b[0m] "
-        "[\x1b[33mWelcome\x1b[0m] "
-        "[\x1b[35mBootstrap:5.3.0,Cloudflare\x1b[0m]\n"
+        "[\\x1b[32m200\\x1b[0m] "
+        "[\\x1b[33mWelcome\\x1b[0m] "
+        "[\\x1b[35mBootstrap:5.3.0,Cloudflare\\x1b[0m]\\n"
     )
     facts = parse_evidence(_evidence("httpx", colored))
 
@@ -94,8 +94,8 @@ def test_httpx_disables_color_and_parser_strips_ansi():
     assert facts[0].data["status_code"] == 200
     assert facts[0].data["title"] == "Welcome"
     assert facts[0].data["technologies"] == ["Bootstrap:5.3.0", "Cloudflare"]
-    assert "\x1b" not in facts[0].title
-    assert "\x1b" not in json.dumps(dict(facts[0].data))
+    assert "\\x1b" not in facts[0].title
+    assert "\\x1b" not in json.dumps(dict(facts[0].data))
 
 
 def test_approval_gated_timeout_returns_to_waiting_and_accepts_fresh_approval(tmp_path):
@@ -105,12 +105,12 @@ def test_approval_gated_timeout_returns_to_waiting_and_accepts_fresh_approval(tm
     def runner(argv, **kwargs):
         tool = argv[0]
         if tool == "nmap":
-            return subprocess.CompletedProcess(argv, 0, stdout="Nmap scan report for localhost\nHost is up.\n80/tcp open http\n", stderr="")
+            return subprocess.CompletedProcess(argv, 0, stdout="Nmap scan report for localhost\\nHost is up.\\n80/tcp open http\\n", stderr="")
         if tool == "httpx":
-            return subprocess.CompletedProcess(argv, 0, stdout="https://localhost [200] [Welcome] [nginx]\n", stderr="")
+            return subprocess.CompletedProcess(argv, 0, stdout="https://localhost [200] [Welcome] [nginx]\\n", stderr="")
         nuclei_attempts["count"] += 1
         if nuclei_attempts["count"] == 1:
-            raise subprocess.TimeoutExpired(argv, kwargs["timeout"], output="partial\n", stderr="")
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"], output="partial\\n", stderr="")
         return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
     runtime.executor._runner = runner
@@ -127,7 +127,7 @@ def test_approval_gated_timeout_returns_to_waiting_and_accepts_fresh_approval(tm
     assert run.state is MissionRunState.WAITING_APPROVAL
     assert execution.state is StepExecutionState.WAITING_APPROVAL
     assert execution.metadata["timed_out"] is True
-    assert execution.metadata["timeout_seconds"] == 900
+    assert execution.metadata["timeout_seconds"] == 240
     assert execution.metadata["approval_retry_required"] is True
     assert execution.metadata["timeout_attempts"] == 1
     assert run.finished_at is None
@@ -170,3 +170,4 @@ def test_provider_auto_pool_is_explicit_and_empty_pool_error_is_actionable(monke
     status = automatic.public_status()
     assert status["configuration_warning"] is None
     assert "test-key" not in json.dumps(status)
+

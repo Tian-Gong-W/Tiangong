@@ -43,7 +43,7 @@ def test_preflight_reports_timeout_assets_and_empty_ai_pool(monkeypatch, tmp_pat
 
     assert payload["ready_to_start"] is True
     assert payload["policy"]["max_duration_seconds"] == 1200
-    assert payload["policy"]["longest_step_timeout_seconds"] == 900
+    assert payload["policy"]["longest_step_timeout_seconds"] == 300
     assert payload["execution_plane"]["mode"] == "local"
     assert payload["side_effects"]["scanner_executed"] is False
     assert payload["side_effects"]["provider_model_called"] is False
@@ -124,3 +124,4 @@ def test_preflight_assets_are_packaged_and_injected_into_console(monkeypatch, tm
     payload = state.mission_preflight("localhost", _mission_policy({}))
     assert payload["target"] == "localhost"
     assert payload["policy"]["max_duration_seconds"] == 1200
+

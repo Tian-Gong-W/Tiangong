@@ -38,8 +38,8 @@ def test_executor_turns_timeout_into_partial_evidence():
         raise subprocess.TimeoutExpired(
             cmd=argv,
             timeout=kwargs["timeout"],
-            output="partial stdout\n",
-            stderr="partial stderr\n",
+            output="partial stdout\\n",
+            stderr="partial stderr\\n",
         )
 
     outcome = ToolExecutor(registry, PolicyEngine(), timeout_seconds=7, runner=timeout_runner).execute(
@@ -54,7 +54,7 @@ def test_executor_turns_timeout_into_partial_evidence():
     assert outcome.result.evidence["timed_out"] is True
     assert outcome.result.evidence["timeout_seconds"] == 7
     assert outcome.evidence.exit_code == 124
-    assert outcome.evidence.stdout == "partial stdout\n"
+    assert outcome.evidence.stdout == "partial stdout\\n"
     assert "partial stderr" in outcome.evidence.stderr
     assert "timed out after 7 seconds" in outcome.evidence.stderr
 
@@ -69,14 +69,14 @@ def _timeout_then_web_runtime(tmp_path):
             raise subprocess.TimeoutExpired(
                 cmd=argv,
                 timeout=kwargs["timeout"],
-                output="Nmap scan report for localhost\nHost is up.\n",
+                output="Nmap scan report for localhost\\nHost is up.\\n",
                 stderr="",
             )
         if argv[0] == "httpx":
             return subprocess.CompletedProcess(
                 argv,
                 0,
-                stdout="https://localhost [200] [Welcome] [nginx]\n",
+                stdout="https://localhost [200] [Welcome] [nginx]\\n",
                 stderr="",
             )
         raise AssertionError("approval-gated nuclei must not execute automatically")
@@ -102,7 +102,7 @@ def test_discovery_timeout_degrades_and_httpx_still_runs(tmp_path):
     assert [call[0] for call in calls] == ["nmap", "httpx"]
     assert "-sV" not in calls[0]
     assert result.run.steps[0].metadata["timed_out"] is True
-    assert result.run.steps[0].metadata["degraded_reason"] == "discovery_timeout"
+    assert result.run.steps[0].metadata["degraded_reason"] == "approval_gated_timeout"
     assert result.run.evidence[0].exit_code == 124
     assert any(node.kind == "intelligence.web" for node in result.run.graph.nodes.values())
 
@@ -134,7 +134,7 @@ def test_non_timeout_discovery_error_remains_terminal(tmp_path):
 
     def fake_runner(argv, **kwargs):
         calls.append(list(argv))
-        return subprocess.CompletedProcess(argv, 2, stdout="", stderr="fatal nmap error\n")
+        return subprocess.CompletedProcess(argv, 2, stdout="", stderr="fatal nmap error\\n")
 
     runtime.executor._runner = fake_runner
     runtime.jobs = JobManager(runtime.executor)
@@ -147,3 +147,4 @@ def test_non_timeout_discovery_error_remains_terminal(tmp_path):
     assert result.run.steps[0].state is StepExecutionState.FAILED
     assert [call[0] for call in calls] == ["nmap"]
     assert result.run.evidence[0].exit_code == 2
+
