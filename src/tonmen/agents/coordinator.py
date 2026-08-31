@@ -512,7 +512,14 @@ class MissionCoordinator:
                         execution.metadata["timed_out"] = True
                         execution.metadata["timeout_seconds"] = timeout_seconds
                         execution.metadata["timeout_attempts"] = int(execution.metadata.get("timeout_attempts") or 0) + 1
-                        if step.requires_approval:
+                        # A bounded validation scan that timed out but produced partial
+                        # evidence (e.g. a long template run with early matches) must not
+                        # trap the Mission in an endless approve→timeout→approve cycle.
+                        # Degrade with the partial evidence preserved; a fresh grant is
+                        # only demanded on the FIRST retry, and a second timeout settles
+                        # the step as DEGRADED so the loop can continue.
+                        retry_count = int(execution.metadata.get("timeout_attempts") or 0)
+                        if step.requires_approval and retry_count <= 1:
                             execution.state = StepExecutionState.WAITING_APPROVAL
                             execution.error = f"{execution.error}; fresh approval grant required to retry"
                             execution.metadata["approval_retry_required"] = True
@@ -537,6 +544,23 @@ class MissionCoordinator:
                                 risk=step.risk,
                                 reason="approval_gated_timeout_retry",
                                 previous_evidence_id=job.outcome.evidence.id,
+                            )
+                            return mission_run
+                        if step.requires_approval:
+                            # Second timeout on an approval-gated step: degrade with
+                            # the partial evidence preserved so the Mission can move on
+                            # instead of trapping in approve -> timeout -> approve.
+                            execution.state = StepExecutionState.DEGRADED
+                            execution.metadata["degraded_reason"] = "approval_gated_timeout"
+                            mission_run.state = MissionRunState.RUNNING
+                            self._emit(
+                                "step.degraded",
+                                mission_run,
+                                step_id=step.id,
+                                tool=step.tool,
+                                error=execution.error,
+                                reason="approval_gated_timeout",
+                                evidence_id=job.outcome.evidence.id,
                             )
                             return mission_run
                         if step.risk <= int(RiskLevel.DISCOVERY):

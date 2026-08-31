@@ -13,7 +13,7 @@ except ModuleNotFoundError:  # Python 3.10
 
 CONFIG_FILENAME = "tonmen.toml"
 DEFAULT_ALLOWED_TARGETS = ("127.0.0.1", "::1", "localhost")
-DEFAULT_TOOL_TIMEOUTS = (("nmap", 300), ("httpx", 120), ("nuclei", 900))
+DEFAULT_TOOL_TIMEOUTS = (("nmap", 300), ("httpx", 120), ("nuclei", 240))
 _TOOL_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 
 
