@@ -5,7 +5,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, LoaderCircle, Menu, RefreshCw, X } from 'lucide-react';
-import { ControlPlaneSnapshot, NavItemId } from './types';
+import { ControlPlaneSnapshot, NavItemId, Task } from './types';
 import {
   addScope,
   approveMission,
@@ -152,6 +152,30 @@ export default function App() {
     await refresh(true);
   };
 
+  const handleDeleteTask = async (task: Task) => {
+    const confirmed = window.confirm(
+      `删除任务 ${task.code}？\n\nChronicle / Evidence / Intelligence / Reasoning 持久记录和任务报告会删除；Audit 审计日志保留。`,
+    );
+    if (!confirmed) return;
+    try {
+      const response = await fetch(`/api/missions/${encodeURIComponent(task.id)}/delete`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${savedToken()}`,
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(String(payload?.error || `HTTP ${response.status}`));
+      if (selectedTaskId === task.id) setSelectedTaskId(null);
+      showToast(`任务 ${task.code} 已删除；Audit 审计日志保留`);
+      await refresh(true);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : String(error));
+    }
+  };
+
   if (!isUnlocked) return <CoverLockScreen onUnlock={unlock} />;
 
   const pendingApprovals = snapshot.tasks.filter((task) => task.status === 'waiting_approval').length;
@@ -251,7 +275,7 @@ export default function App() {
             onApprove={handleApprove}
           />
         ) : (
-          <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
+          <div className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-y-contain">
             {activeNav === 'dashboard' && (
               <DashboardView
                 tasks={snapshot.tasks}
@@ -279,6 +303,7 @@ export default function App() {
                     showToast(error instanceof Error ? error.message : String(error));
                   }
                 }}
+                onDelete={handleDeleteTask}
               />
             )}
             {activeNav === 'findings' && (
