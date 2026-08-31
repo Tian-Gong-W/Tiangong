@@ -546,20 +546,23 @@ class MissionCoordinator:
                                 previous_evidence_id=job.outcome.evidence.id,
                             )
                             return mission_run
-                        # Second timeout (or non-gated tool): degrade, keep partial evidence.
-                        execution.state = StepExecutionState.DEGRADED
-                        execution.metadata["degraded_reason"] = "approval_gated_timeout"
-                        mission_run.state = MissionRunState.RUNNING
-                        self._emit(
-                            "step.degraded",
-                            mission_run,
-                            step_id=step.id,
-                            tool=step.tool,
-                            error=execution.error,
-                            reason="approval_gated_timeout",
-                            evidence_id=job.outcome.evidence.id,
-                        )
-                        return mission_run
+                        if step.requires_approval:
+                            # Second timeout on an approval-gated step: degrade with
+                            # the partial evidence preserved so the Mission can move on
+                            # instead of trapping in approve -> timeout -> approve.
+                            execution.state = StepExecutionState.DEGRADED
+                            execution.metadata["degraded_reason"] = "approval_gated_timeout"
+                            mission_run.state = MissionRunState.RUNNING
+                            self._emit(
+                                "step.degraded",
+                                mission_run,
+                                step_id=step.id,
+                                tool=step.tool,
+                                error=execution.error,
+                                reason="approval_gated_timeout",
+                                evidence_id=job.outcome.evidence.id,
+                            )
+                            return mission_run
                         if step.risk <= int(RiskLevel.DISCOVERY):
                             execution.state = StepExecutionState.DEGRADED
                             execution.metadata["degraded_reason"] = "discovery_timeout"
