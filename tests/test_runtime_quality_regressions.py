@@ -33,12 +33,12 @@ def _evidence(tool: str, stdout: str) -> EvidenceRecord:
     )
 
 
-def test_config_has_longer_validation_timeout_and_supports_override(tmp_path):
+def test_config_has_bounded_validation_timeout_and_supports_override(tmp_path):
     config = TonmenConfig(workspace=tmp_path)
     assert config.timeout_for("httpx") == 120
     assert config.timeout_for("nmap") == 300
-    assert config.timeout_for("nuclei") == 900
-    assert config.max_command_timeout_seconds == 900
+    assert config.timeout_for("nuclei") == 240
+    assert config.max_command_timeout_seconds == 300
 
     path = tmp_path / "tonmen.toml"
     path.write_text(
@@ -127,7 +127,7 @@ def test_approval_gated_timeout_returns_to_waiting_and_accepts_fresh_approval(tm
     assert run.state is MissionRunState.WAITING_APPROVAL
     assert execution.state is StepExecutionState.WAITING_APPROVAL
     assert execution.metadata["timed_out"] is True
-    assert execution.metadata["timeout_seconds"] == 900
+    assert execution.metadata["timeout_seconds"] == 240
     assert execution.metadata["approval_retry_required"] is True
     assert execution.metadata["timeout_attempts"] == 1
     assert run.finished_at is None
