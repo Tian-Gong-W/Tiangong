@@ -13,7 +13,7 @@ from tonmen.dashboard import DashboardState
 from tonmen.dashboard.usability_server import _friendly_error
 from tonmen.jobs import JobManager
 from tonmen.loop import MissionLoop, MissionLoopPolicy
-from tonmen.missions import MissionRunState
+from tonmen.missions import MissionRunState, StepExecutionState
 from tonmen.tools import ToolReadiness
 
 
@@ -80,6 +80,7 @@ def test_approval_returns_immediately_suppresses_duplicates_and_finishes_in_back
         monkeypatch.setattr(adapter, "readiness", _ready)
 
     release = threading.Event()
+    nuclei_started = threading.Event()
     outputs = {
         "nmap": "Nmap scan report for localhost\nHost is up.\n80/tcp open http\n",
         "httpx": "https://localhost [200] [Welcome] [nginx]\n",
@@ -88,6 +89,7 @@ def test_approval_returns_immediately_suppresses_duplicates_and_finishes_in_back
 
     def runner(argv, **kwargs):
         if argv[0] == "nuclei":
+            nuclei_started.set()
             release.wait(timeout=3)
         return subprocess.CompletedProcess(argv, 0, stdout=outputs.get(argv[0], ""), stderr="")
 
@@ -104,9 +106,16 @@ def test_approval_returns_immediately_suppresses_duplicates_and_finishes_in_back
 
     assert elapsed < 0.5
     assert accepted["status"] in {"accepted", "running"}
+    assert accepted["state"] == MissionRunState.RUNNING.value
     assert accepted["approval_token_exposed"] is False
     assert duplicate["duplicate_suppressed"] is True
     assert duplicate["status"] in {"accepted", "running"}
+
+    assert nuclei_started.wait(timeout=1), "approved validation did not start in the background"
+    _, executing_run = state.chronicle.load(first.run.id)
+    assert executing_run.state is MissionRunState.RUNNING
+    nuclei_execution = next(step for step in executing_run.steps if step.tool == "nuclei")
+    assert nuclei_execution.state is StepExecutionState.RUNNING
 
     release.set()
     deadline = time.monotonic() + 4
