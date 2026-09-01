@@ -38,6 +38,8 @@ class DashboardState(SimpleViewDashboardState):
         with self._lock:
             plan, run = self.chronicle.load(run_id)
             payload = super().mission(run_id)
+            approval_job = dict(self._approval_jobs.get(run_id) or {"run_id": run_id, "status": "idle"})
+            payload["approval_job"] = approval_job
             for step in payload.get("steps", []):
                 metadata = step.get("metadata") or {}
                 if metadata.get("approval_retry_required") and step.get("state") == StepExecutionState.WAITING_APPROVAL.value:
@@ -131,15 +133,9 @@ class DashboardState(SimpleViewDashboardState):
                 raise ValueError("approval store is unavailable")
             grant = self.runtime.approvals.issue(tool=waiting.tool, target=waiting.target)
 
-            # The approved tool call is synchronous inside the background MissionLoop.
-            # Persist the RUNNING transition before the thread starts so API polling
-            # never keeps projecting the old WAITING_APPROVAL state for the entire
-            # tool timeout window (Nuclei can legitimately run for minutes).
-            waiting.state = StepExecutionState.RUNNING
-            waiting.error = None
-            run.state = MissionRunState.RUNNING
-            self._checkpoint(plan, run)
-
+            # Keep the Director's WAITING_APPROVAL execution untouched until it
+            # consumes the single-use grant. The separate approval job is the
+            # truthful UI-facing signal that validation is already active.
             running = {
                 "run_id": run_id,
                 "status": "running",
@@ -170,11 +166,7 @@ class DashboardState(SimpleViewDashboardState):
             try:
                 thread.start()
             except Exception:
-                waiting.state = StepExecutionState.WAITING_APPROVAL
-                waiting.error = "approval worker failed to start; fresh approval grant required"
-                run.state = MissionRunState.WAITING_APPROVAL
                 self.runtime.approvals.revoke(grant.token)
-                self._checkpoint(plan, run)
                 self._approval_jobs[run_id] = {
                     "run_id": run_id,
                     "status": "failed",
