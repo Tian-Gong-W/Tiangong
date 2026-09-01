@@ -40,11 +40,13 @@ class DashboardState(SimpleViewDashboardState):
             payload = super().mission(run_id)
             for step in payload.get("steps", []):
                 metadata = step.get("metadata") or {}
+                if metadata.get("approval_retry_required") and step.get("state") == StepExecutionState.WAITING_APPROVAL.value:
+                    step["rationale"] = "上一次验证超时；已有证据已保留，需要新的单次授权后才能重试。"
                 if not metadata.get("dynamic"):
                     continue
                 step["risk"] = metadata.get("risk")
                 step["requires_approval"] = bool(metadata.get("requires_approval"))
-                step["rationale"] = str(metadata.get("rationale") or "")
+                step["rationale"] = str(metadata.get("rationale") or step.get("rationale") or "")
             payload["workspace"] = build_mission_workspace(plan, run)
             return payload
 
@@ -129,17 +131,26 @@ class DashboardState(SimpleViewDashboardState):
                 raise ValueError("approval store is unavailable")
             grant = self.runtime.approvals.issue(tool=waiting.tool, target=waiting.target)
 
-            accepted = {
+            # The approved tool call is synchronous inside the background MissionLoop.
+            # Persist the RUNNING transition before the thread starts so API polling
+            # never keeps projecting the old WAITING_APPROVAL state for the entire
+            # tool timeout window (Nuclei can legitimately run for minutes).
+            waiting.state = StepExecutionState.RUNNING
+            waiting.error = None
+            run.state = MissionRunState.RUNNING
+            self._checkpoint(plan, run)
+
+            running = {
                 "run_id": run_id,
-                "status": "accepted",
+                "status": "running",
                 "state": run.state.value,
                 "tool": waiting.tool,
                 "action_id": waiting.id,
                 "dynamic": bool(waiting.metadata.get("dynamic")),
-                "message": "已受理。批准后的动作正在后台执行，你可以继续查看页面，状态会自动更新。",
+                "message": f"批准已生效，{waiting.tool} 正在后台执行；当前验证完成前无需重复点击。",
                 "approval_token_exposed": False,
             }
-            self._approval_jobs[run_id] = accepted
+            self._approval_jobs[run_id] = running
             self.events.publish(
                 "approval.granted",
                 mission_id=run.id,
@@ -156,9 +167,23 @@ class DashboardState(SimpleViewDashboardState):
                 name=f"tonmen-approve-{run_id[:8]}",
                 daemon=True,
             )
-            thread.start()
-            self._approval_jobs[run_id] = {**accepted, "status": "running"}
-            return dict(self._approval_jobs[run_id])
+            try:
+                thread.start()
+            except Exception:
+                waiting.state = StepExecutionState.WAITING_APPROVAL
+                waiting.error = "approval worker failed to start; fresh approval grant required"
+                run.state = MissionRunState.WAITING_APPROVAL
+                self.runtime.approvals.revoke(grant.token)
+                self._checkpoint(plan, run)
+                self._approval_jobs[run_id] = {
+                    "run_id": run_id,
+                    "status": "failed",
+                    "state": run.state.value,
+                    "message": "批准后台任务未能启动，请重新批准。",
+                    "approval_token_exposed": False,
+                }
+                raise
+            return dict(running)
 
 
 class MissionWorkspaceDashboardHandler(SimpleViewDashboardHandler):
