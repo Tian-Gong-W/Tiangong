@@ -283,10 +283,13 @@ export function missionToTask(mission: MissionDetail): { task: Task; findings: F
     if (key in counts) counts[key] += 1;
   });
   const waiting = steps.find((step: any) => step.state === 'waiting_approval');
+  const approvalJob = asRecord(detail.approval_job);
+  const approvalRunning = ['accepted', 'running'].includes(String(approvalJob.status || ''));
+  const approvalTool = String(approvalJob.tool || waiting?.tool || active?.tool || '验证');
   const start = detail.started_at ? new Date(detail.started_at) : null;
   const finish = detail.finished_at ? new Date(detail.finished_at) : new Date();
   const runtimeMinutes = start && !Number.isNaN(start.getTime()) ? Math.max(0, Math.round((finish.getTime() - start.getTime()) / 60000)) : 0;
-  const status = taskStatus(String(detail.state || 'running'));
+  const status = approvalRunning ? 'running' : taskStatus(String(detail.state || 'running'));
   const task: Task = {
     id: String(detail.id),
     code: `#${String(detail.id).slice(0, 8)}`,
@@ -300,11 +303,13 @@ export function missionToTask(mission: MissionDetail): { task: Task; findings: F
     assignedNode: String(steps.find((step: any) => step.metadata?.worker_id)?.metadata?.worker_id || 'local'),
     runtimeMinutes,
     startTime: dateText(detail.started_at),
-    currentStage: String(active?.tool || (steps.length ? '已结束' : '尚无步骤')),
-    currentAction: String(active?.rationale || active?.error || (steps.length ? active?.state : '尚无执行记录')),
+    currentStage: approvalRunning ? approvalTool : String(active?.tool || (steps.length ? '已结束' : '尚无步骤')),
+    currentAction: approvalRunning
+      ? `${approvalTool} 已批准，正在后台执行；当前验证完成前无需重复点击。`
+      : String(active?.rationale || active?.error || (steps.length ? active?.state : '尚无执行记录')),
     nextAction: String(steps.find((step: any) => step.state === 'pending')?.rationale || ''),
-    actionRequired: Boolean(waiting),
-    pendingApproval: waiting
+    actionRequired: Boolean(waiting) && !approvalRunning,
+    pendingApproval: waiting && !approvalRunning
       ? {
           id: String(detail.id),
           taskId: String(detail.id),
