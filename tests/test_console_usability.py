@@ -13,7 +13,7 @@ from tonmen.dashboard import DashboardState
 from tonmen.dashboard.usability_server import _friendly_error
 from tonmen.jobs import JobManager
 from tonmen.loop import MissionLoop, MissionLoopPolicy
-from tonmen.missions import MissionRunState, StepExecutionState
+from tonmen.missions import MissionRunState
 from tonmen.tools import ToolReadiness
 
 
@@ -106,16 +106,16 @@ def test_approval_returns_immediately_suppresses_duplicates_and_finishes_in_back
 
     assert elapsed < 0.5
     assert accepted["status"] in {"accepted", "running"}
-    assert accepted["state"] == MissionRunState.RUNNING.value
+    assert accepted["state"] == MissionRunState.WAITING_APPROVAL.value
     assert accepted["approval_token_exposed"] is False
     assert duplicate["duplicate_suppressed"] is True
     assert duplicate["status"] in {"accepted", "running"}
 
     assert nuclei_started.wait(timeout=1), "approved validation did not start in the background"
-    _, executing_run = state.chronicle.load(first.run.id)
-    assert executing_run.state is MissionRunState.RUNNING
-    nuclei_execution = next(step for step in executing_run.steps if step.tool == "nuclei")
-    assert nuclei_execution.state is StepExecutionState.RUNNING
+    projected = state.mission(first.run.id)
+    assert projected["state"] == MissionRunState.WAITING_APPROVAL.value
+    assert projected["approval_job"]["status"] == "running"
+    assert projected["approval_job"]["tool"] == "nuclei"
 
     release.set()
     deadline = time.monotonic() + 4
