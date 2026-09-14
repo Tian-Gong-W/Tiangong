@@ -203,6 +203,38 @@ export const ArenaView: React.FC = () => {
     },
   ]);
 
+  // Synchronize equipped skills from localStorage
+  useEffect(() => {
+    const syncSkills = () => {
+      try {
+        const saved = localStorage.getItem('tiangong_equipped_skills');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && typeof parsed === 'object') {
+            setStrategists((prev) =>
+              prev.map((s) => {
+                if (s.id.includes('claude') && Array.isArray(parsed.claude)) {
+                  return { ...s, equippedSkills: parsed.claude };
+                }
+                if (s.id.includes('deepseek') && Array.isArray(parsed.deepseek)) {
+                  return { ...s, equippedSkills: parsed.deepseek };
+                }
+                if (s.id.includes('gpt') && Array.isArray(parsed.gpt)) {
+                  return { ...s, equippedSkills: parsed.gpt };
+                }
+                return s;
+              })
+            );
+          }
+        }
+      } catch (e) {}
+    };
+
+    syncSkills();
+    window.addEventListener('tiangong_skills_updated', syncSkills);
+    return () => window.removeEventListener('tiangong_skills_updated', syncSkills);
+  }, []);
+
   // Handle updates from backend status payload
   const applyArenaData = (data: any) => {
     if (!data) return;

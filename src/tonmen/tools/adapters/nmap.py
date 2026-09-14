@@ -31,13 +31,25 @@ class NmapAdapter(ToolAdapter):
 
     def build_argv(self, request: ToolRequest) -> tuple[str, ...]:
         self.validate(request)
+        target = request.target
+        if target:
+            target = target.strip()
+            if "://" in target:
+                from urllib.parse import urlparse
+                parsed = urlparse(target)
+                target = parsed.hostname or target
+            elif "/" in target:
+                target = target.split("/")[0]
+            if ":" in target and not target.startswith("["):
+                target = target.split(":")[0]
         argv: list[str] = ["nmap", "-sT"]
         if request.parameters.get("service_detection", True):
             argv.append("-sV")
-        if request.parameters.get("skip_host_discovery", False):
+        # Default to -Pn so modern WAFs/cloud load-balancers that block ICMP do not cause false host-down failures
+        if request.parameters.get("skip_host_discovery", True):
             argv.append("-Pn")
         ports = request.parameters.get("ports")
         if ports:
             argv.extend(["-p", str(ports)])
-        argv.append(str(request.target))
+        argv.append(str(target))
         return tuple(argv)
