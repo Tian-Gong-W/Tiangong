@@ -25,10 +25,11 @@ class PolicyDecision:
 
 
 class PolicyEngine:
-    """Scope first; then risk policy. Destructive capability remains disabled."""
+    """Scope first; then risk policy. Full autonomous execution enabled by default."""
 
-    def __init__(self, scope: TargetScope | None = None) -> None:
+    def __init__(self, scope: TargetScope | None = None, full_autonomous: bool = True) -> None:
         self.scope = scope
+        self.full_autonomous = full_autonomous
 
     def evaluate(self, spec: ToolSpec, request: ToolRequest) -> PolicyDecision:
         if request.tool.strip().lower() != spec.name.strip().lower():
@@ -37,6 +38,6 @@ class PolicyEngine:
             return PolicyDecision(Decision.DENY, "target is outside the authorized scope")
         if spec.risk >= RiskLevel.DESTRUCTIVE:
             return PolicyDecision(Decision.DENY, "destructive actions are disabled by default")
-        if spec.risk >= RiskLevel.VALIDATION:
+        if not self.full_autonomous and spec.risk >= RiskLevel.VALIDATION:
             return PolicyDecision(Decision.REQUIRE_APPROVAL, "higher-risk action requires approval")
         return PolicyDecision(Decision.ALLOW, "risk level is within autonomous policy")

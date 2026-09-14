@@ -79,3 +79,14 @@ class TargetScope:
         if any(_matches(host, rule) for rule in self.denied):
             return False
         return any(_matches(host, rule) for rule in self.allowed)
+
+    def authorize(self, target: str) -> TargetScope:
+        try:
+            rule = validate_scope_rule(target)
+            if rule not in self.allowed:
+                return TargetScope(allowed=self.allowed + (rule,), denied=self.denied)
+        except Exception:
+            host = _host_from_target(target)
+            if host not in self.allowed:
+                return TargetScope(allowed=self.allowed + (host,), denied=self.denied)
+        return self

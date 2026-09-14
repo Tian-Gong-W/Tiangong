@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import Any
 
 from tonmen.ai import LeadAIOrchestrator
 from tonmen.audit import AuditLog
@@ -28,6 +29,10 @@ class TonmenRuntime:
     scope: TargetScope | None = None
     events: EventBus | None = None
     workers: WorkerPool | None = None
+    arbiter: Any | None = None
+    knowledge_hub: Any | None = None
+    egress_pool: Any | None = None
+    session_vault: Any | None = None
 
     @classmethod
     def genesis(cls, config: TonmenConfig | None = None, *, events: EventBus | None = None) -> "TonmenRuntime":

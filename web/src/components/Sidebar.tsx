@@ -56,8 +56,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       name: '仪表盘',
       enName: 'Dashboard',
       icon: LayoutDashboard,
-      badge: effectiveApprovalsCount > 0 ? `${effectiveApprovalsCount} 待处理` : undefined,
-      badgeColor: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
     },
     {
       id: 'arena' as NavId,
