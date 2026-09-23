@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass, replace
 from time import monotonic
 from typing import Any, Mapping
@@ -8,7 +9,7 @@ from uuid import uuid4
 from tonmen.missions import MissionPlan, MissionRun, MissionRunState, iter_plan_executions
 
 from .config import LeadAIConfig
-from .provider import MistralAgentProvider, OpenAIResponsesProvider
+from .provider import LeadAIProvider, MistralAgentProvider, OpenAIResponsesProvider
 
 _ALLOWED_ACTIONS = {
     "continue_governed_plan",
@@ -84,7 +85,7 @@ class LeadAIOrchestrator:
         self,
         config: LeadAIConfig | None = None,
         *,
-        provider: OpenAIResponsesProvider | MistralAgentProvider | None = None,
+        provider: LeadAIProvider | None = None,
     ) -> None:
         self.config_error: str | None = None
         if config is None:
@@ -213,6 +214,40 @@ class LeadAIOrchestrator:
             "total_tokens": usage.get("total_tokens") if isinstance(usage.get("total_tokens"), int) else None,
         }
 
+    @staticmethod
+    def _validate_directive(result: Mapping[str, Any]) -> None:
+        action = str(result.get("recommended_action") or "").strip().lower()
+        if action not in _ALLOWED_ACTIONS:
+            raise ValueError("Lead AI returned an unsupported recommended_action")
+        try:
+            confidence = float(result.get("confidence", 0.5))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Lead AI confidence must be a number between 0 and 1") from exc
+        if not 0 <= confidence <= 1:
+            raise ValueError("Lead AI confidence must be between 0 and 1")
+
+    def _complete_provider_json(self, snapshot: Mapping[str, Any]) -> Mapping[str, Any]:
+        if self.provider is None:
+            raise RuntimeError("Lead AI provider is unavailable")
+        complete_json = self.provider.complete_json
+        try:
+            parameters = inspect.signature(complete_json).parameters
+        except (TypeError, ValueError):
+            parameters = {}
+        supports_validator = "validator" in parameters or any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters.values()
+        )
+        if supports_validator:
+            return complete_json(
+                system=_SYSTEM,
+                payload=snapshot,
+                validator=self._validate_directive,
+            )
+        result = complete_json(system=_SYSTEM, payload=snapshot)
+        self._validate_directive(result)
+        return result
+
     def direct(
         self,
         plan: MissionPlan,
@@ -241,15 +276,12 @@ class LeadAIOrchestrator:
         snapshot = self._snapshot(plan, run, round_number=round_number, phase=phase, default_focus=default_focus)
         started = monotonic()
         try:
-            result: Mapping[str, Any] = self.provider.complete_json(system=_SYSTEM, payload=snapshot)
+            result = self._complete_provider_json(snapshot)
+            self._validate_directive(result)
             latency_ms = max(0, round((monotonic() - started) * 1000))
             usage = self._provider_usage(self.provider)
             action = str(result.get("recommended_action") or "").strip().lower()
-            if action not in _ALLOWED_ACTIONS:
-                raise ValueError("Lead AI returned an unsupported recommended_action")
             confidence = round(float(result.get("confidence", 0.5)), 2)
-            if not 0 <= confidence <= 1:
-                raise ValueError("Lead AI confidence must be between 0 and 1")
             provider_model = getattr(self.provider, "last_model", None) or self.config.model
             return LeadDirective(
                 id=uuid4().hex,

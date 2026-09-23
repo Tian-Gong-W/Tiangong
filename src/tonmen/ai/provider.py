@@ -1,15 +1,30 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Callable, Mapping
+import logging
+from typing import Any, Callable, Mapping, Protocol
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from .config import LeadAIConfig
 
 
+logger = logging.getLogger(__name__)
+
 JsonRequester = Callable[[str, Mapping[str, str], bytes, int], Mapping[str, Any]]
 JsonLoader = Callable[[str, Mapping[str, str], int], Mapping[str, Any]]
+JsonValidator = Callable[[Mapping[str, Any]], None]
+
+
+class LeadAIProvider(Protocol):
+    def complete_json(
+        self,
+        *,
+        system: str,
+        payload: Mapping[str, Any],
+        validator: JsonValidator | None = None,
+        max_retries: int = 3,
+    ) -> Mapping[str, Any]: ...
 
 
 def _default_requester(url: str, headers: Mapping[str, str], body: bytes, timeout: int) -> Mapping[str, Any]:
@@ -105,13 +120,35 @@ def _mistral_usage(payload: Mapping[str, Any]) -> dict[str, int]:
 
 
 def _parse_json_object(text: str) -> Mapping[str, Any]:
-    try:
-        result = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError("Lead AI response was not valid JSON") from exc
+    result = json.loads(text)
     if not isinstance(result, dict):
-        raise RuntimeError("Lead AI response JSON must be an object")
+        raise ValueError("Lead AI response JSON must be an object")
     return result
+
+
+def _validate_max_retries(max_retries: int) -> None:
+    if not isinstance(max_retries, int) or isinstance(max_retries, bool) or max_retries < 1:
+        raise ValueError("max_retries must be an integer >= 1")
+
+
+def _merge_usage(total: dict[str, int], current: Mapping[str, int]) -> None:
+    for key in ("input_tokens", "output_tokens", "total_tokens"):
+        value = current.get(key)
+        if isinstance(value, int) and value >= 0:
+            total[key] = total.get(key, 0) + value
+
+
+def _error_summary(exc: BaseException) -> str:
+    detail = " ".join(str(exc).split())
+    return f"{type(exc).__name__}: {detail}"[:800]
+
+
+def _correction_message(exc: BaseException) -> str:
+    return (
+        "SYSTEM INTERCEPT: Your previous output failed validation. "
+        f"{_error_summary(exc)}. "
+        "Fix it immediately and return ONLY the raw valid JSON matching the required schema and constraints."
+    )
 
 
 class OpenAIResponsesProvider:
@@ -125,32 +162,74 @@ class OpenAIResponsesProvider:
         self.last_usage: dict[str, int] = {}
         self.last_response_id: str | None = None
 
-    def complete_json(self, *, system: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
-        request_body = {
-            "model": self.config.model,
-            "input": [
-                {"role": "system", "content": [{"type": "input_text", "text": system}]},
-                {
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": json.dumps(payload, ensure_ascii=False, separators=(",", ":"))}],
-                },
-            ],
-        }
-        raw = self._requester(
-            f"{self.config.base_url}/responses",
+    def complete_json(
+        self,
+        *,
+        system: str,
+        payload: Mapping[str, Any],
+        validator: JsonValidator | None = None,
+        max_retries: int = 3,
+    ) -> Mapping[str, Any]:
+        _validate_max_retries(max_retries)
+        input_items: list[dict[str, Any]] = [
+            {"role": "system", "content": [{"type": "input_text", "text": system}]},
             {
-                "Authorization": f"Bearer {self.config.api_key()}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "User-Agent": "TONMEN-LeadAI/0.1",
+                "role": "user",
+                "content": [{"type": "input_text", "text": json.dumps(payload, ensure_ascii=False, separators=(",", ":"))}],
             },
-            json.dumps(request_body, ensure_ascii=False).encode("utf-8"),
-            self.config.timeout_seconds,
-        )
-        self.last_usage = _openai_usage(raw)
-        response_id = raw.get("id")
-        self.last_response_id = str(response_id)[:120] if response_id else None
-        return _parse_json_object(_openai_response_text(raw))
+        ]
+        cumulative_usage: dict[str, int] = {}
+        self.last_usage = {}
+        self.last_response_id = None
+        last_error: BaseException | None = None
+
+        for attempt in range(1, max_retries + 1):
+            request_body = {
+                "model": self.config.model,
+                "input": input_items,
+            }
+            raw = self._requester(
+                f"{self.config.base_url}/responses",
+                {
+                    "Authorization": f"Bearer {self.config.api_key()}",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "User-Agent": "TONMEN-LeadAI/0.1",
+                },
+                json.dumps(request_body, ensure_ascii=False).encode("utf-8"),
+                self.config.timeout_seconds,
+            )
+            _merge_usage(cumulative_usage, _openai_usage(raw))
+            self.last_usage = dict(cumulative_usage)
+            response_id = raw.get("id")
+            self.last_response_id = str(response_id)[:120] if response_id else None
+            text = _openai_response_text(raw)
+
+            try:
+                result = _parse_json_object(text)
+                if validator is not None:
+                    validator(result)
+                return result
+            except (json.JSONDecodeError, ValueError) as exc:
+                last_error = exc
+                if attempt >= max_retries:
+                    break
+                logger.warning(
+                    "SYSTEM INTERCEPT provider=openai attempt=%d/%d validation_failed=%s",
+                    attempt,
+                    max_retries,
+                    _error_summary(exc),
+                )
+                input_items.extend(
+                    [
+                        {"role": "assistant", "content": [{"type": "input_text", "text": text}]},
+                        {"role": "system", "content": [{"type": "input_text", "text": _correction_message(exc)}]},
+                    ]
+                )
+
+        raise RuntimeError(
+            f"Lead AI failed to produce valid JSON after {max_retries} attempts: {_error_summary(last_error or RuntimeError('validation failed'))}"
+        ) from last_error
 
 
 class MistralAgentProvider:
@@ -217,7 +296,15 @@ class MistralAgentProvider:
         self._profile = profile
         return profile
 
-    def complete_json(self, *, system: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    def complete_json(
+        self,
+        *,
+        system: str,
+        payload: Mapping[str, Any],
+        validator: JsonValidator | None = None,
+        max_retries: int = 3,
+    ) -> Mapping[str, Any]:
+        _validate_max_retries(max_retries)
         profile = self._agent_profile()
         model = str(profile["model"]).strip()
         agent_instructions = str(profile.get("instructions") or "").strip()
@@ -235,29 +322,63 @@ class MistralAgentProvider:
                     completion_args[key] = configured_args[key]
         completion_args["response_format"] = {"type": "json_object"}
 
-        request_body = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": combined_system},
-                {
-                    "role": "user",
-                    "content": json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-                },
-            ],
-            **completion_args,
-        }
+        messages: list[dict[str, str]] = [
+            {"role": "system", "content": combined_system},
+            {
+                "role": "user",
+                "content": json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+            },
+        ]
+        cumulative_usage: dict[str, int] = {}
+        self.last_usage = {}
+        self.last_response_id = None
+        last_error: BaseException | None = None
 
-        # Intentionally no `tools` or `handoffs`: those belong to Mistral's Agent
-        # runtime, while TONMEN's Lead AI is advisory and never receives execution
-        # authority outside Scope / Policy / Approval / Executor.
-        raw = self._requester(
-            f"{self.config.base_url}/chat/completions",
-            self._headers(),
-            json.dumps(request_body, ensure_ascii=False).encode("utf-8"),
-            self.config.timeout_seconds,
-        )
-        self.last_usage = _mistral_usage(raw)
-        response_id = raw.get("id")
-        self.last_response_id = str(response_id)[:120] if response_id else None
-        self.last_model = str(raw.get("model") or model)[:160]
-        return _parse_json_object(_mistral_message_text(raw))
+        for attempt in range(1, max_retries + 1):
+            request_body = {
+                "model": model,
+                "messages": messages,
+                **completion_args,
+            }
+
+            # Intentionally no `tools` or `handoffs`: those belong to Mistral's Agent
+            # runtime, while TONMEN's Lead AI is advisory and never receives execution
+            # authority outside Scope / Policy / Approval / Executor.
+            raw = self._requester(
+                f"{self.config.base_url}/chat/completions",
+                self._headers(),
+                json.dumps(request_body, ensure_ascii=False).encode("utf-8"),
+                self.config.timeout_seconds,
+            )
+            _merge_usage(cumulative_usage, _mistral_usage(raw))
+            self.last_usage = dict(cumulative_usage)
+            response_id = raw.get("id")
+            self.last_response_id = str(response_id)[:120] if response_id else None
+            self.last_model = str(raw.get("model") or model)[:160]
+            text = _mistral_message_text(raw)
+
+            try:
+                result = _parse_json_object(text)
+                if validator is not None:
+                    validator(result)
+                return result
+            except (json.JSONDecodeError, ValueError) as exc:
+                last_error = exc
+                if attempt >= max_retries:
+                    break
+                logger.warning(
+                    "SYSTEM INTERCEPT provider=mistral attempt=%d/%d validation_failed=%s",
+                    attempt,
+                    max_retries,
+                    _error_summary(exc),
+                )
+                messages.extend(
+                    [
+                        {"role": "assistant", "content": text},
+                        {"role": "user", "content": _correction_message(exc)},
+                    ]
+                )
+
+        raise RuntimeError(
+            f"Lead AI failed to produce valid JSON after {max_retries} attempts: {_error_summary(last_error or RuntimeError('validation failed'))}"
+        ) from last_error
