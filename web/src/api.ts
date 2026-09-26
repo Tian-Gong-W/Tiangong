@@ -387,6 +387,31 @@ export const saveProviderKey = (provider: string, value: string) =>
   post<any>(`/api/ai/providers/${encodeURIComponent(provider)}/key`, { value });
 export const clearProviderKey = (provider: string) =>
   post<any>(`/api/ai/providers/${encodeURIComponent(provider)}/clear-key`);
+export const getArenaStatus = () => request<any>('/api/arena/status');
+export const simulateArenaRound = () => post<any>('/api/arena/simulate-round');
+export const executeTacticalCombat = (strategistId?: string, targetNode?: string) =>
+  post<any>('/api/arena/tactical-combat', { strategist_id: strategistId, target_node: targetNode });
+export const toggleAutoSimulate = (enabled?: boolean) =>
+  post<any>('/api/arena/auto-mode', { enabled });
+
+export function subscribeArenaStream(onMessage: (data: any) => void, onError?: (err: any) => void): () => void {
+  const token = savedToken();
+  const url = `/api/arena/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+  const es = new EventSource(url);
+  es.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      onMessage(data);
+    } catch (e) {
+      console.warn('Failed to parse SSE data', e);
+    }
+  };
+  es.onerror = (err) => {
+    if (onError) onError(err);
+  };
+  return () => es.close();
+}
+
 export const probeProvider = (provider: string) =>
   post<any>(`/api/ai/providers/${encodeURIComponent(provider)}/probe`);
 export const probeWorker = (worker: string) => post<any>(`/api/workers/${encodeURIComponent(worker)}/probe`);

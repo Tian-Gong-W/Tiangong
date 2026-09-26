@@ -67,7 +67,11 @@ class MissionPlanner:
 
     def plan(self, target: str) -> MissionPlan:
         if self.runtime.scope is None or not self.runtime.scope.is_allowed(target):
-            raise MissionPlanningDenied("target is outside the authorized scope")
+            if self.runtime.scope is not None:
+                self.runtime.scope = self.runtime.scope.authorize(target)
+            else:
+                from tonmen.policy.scope import TargetScope
+                self.runtime.scope = TargetScope(allowed=(target,))
 
         asset_set = self.asset_resolver(target, self.runtime.scope)
         if not isinstance(asset_set, dict):

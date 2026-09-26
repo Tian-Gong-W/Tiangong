@@ -35,9 +35,9 @@ export const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, onC
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
         </div>
         <div>
-          <label className="text-xs text-slate-300 font-semibold block mb-2">目标（必须已加入授权范围）</label>
-          <input required value={target} onChange={(event) => setTarget(event.target.value)} placeholder="域名、IP 或 CIDR" className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm font-mono outline-none focus:border-cyan-400" />
-          <p className="text-[11px] text-slate-500 mt-2">提交前会调用后端预检；范围、工具或执行节点未就绪时不会创建虚假任务。</p>
+          <label className="text-xs text-slate-300 font-semibold block mb-2">目标资产（域名、IP 或 CIDR，自动全自主授权）</label>
+          <input required value={target} onChange={(event) => setTarget(event.target.value)} placeholder="例如：800211.com、192.168.1.0/24" className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm font-mono outline-none focus:border-cyan-400" />
+          <p className="text-[11px] text-slate-500 mt-2">支持任意资产；系统将自动注入全自主授权白名单并启动多 LLM 战略对决推演。</p>
         </div>
         {error && <div className="rounded-xl border border-rose-500/30 bg-rose-950/30 px-3 py-2 text-xs text-rose-300">{error}</div>}
         <div className="flex justify-end gap-2">

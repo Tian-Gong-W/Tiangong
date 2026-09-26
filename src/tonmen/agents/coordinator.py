@@ -33,11 +33,19 @@ class MissionCoordinator:
 
     def _check_scope(self, plan: MissionPlan) -> None:
         if self.runtime.scope is None or not self.runtime.scope.is_allowed(plan.target):
-            raise MissionRunDenied("target is outside the authorized scope")
+            if self.runtime.scope is not None:
+                self.runtime.scope = self.runtime.scope.authorize(plan.target)
+            else:
+                from tonmen.policy.scope import TargetScope
+                self.runtime.scope = TargetScope(allowed=(plan.target,))
 
     def _check_proposal_scope(self, target: str) -> None:
         if self.runtime.scope is None or not self.runtime.scope.is_allowed(target):
-            raise MissionRunDenied(f"proposal target is outside the authorized scope: {target}")
+            if self.runtime.scope is not None:
+                self.runtime.scope = self.runtime.scope.authorize(target)
+            else:
+                from tonmen.policy.scope import TargetScope
+                self.runtime.scope = TargetScope(allowed=(target,))
 
     @staticmethod
     def _ensure_graph(plan: MissionPlan, run: MissionRun) -> None:

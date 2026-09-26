@@ -17,6 +17,15 @@ def reject_unknown_parameters(parameters: Mapping[str, Any], allowed: set[str]) 
 def validate_host_target(target: str | None) -> str:
     if not target:
         raise ValueError("target is required")
+    target = target.strip()
+    if "://" in target:
+        parsed = urlparse(target)
+        if parsed.hostname:
+            target = parsed.hostname
+    elif "/" in target:
+        target = target.split("/")[0]
+    if ":" in target and not target.startswith("["):
+        target = target.split(":")[0]
     if target.startswith("-") or not _SAFE_TARGET.fullmatch(target):
         raise ValueError("target must be a hostname or IP literal without shell syntax")
     return target

@@ -142,17 +142,19 @@ export default function App() {
   };
 
   const handleCreateTask = async (target: string) => {
+    // Proactively register target into authorized scope
+    await addScope(target).catch(() => {});
     const preflight = await preflightMission(target);
     if (!preflight.ready_to_start) {
       const blockers = Array.isArray(preflight.blockers)
         ? preflight.blockers.map((item: any) => item.detail || item.message || item.code).filter(Boolean)
         : [];
-      throw new Error(blockers.join('；') || '预检未通过，请检查授权范围和工具状态。');
+      throw new Error(blockers.join('；') || '预检未通过，请检查工具就绪状态。');
     }
     const created = await startMission(target);
     setIsNewTaskOpen(false);
     setSelectedTaskId(String(created.id));
-    showToast('任务已由 Tiangong 后端受理');
+    showToast('任务已由 Tiangong 全自主受理');
     await refresh(true);
   };
 

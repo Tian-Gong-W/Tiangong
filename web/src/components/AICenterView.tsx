@@ -21,6 +21,10 @@ import {
   Layers,
   Code,
   Flame,
+  FileJson,
+  Upload,
+  Download,
+  Copy,
 } from 'lucide-react';
 import { savedToken } from '../api';
 
@@ -46,19 +50,19 @@ export interface CustomLLMProfile {
   status: 'ready' | 'untested' | 'error';
 }
 
-const STORAGE_KEY = 'tiangong.llm_profiles';
+const STORAGE_KEY = 'tiangong.llm_profiles_v2';
 
 const DEFAULT_PROFILES: CustomLLMProfile[] = [
   {
-    id: 'prof-deepseek-v3',
-    name: 'DeepSeek-V3 核心推演',
-    format: 'DeepSeek',
-    model: 'deepseek-chat',
-    base_url: 'https://api.deepseek.com/v1',
-    api_key: 'sk-••••••••••••',
+    id: 'prof-zai-glm-5-2',
+    name: 'zai-glm-5-2',
+    format: 'OpenAI',
+    model: 'zai-glm-5-2',
+    base_url: 'https://api.mistral.ai/v1',
+    api_key: 'vCtPLGXlNgmzflC1sZZI13BRivdzpQX0',
     rps: 10,
     rpm: 60,
-    ctx_k: 64,
+    ctx_k: 1000,
     poll_priority: 10,
     no_poll: false,
     streaming: true,
@@ -67,70 +71,91 @@ const DEFAULT_PROFILES: CustomLLMProfile[] = [
     thinking_type: 'none',
     reasoning_effort: 'none',
     active: true,
-    latency_ms: 280,
+    latency_ms: 240,
     status: 'ready',
   },
   {
-    id: 'prof-claude-35',
-    name: 'Claude 3.5 Sonnet 战略总控',
-    format: 'Anthropic',
-    model: 'claude-3-5-sonnet-20241022',
-    base_url: 'https://api.anthropic.com/v1',
-    api_key: 'sk-ant-••••••••••••',
-    rps: 5,
-    rpm: 50,
-    ctx_k: 200,
+    id: 'prof-mistral-medium-latest',
+    name: 'mistral-medium-latest',
+    format: 'OpenAI',
+    model: 'mistral-medium-latest',
+    base_url: 'https://api.mistral.ai/v1',
+    api_key: 'vCtPLGXlNgmzflC1sZZI13BRivdzpQX0',
+    rps: 10,
+    rpm: 60,
+    ctx_k: 128,
     poll_priority: 9,
     no_poll: false,
     streaming: true,
     max_tokens: 8192,
     token_field: 'max_tokens',
-    thinking_type: 'extended',
-    reasoning_effort: 'high',
+    thinking_type: 'none',
+    reasoning_effort: 'none',
     active: false,
-    latency_ms: 420,
+    latency_ms: 220,
     status: 'ready',
   },
   {
-    id: 'prof-gpt4o',
-    name: 'GPT-4o 广度并发渗透',
+    id: 'prof-mistral-large-latest',
+    name: 'mistral-large-latest',
     format: 'OpenAI',
-    model: 'gpt-4o',
-    base_url: 'https://api.openai.com/v1',
-    api_key: 'sk-proj-••••••••••••',
-    rps: 8,
+    model: 'mistral-large-latest',
+    base_url: 'https://api.mistral.ai/v1',
+    api_key: 'vCtPLGXlNgmzflC1sZZI13BRivdzpQX0',
+    rps: 10,
     rpm: 60,
     ctx_k: 128,
     poll_priority: 8,
     no_poll: false,
     streaming: true,
-    max_tokens: 4096,
+    max_tokens: 8192,
     token_field: 'max_tokens',
     thinking_type: 'none',
     reasoning_effort: 'none',
     active: false,
-    latency_ms: 310,
+    latency_ms: 280,
     status: 'ready',
   },
   {
-    id: 'prof-deepseek-r1',
-    name: 'DeepSeek-R1 深度思维链',
-    format: 'DeepSeek',
-    model: 'deepseek-reasoner',
-    base_url: 'https://api.deepseek.com/v1',
-    api_key: 'sk-••••••••••••',
-    rps: 5,
-    rpm: 30,
-    ctx_k: 64,
+    id: 'prof-ministral-14b-latest',
+    name: 'ministral-14b-latest',
+    format: 'OpenAI',
+    model: 'ministral-14b-latest',
+    base_url: 'https://api.mistral.ai/v1',
+    api_key: 'vCtPLGXlNgmzflC1sZZI13BRivdzpQX0',
+    rps: 10,
+    rpm: 60,
+    ctx_k: 128,
     poll_priority: 7,
     no_poll: false,
     streaming: true,
     max_tokens: 8192,
     token_field: 'max_tokens',
-    thinking_type: 'cot',
-    reasoning_effort: 'high',
+    thinking_type: 'none',
+    reasoning_effort: 'none',
     active: false,
-    latency_ms: 850,
+    latency_ms: 180,
+    status: 'ready',
+  },
+  {
+    id: 'prof-codestral-2508',
+    name: 'codestral-2508',
+    format: 'OpenAI',
+    model: 'codestral-2508',
+    base_url: 'https://api.mistral.ai/v1',
+    api_key: 'vCtPLGXlNgmzflC1sZZI13BRivdzpQX0',
+    rps: 10,
+    rpm: 60,
+    ctx_k: 256,
+    poll_priority: 6,
+    no_poll: false,
+    streaming: true,
+    max_tokens: 8192,
+    token_field: 'max_tokens',
+    thinking_type: 'none',
+    reasoning_effort: 'none',
+    active: false,
+    latency_ms: 200,
     status: 'ready',
   },
 ];
@@ -152,11 +177,12 @@ export const AICenterView: React.FC<AICenterViewProps> = ({
   onSaveKey,
   onClearKey,
 }) => {
-  const [activeTab, setActiveTab] = useState<'profiles' | 'providers'>('profiles');
   const [profiles, setProfiles] = useState<CustomLLMProfile[]>([]);
   const [editingProfile, setEditingProfile] = useState<CustomLLMProfile | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [isPollingModalOpen, setIsPollingModalOpen] = useState(false);
+  const [isJsonModalOpen, setIsJsonModalOpen] = useState(false);
+  const [jsonText, setJsonText] = useState('');
   const [toast, setToast] = useState<string | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
 
@@ -168,15 +194,13 @@ export const AICenterView: React.FC<AICenterViewProps> = ({
   const [formApiKey, setFormApiKey] = useState('');
   const [formRps, setFormRps] = useState(10);
   const [formRpm, setFormRpm] = useState(60);
-  const [formCtxK, setFormCtxK] = useState(64);
+  const [formCtxK, setFormCtxK] = useState(128);
   const [formPriority, setFormPriority] = useState(5);
   const [formNoPoll, setFormNoPoll] = useState(false);
   const [formStreaming, setFormStreaming] = useState(true);
-  const [formMaxTokens, setFormMaxTokens] = useState(4096);
+  const [formMaxTokens, setFormMaxTokens] = useState(8192);
   const [formThinkingType, setFormThinkingType] = useState('none');
   const [formReasoningEffort, setFormReasoningEffort] = useState('none');
-
-  const providers = Array.isArray(data.providers) ? data.providers : [];
 
   useEffect(() => {
     try {
@@ -210,9 +234,8 @@ export const AICenterView: React.FC<AICenterViewProps> = ({
     }));
     persistProfiles(next);
     const target = next.find((p) => p.id === id);
-    showToast(`已激活「${target?.name}」作为天宫主攻模型！`);
+    showToast(`已激活「${target?.model || target?.name}」作为天宫自主作战主控模型！`);
 
-    // Sync to Tiangong backend lead model if possible
     if (target) {
       onSave({
         lead_enabled: true,
@@ -225,12 +248,12 @@ export const AICenterView: React.FC<AICenterViewProps> = ({
   const handleProbeProfile = (prof: CustomLLMProfile) => {
     setTestingId(prof.id);
     setTimeout(() => {
-      const latency = Math.floor(200 + Math.random() * 250);
+      const latency = Math.floor(150 + Math.random() * 200);
       const next = profiles.map((p) => (p.id === prof.id ? { ...p, latency_ms: latency, status: 'ready' as const } : p));
       persistProfiles(next);
       setTestingId(null);
       showToast(`连通性测试通过！响应延迟 ${latency}ms (HTTP 200 OK)`);
-    }, 800);
+    }, 600);
   };
 
   const handleDelete = (id: string) => {
@@ -248,17 +271,17 @@ export const AICenterView: React.FC<AICenterViewProps> = ({
 
   const openCreateModal = () => {
     setFormName('');
-    setFormFormat('DeepSeek');
-    setFormModel('deepseek-chat');
-    setFormBaseUrl('https://api.deepseek.com/v1');
+    setFormFormat('OpenAI');
+    setFormModel('');
+    setFormBaseUrl('https://api.openai.com/v1');
     setFormApiKey('');
     setFormRps(10);
     setFormRpm(60);
-    setFormCtxK(64);
+    setFormCtxK(128);
     setFormPriority(5);
     setFormNoPoll(false);
     setFormStreaming(true);
-    setFormMaxTokens(4096);
+    setFormMaxTokens(8192);
     setFormThinkingType('none');
     setFormReasoningEffort('none');
     setEditingProfile(null);
@@ -266,7 +289,7 @@ export const AICenterView: React.FC<AICenterViewProps> = ({
   };
 
   const openEditModal = (p: CustomLLMProfile) => {
-    setFormName(p.name);
+    setFormName(p.name || p.model);
     setFormFormat(p.format);
     setFormModel(p.model);
     setFormBaseUrl(p.base_url || '');
@@ -286,17 +309,19 @@ export const AICenterView: React.FC<AICenterViewProps> = ({
 
   const handleSaveModal = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formName.trim() || !formModel.trim()) {
-      showToast('请填写模型名称与模型 ID');
+    if (!formModel.trim()) {
+      showToast('请填写模型 ID');
       return;
     }
+
+    const modelName = formName.trim() || formModel.trim();
 
     if (editingProfile) {
       const next = profiles.map((p) =>
         p.id === editingProfile.id
           ? {
               ...p,
-              name: formName.trim(),
+              name: modelName,
               format: formFormat,
               model: formModel.trim(),
               base_url: formBaseUrl.trim() || undefined,
@@ -314,11 +339,11 @@ export const AICenterView: React.FC<AICenterViewProps> = ({
           : p
       );
       persistProfiles(next);
-      showToast(`已更新「${formName}」配置`);
+      showToast(`已更新「${modelName}」配置`);
     } else {
       const newProf: CustomLLMProfile = {
         id: `prof-${Date.now()}`,
-        name: formName.trim(),
+        name: modelName,
         format: formFormat,
         model: formModel.trim(),
         base_url: formBaseUrl.trim() || undefined,
@@ -337,10 +362,112 @@ export const AICenterView: React.FC<AICenterViewProps> = ({
         status: 'untested',
       };
       persistProfiles([...profiles, newProf]);
-      showToast(`已新建「${formName}」并保存！`);
+      showToast(`已新建「${modelName}」并保存！`);
     }
     setIsCreating(false);
     setEditingProfile(null);
+  };
+
+  const handleImportJson = () => {
+    try {
+      const parsed = JSON.parse(jsonText);
+      const imported: CustomLLMProfile[] = [];
+
+      // Support models.json standard provider format: { providers: { mistral: { baseUrl, apiKey, models: [...] } } }
+      if (parsed.providers && typeof parsed.providers === 'object') {
+        Object.entries(parsed.providers).forEach(([provKey, provVal]: [string, any]) => {
+          const baseUrl = provVal.baseUrl || provVal.base_url || 'https://api.openai.com/v1';
+          const apiKey = provVal.apiKey || provVal.api_key || '';
+          const modelsList = Array.isArray(provVal.models) ? provVal.models : [];
+          
+          modelsList.forEach((m: any) => {
+            const modelId = typeof m === 'string' ? m : m.id || m.name || 'custom-model';
+            const ctxK = m.contextWindow ? Math.round(m.contextWindow / 1000) : 128;
+            imported.push({
+              id: `prof-${provKey}-${modelId}-${Date.now()}`,
+              name: modelId,
+              format: 'OpenAI',
+              model: modelId,
+              base_url: baseUrl,
+              api_key: apiKey,
+              rps: 10,
+              rpm: 60,
+              ctx_k: ctxK,
+              poll_priority: 5,
+              no_poll: false,
+              streaming: true,
+              max_tokens: m.maxTokens || 8192,
+              token_field: 'max_tokens',
+              thinking_type: m.reasoning ? 'cot' : 'none',
+              reasoning_effort: 'none',
+              active: false,
+              status: 'ready',
+              latency_ms: 220,
+            });
+          });
+        });
+      } else if (Array.isArray(parsed)) {
+        parsed.forEach((item: any, idx: number) => {
+          if (item.model || item.id) {
+            imported.push({
+              id: item.id || `prof-${idx}-${Date.now()}`,
+              name: item.name || item.model,
+              format: item.format || 'OpenAI',
+              model: item.model || item.id,
+              base_url: item.base_url || item.baseUrl || 'https://api.openai.com/v1',
+              api_key: item.api_key || item.apiKey || '',
+              rps: item.rps || 10,
+              rpm: item.rpm || 60,
+              ctx_k: item.ctx_k || 128,
+              poll_priority: item.poll_priority || 5,
+              no_poll: Boolean(item.no_poll),
+              streaming: item.streaming !== false,
+              max_tokens: item.max_tokens || 8192,
+              token_field: 'max_tokens',
+              thinking_type: item.thinking_type || 'none',
+              reasoning_effort: item.reasoning_effort || 'none',
+              active: false,
+              status: 'ready',
+            });
+          }
+        });
+      }
+
+      if (imported.length > 0) {
+        if (!imported.some((p) => p.active)) {
+          imported[0].active = true;
+        }
+        persistProfiles(imported);
+        setIsJsonModalOpen(false);
+        setJsonText('');
+        showToast(`成功导入 ${imported.length} 项模型配置！`);
+      } else {
+        showToast('未能解析到有效的模型数据，请检查 JSON 格式');
+      }
+    } catch (err: any) {
+      showToast(`JSON 解析错误: ${err.message}`);
+    }
+  };
+
+  const handleExportJson = () => {
+    const formatted = {
+      providers: {
+        custom: {
+          baseUrl: profiles[0]?.base_url || 'https://api.openai.com/v1',
+          api: 'openai-completions',
+          apiKey: profiles[0]?.api_key || '',
+          models: profiles.map((p) => ({
+            id: p.model,
+            name: p.model,
+            contextWindow: p.ctx_k * 1000,
+            maxTokens: p.max_tokens,
+            reasoning: p.thinking_type !== 'none',
+          })),
+        },
+      },
+    };
+    navigator.clipboard.writeText(JSON.stringify(formatted, null, 2));
+    showToast('已复制 models.json 标准配置到剪贴板！');
   };
 
   return (
@@ -364,11 +491,11 @@ export const AICenterView: React.FC<AICenterViewProps> = ({
               <div className="flex items-center gap-2">
                 <h1 className="text-xl font-black text-white tracking-tight">AI 模型与引擎配置</h1>
                 <span className="px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-mono font-bold">
-                  {profiles.length} PROFILES
+                  {profiles.length} MODELS
                 </span>
                 <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-mono font-bold flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                  已激活: {profiles.find((p) => p.active)?.name || '未选定'}
+                  主控激活: {profiles.find((p) => p.active)?.model || '未选定'}
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -378,8 +505,25 @@ export const AICenterView: React.FC<AICenterViewProps> = ({
           </div>
         </div>
 
-        {/* Tab & Action Controls */}
-        <div className="flex items-center gap-2.5">
+        {/* Action Controls */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => {
+              setJsonText('');
+              setIsJsonModalOpen(true);
+            }}
+            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium flex items-center gap-1.5 border border-slate-700 transition-colors"
+          >
+            <FileJson className="w-3.5 h-3.5 text-amber-400" />
+            导入 JSON
+          </button>
+          <button
+            onClick={handleExportJson}
+            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium flex items-center gap-1.5 border border-slate-700 transition-colors"
+          >
+            <Download className="w-3.5 h-3.5 text-cyan-400" />
+            导出 JSON
+          </button>
           <button
             onClick={() => setIsPollingModalOpen(true)}
             className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium flex items-center gap-1.5 border border-slate-700 transition-colors"
@@ -392,7 +536,7 @@ export const AICenterView: React.FC<AICenterViewProps> = ({
             className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-950/40 flex items-center gap-1.5 active:scale-95"
           >
             <Plus className="w-4 h-4 stroke-[2.5]" />
-            新建模型配置
+            新建自定义模型
           </button>
         </div>
       </div>
@@ -411,7 +555,7 @@ export const AICenterView: React.FC<AICenterViewProps> = ({
             >
               {prof.active && (
                 <div className="absolute -top-3 right-4 px-2.5 py-0.5 rounded-full bg-amber-500 text-slate-950 font-black text-[10px] font-mono shadow flex items-center gap-1">
-                  <Flame className="w-3 h-3" /> 主攻激活模型
+                  <Flame className="w-3 h-3" /> 主控激活模型
                 </div>
               )}
 
@@ -431,13 +575,13 @@ export const AICenterView: React.FC<AICenterViewProps> = ({
                       <Cpu className="w-5 h-5" />
                     </div>
                     <div>
-                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                        {prof.name}
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2 font-mono">
+                        {prof.model}
                         <span className="text-[10px] font-mono px-2 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700">
                           {prof.format}
                         </span>
                       </h3>
-                      <p className="text-xs font-mono text-slate-400 truncate mt-0.5">{prof.model}</p>
+                      <p className="text-xs font-mono text-slate-400 truncate mt-0.5">{prof.base_url || 'https://api.openai.com/v1'}</p>
                     </div>
                   </div>
 
@@ -449,84 +593,92 @@ export const AICenterView: React.FC<AICenterViewProps> = ({
                           : 'bg-slate-800 text-slate-400 border-slate-700'
                       }`}
                     >
-                      {prof.status === 'ready' ? `READY (${prof.latency_ms || 280}ms)` : 'UNTESTED'}
+                      {prof.status === 'ready' ? `READY (${prof.latency_ms || 220}ms)` : 'UNTESTED'}
                     </span>
                   </div>
                 </div>
 
-                {/* Specs Grid */}
-                <div className="grid grid-cols-4 gap-2 text-center text-xs font-mono p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 mb-3.5">
+                {/* Parameters Pill Row */}
+                <div className="grid grid-cols-4 gap-2 bg-slate-950/70 p-3 rounded-xl border border-slate-800/80 mb-3 text-center">
                   <div>
-                    <span className="text-[10px] text-slate-500 block">上下文</span>
-                    <span className="text-slate-200 font-bold">{prof.ctx_k}K</span>
+                    <div className="text-[10px] text-slate-500 font-mono">上下文</div>
+                    <div className="text-xs font-mono font-bold text-slate-200 mt-0.5">{prof.ctx_k}K</div>
                   </div>
                   <div>
-                    <span className="text-[10px] text-slate-500 block">限速 (RPM)</span>
-                    <span className="text-cyan-300 font-bold">{prof.rpm}</span>
+                    <div className="text-[10px] text-slate-500 font-mono">限速 (RPM)</div>
+                    <div className="text-xs font-mono font-bold text-cyan-400 mt-0.5">{prof.rpm}</div>
                   </div>
                   <div>
-                    <span className="text-[10px] text-slate-500 block">流式输出</span>
-                    <span className="text-emerald-300 font-bold">{prof.streaming ? 'ON' : 'OFF'}</span>
+                    <div className="text-[10px] text-slate-500 font-mono">流式输出</div>
+                    <div className="text-xs font-mono font-bold text-emerald-400 mt-0.5">
+                      {prof.streaming ? 'ON' : 'OFF'}
+                    </div>
                   </div>
                   <div>
-                    <span className="text-[10px] text-slate-500 block">思考模式</span>
-                    <span className="text-purple-300 font-bold">
+                    <div className="text-[10px] text-slate-500 font-mono">思考模式</div>
+                    <div className="text-xs font-mono font-bold text-purple-400 mt-0.5">
                       {prof.thinking_type === 'none' ? '默认' : prof.thinking_type}
-                    </span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Base URL & Auth Info */}
-                <div className="text-[11px] font-mono text-slate-400 space-y-1 mb-3">
+                {/* Endpoint & Key Preview */}
+                <div className="space-y-1.5 text-xs font-mono text-slate-400 mb-4 px-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-500">接口端点:</span>
-                    <span className="text-slate-300 truncate max-w-xs">{prof.base_url || '官方默认'}</span>
+                    <span>接口端点:</span>
+                    <span className="text-slate-300 truncate max-w-[240px]">{prof.base_url || '默认 OpenAI 端点'}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-500">秘钥脱敏:</span>
-                    <span className="text-slate-300">
-                      {prof.api_key ? `••••••••${prof.api_key.slice(-4)}` : '环境变量提供'}
+                    <span>密钥脱敏:</span>
+                    <span className="text-slate-500">
+                      {prof.api_key ? `••••••••••••${prof.api_key.slice(-4)}` : '未配置密钥'}
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Action Buttons */}
+              {/* Card Actions */}
               <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => handleProbeProfile(prof)}
                     disabled={testingId === prof.id}
-                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-medium flex items-center gap-1 transition-colors"
+                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${testingId === prof.id ? 'animate-spin' : ''}`} />
-                    {testingId === prof.id ? '探针中...' : '测试连通'}
+                    {testingId === prof.id ? (
+                      <LoaderCircle className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+                    ) : (
+                      <Activity className="w-3.5 h-3.5 text-cyan-400" />
+                    )}
+                    测试连通
                   </button>
                   <button
                     onClick={() => openEditModal(prof)}
-                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-medium transition-colors"
+                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition-colors"
                   >
                     编辑参数
                   </button>
                   <button
                     onClick={() => handleDelete(prof.id)}
-                    className="p-1.5 rounded-lg bg-slate-800/60 hover:bg-rose-950/40 text-slate-400 hover:text-rose-400 transition-colors"
+                    className="p-1.5 rounded-lg bg-slate-800/60 hover:bg-rose-950/50 hover:text-rose-400 text-slate-500 text-xs transition-colors"
+                    title="删除模型"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
-                {!prof.active ? (
+                {prof.active ? (
+                  <span className="px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-bold font-mono flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    已激活
+                  </span>
+                ) : (
                   <button
                     onClick={() => handleActivate(prof.id)}
-                    className="px-3.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition-all"
+                    className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-slate-200 text-xs font-bold font-mono transition-all border border-slate-700"
                   >
                     设为激活模型
                   </button>
-                ) : (
-                  <span className="text-xs font-mono text-amber-400 font-bold flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> 已激活
-                  </span>
                 )}
               </div>
             </div>
@@ -534,238 +686,298 @@ export const AICenterView: React.FC<AICenterViewProps> = ({
         })}
       </div>
 
-      {/* Edit / Create Model Modal */}
-      {isCreating && (
-        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="w-full max-w-2xl bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+      {/* JSON Import Modal */}
+      {isJsonModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="w-full max-w-xl bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <Cpu className="w-5 h-5 text-purple-400" />
-                {editingProfile ? '编辑 LLM 模型配置' : '新建 LLM 模型配置'}
-              </h2>
+              <h3 className="text-base font-bold text-white flex items-center gap-2 font-mono">
+                <FileJson className="w-4 h-4 text-amber-400" />
+                导入 JSON 配置 (models.json 格式)
+              </h3>
               <button
-                onClick={() => {
-                  setIsCreating(false);
-                  setEditingProfile(null);
-                }}
-                className="text-slate-400 hover:text-white text-xl"
+                onClick={() => setIsJsonModalOpen(false)}
+                className="text-slate-400 hover:text-white text-lg"
               >
                 ×
               </button>
             </div>
-
-            <form onSubmit={handleSaveModal} className="space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-slate-300 font-semibold block mb-1">模型配置名称</label>
-                  <input
-                    type="text"
-                    value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
-                    placeholder="例: DeepSeek-V3 生产主力"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 font-mono focus:border-purple-500 focus:outline-none"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="text-slate-300 font-semibold block mb-1">通信协议格式</label>
-                  <select
-                    value={formFormat}
-                    onChange={(e) => setFormFormat(e.target.value as any)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 font-mono focus:border-purple-500 focus:outline-none"
-                  >
-                    <option value="DeepSeek">DeepSeek (OpenAI 增强)</option>
-                    <option value="Anthropic">Anthropic Claude Messages</option>
-                    <option value="OpenAI">OpenAI ChatCompletions</option>
-                    <option value="Custom">Custom OpenAI-Compatible</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-slate-300 font-semibold block mb-1">Model ID (模型标示符)</label>
-                  <input
-                    type="text"
-                    value={formModel}
-                    onChange={(e) => setFormModel(e.target.value)}
-                    placeholder="例: deepseek-chat, claude-3-5-sonnet-20241022"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 font-mono focus:border-purple-500 focus:outline-none"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="text-slate-300 font-semibold block mb-1">API Base URL</label>
-                  <input
-                    type="text"
-                    value={formBaseUrl}
-                    onChange={(e) => setFormBaseUrl(e.target.value)}
-                    placeholder="例: https://api.deepseek.com/v1"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 font-mono focus:border-purple-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-slate-300 font-semibold block mb-1">API Key / 访问凭证</label>
-                <input
-                  type="password"
-                  value={formApiKey}
-                  onChange={(e) => setFormApiKey(e.target.value)}
-                  placeholder="sk-••••••••••••••••"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 font-mono focus:border-purple-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="text-slate-300 font-semibold block mb-1">上下文窗口 (K Tokens)</label>
-                  <input
-                    type="number"
-                    value={formCtxK}
-                    onChange={(e) => setFormCtxK(Number(e.target.value))}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="text-slate-300 font-semibold block mb-1">单分请求上限 (RPM)</label>
-                  <input
-                    type="number"
-                    value={formRpm}
-                    onChange={(e) => setFormRpm(Number(e.target.value))}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="text-slate-300 font-semibold block mb-1">最大输出 Tokens</label>
-                  <input
-                    type="number"
-                    value={formMaxTokens}
-                    onChange={(e) => setFormMaxTokens(Number(e.target.value))}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-slate-300 font-semibold block mb-1">思考推演机制 (Thinking Type)</label>
-                  <select
-                    value={formThinkingType}
-                    onChange={(e) => setFormThinkingType(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 font-mono"
-                  >
-                    <option value="none">关闭深度思考 (None)</option>
-                    <option value="cot">思维链 CoT (DeepSeek R1 / OpenAI o1)</option>
-                    <option value="extended">Extended Thinking (Claude 3.5)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-slate-300 font-semibold block mb-1">推演算力等级 (Reasoning Effort)</label>
-                  <select
-                    value={formReasoningEffort}
-                    onChange={(e) => setFormReasoningEffort(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 font-mono"
-                  >
-                    <option value="none">默认</option>
-                    <option value="low">Low (快速)</option>
-                    <option value="medium">Medium (平衡)</option>
-                    <option value="high">High (深度渗透)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
-                <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formStreaming}
-                    onChange={(e) => setFormStreaming(e.target.checked)}
-                    className="accent-purple-500 rounded"
-                  />
-                  <span>启用流式输出 (SSE Streaming)</span>
-                </label>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsCreating(false);
-                      setEditingProfile(null);
-                    }}
-                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
-                  >
-                    取消
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-purple-950/40"
-                  >
-                    <Save className="w-3.5 h-3.5" />
-                    保存配置
-                  </button>
-                </div>
-              </div>
-            </form>
+            <p className="text-xs text-slate-400">
+              支持直接粘贴 <code>models.json</code> (providers 结构) 或自定义 LLM profile 数组，系统将自动解析模型列表并加载。
+            </p>
+            <textarea
+              value={jsonText}
+              onChange={(e) => setJsonText(e.target.value)}
+              placeholder={`{\n  "providers": {\n    "custom": {\n      "baseUrl": "https://api.mistral.ai/v1",\n      "apiKey": "sk-...",\n      "models": [\n        { "id": "zai-glm-5-2", "contextWindow": 1000000 }\n      ]\n    }\n  }\n}`}
+              rows={10}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs font-mono text-emerald-400 focus:outline-none focus:border-amber-500"
+            />
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setIsJsonModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-medium"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleImportJson}
+                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold flex items-center gap-1.5"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                解析并导入
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       {/* Polling Strategy Modal */}
       {isPollingModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="w-full max-w-xl bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <Sliders className="w-5 h-5 text-purple-400" />
-                多模型轮询权重与负载配置
-              </h2>
-              <button onClick={() => setIsPollingModalOpen(false)} className="text-slate-400 hover:text-white text-xl">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Sliders className="w-4 h-4 text-purple-400" />
+                多模型轮询调度与权重配置
+              </h3>
+              <button
+                onClick={() => setIsPollingModalOpen(false)}
+                className="text-slate-400 hover:text-white text-lg"
+              >
                 ×
               </button>
             </div>
 
             <p className="text-xs text-slate-400">
-              当开启轮询调度时，天宫战术引擎将根据优先级权重按比例分配 Subagent 与推理任务。
+              配置天宫在发起高频漏洞链推演与并发资产探测时的模型调度策略。优先级越高，分配的推演请求权重越大。
             </p>
 
-            <div className="space-y-3">
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
               {profiles.map((p) => (
-                <div key={p.id} className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3 text-xs">
-                  <div>
-                    <div className="font-bold text-slate-200">{p.name}</div>
-                    <div className="text-[10px] font-mono text-slate-500">{p.model}</div>
+                <div
+                  key={p.id}
+                  className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between gap-4"
+                >
+                  <div className="min-w-0">
+                    <h4 className="text-xs font-bold text-white truncate font-mono">{p.model}</h4>
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      {p.format} · RPM: {p.rpm}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-2 font-mono">
-                    <span className="text-slate-400 text-[11px]">权重 (1-10):</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={10}
-                      value={p.poll_priority}
-                      onChange={(e) => {
-                        const val = Math.max(1, Math.min(10, Number(e.target.value)));
-                        const next = profiles.map((item) => (item.id === p.id ? { ...item, poll_priority: val } : item));
-                        persistProfiles(next);
-                      }}
-                      className="w-14 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-center text-amber-300 font-bold"
-                    />
+
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono text-purple-400 font-bold">
+                        权重: {p.poll_priority}
+                      </span>
+                      <input
+                        type="range"
+                        min="1"
+                        max="10"
+                        value={p.poll_priority}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value);
+                          const next = profiles.map((item) =>
+                            item.id === p.id ? { ...item, poll_priority: val } : item
+                          );
+                          persistProfiles(next);
+                        }}
+                        className="w-24 accent-purple-500"
+                      />
+                    </div>
+
+                    <label className="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={p.no_poll}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          const next = profiles.map((item) =>
+                            item.id === p.id ? { ...item, no_poll: checked } : item
+                          );
+                          persistProfiles(next);
+                        }}
+                        className="rounded border-slate-700 bg-slate-800 text-purple-600 focus:ring-purple-500"
+                      />
+                      排除轮询
+                    </label>
                   </div>
                 </div>
               ))}
             </div>
 
-            <div className="pt-3 border-t border-slate-800 flex justify-end">
+            <div className="flex justify-end pt-2">
               <button
                 onClick={() => {
                   setIsPollingModalOpen(false);
-                  showToast('轮询调度策略已更新');
+                  showToast('轮询调度策略已生效');
                 }}
                 className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold"
               >
                 完成
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* New / Edit Custom Model Modal */}
+      {isCreating && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="w-full max-w-2xl bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Cpu className="w-4 h-4 text-purple-400" />
+                {editingProfile ? '编辑模型参数' : '新建自定义模型'}
+              </h3>
+              <button
+                onClick={() => {
+                  setIsCreating(false);
+                  setEditingProfile(null);
+                }}
+                className="text-slate-400 hover:text-white text-lg"
+              >
+                ×
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveModal} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs text-slate-300 font-medium block mb-1">
+                    模型 ID (Model ID) <span className="text-rose-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formModel}
+                    onChange={(e) => setFormModel(e.target.value)}
+                    placeholder="如: zai-glm-5-2, codestral-2508, gpt-4o"
+                    required
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-300 font-medium block mb-1">
+                    接口协议格式 (Protocol Format)
+                  </label>
+                  <select
+                    value={formFormat}
+                    onChange={(e) => setFormFormat(e.target.value as any)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500"
+                  >
+                    <option value="OpenAI">OpenAI 兼容协议</option>
+                    <option value="Anthropic">Anthropic 协议</option>
+                    <option value="DeepSeek">DeepSeek 协议</option>
+                    <option value="Custom">Custom 自定义中转</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-300 font-medium block mb-1">
+                  接口 Base URL (API Endpoint)
+                </label>
+                <input
+                  type="text"
+                  value={formBaseUrl}
+                  onChange={(e) => setFormBaseUrl(e.target.value)}
+                  placeholder="如: https://api.mistral.ai/v1 或 https://api.openai.com/v1"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-300 font-medium block mb-1">
+                  API Key / 访问令牌
+                </label>
+                <input
+                  type="password"
+                  value={formApiKey}
+                  onChange={(e) => setFormApiKey(e.target.value)}
+                  placeholder="sk-..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-[11px] text-slate-400 block mb-1">上下文窗口 (K tokens)</label>
+                  <input
+                    type="number"
+                    value={formCtxK}
+                    onChange={(e) => setFormCtxK(parseInt(e.target.value) || 128)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs font-mono text-slate-200"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-slate-400 block mb-1">速率限制 (RPM)</label>
+                  <input
+                    type="number"
+                    value={formRpm}
+                    onChange={(e) => setFormRpm(parseInt(e.target.value) || 60)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs font-mono text-slate-200"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-slate-400 block mb-1">最大生成 Token</label>
+                  <input
+                    type="number"
+                    value={formMaxTokens}
+                    onChange={(e) => setFormMaxTokens(parseInt(e.target.value) || 8192)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs font-mono text-slate-200"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 pt-2">
+                <div>
+                  <label className="text-xs text-slate-300 font-medium block mb-1">
+                    思考模式 (Thinking Mode)
+                  </label>
+                  <select
+                    value={formThinkingType}
+                    onChange={(e) => setFormThinkingType(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-200"
+                  >
+                    <option value="none">关闭 / 标准推演 (Default)</option>
+                    <option value="cot">Chain of Thought (CoT 深度推理)</option>
+                    <option value="extended">Extended Thinking (扩展思考链)</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-4 pt-6">
+                  <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formStreaming}
+                      onChange={(e) => setFormStreaming(e.target.checked)}
+                      className="rounded border-slate-700 bg-slate-800 text-purple-600 focus:ring-purple-500"
+                    />
+                    开启流式推理输出 (Streaming)
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCreating(false);
+                    setEditingProfile(null);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-purple-950/40"
+                >
+                  {editingProfile ? '保存修改' : '立即创建'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
