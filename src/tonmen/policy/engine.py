@@ -5,6 +5,8 @@ from enum import Enum
 
 from tonmen.tools.base import RiskLevel, ToolRequest, ToolSpec
 
+from .scope import TargetScope
+
 
 class Decision(str, Enum):
     ALLOW = "allow"
@@ -23,11 +25,16 @@ class PolicyDecision:
 
 
 class PolicyEngine:
-    """Genesis policy: autonomous low-risk work, approval for validation/intrusive, deny destructive."""
+    """Scope first; then risk policy. Destructive capability remains disabled."""
+
+    def __init__(self, scope: TargetScope | None = None) -> None:
+        self.scope = scope
 
     def evaluate(self, spec: ToolSpec, request: ToolRequest) -> PolicyDecision:
         if request.tool.strip().lower() != spec.name.strip().lower():
             return PolicyDecision(Decision.DENY, "request/tool specification mismatch")
+        if self.scope is not None and request.target is not None and not self.scope.is_allowed(request.target):
+            return PolicyDecision(Decision.DENY, "target is outside the authorized scope")
         if spec.risk >= RiskLevel.DESTRUCTIVE:
             return PolicyDecision(Decision.DENY, "destructive actions are disabled by default")
         if spec.risk >= RiskLevel.VALIDATION:

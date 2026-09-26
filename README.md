@@ -1,50 +1,116 @@
 # 雲頂天宮 | S̶h̶e̶l̶l̶
 
-> 雲上有宮，宮中有門。門非為人而開，乃為意志而啟。
+> **人予其意，宮成其事。**  
+> **宮察其象，鑑明其實；天策既定，萬器乃行。**
 
-**TONMEN** is the autonomous security-agent runtime by **Top-Men AI**.
+**TONMEN** is the governed autonomous security-agent runtime by **Top-Men AI**.
 
-Traditional shells wait for commands. TONMEN receives intent, resolves an authorized plan, selects registered capabilities, enforces scope and policy, and records evidence before execution.
+**v0.4.0 Alpha** now includes project configuration, persistent authorized scope, dependency diagnostics, bounded mission loops, evidence-backed intelligence, explicit human approval boundaries, and a local visual control panel.
 
-> 人定其志，器循其道。自主而有界，言必有據，行必有跡。
+## Install
 
-## Genesis principles
-
-1. **No arbitrary shell API in the new core.** Tools are invoked through typed adapters.
-2. **Policy before execution.** Every action receives an explicit risk and decision.
-3. **Registry as the source of truth.** Agents discover capabilities through the registry.
-4. **Legacy is migration input, not architecture.** Existing HexStrike-derived capabilities may be migrated selectively without inheriting its architecture.
-5. **Evidence-first design.** Every future execution result must be traceable to request, policy decision, adapter, and raw evidence.
-
-## Package map
-
-```text
-src/tonmen/
-├── core/      # 天樞 · runtime and configuration
-├── tools/     # 天工 · typed tool adapters and registry
-├── policy/    # 天律 · risk and authorization decisions
-└── mcp/       # MCP-facing boundary (no direct shell execution)
-```
-
-## Install and run
+Requires Python **3.10+** plus Nmap (`nmap`), ProjectDiscovery HTTPx (`httpx`) and ProjectDiscovery Nuclei (`nuclei`).
 
 ```bash
+git clone https://github.com/Top-Men-AI/TONMEN.git
+cd TONMEN
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip
 python -m pip install -e .
-tonmen
+
+tonmen doctor
+tonmen init
+tonmen scope show
 ```
 
-Expected Genesis banner:
+## Visual Console / 可視控制面板
+
+Launch the real local TONMEN dashboard:
+
+```bash
+tonmen console
+```
+
+It opens **雲頂天宮 Console** on `http://127.0.0.1:8888/`. The panel reads and controls the same governed runtime as the CLI: status, Scope, missions, Chronicle, Intelligence, Reasoner decisions, Evidence Graph, raw Evidence, bounded resume, and the human Approval Gate.
+
+```bash
+tonmen console --port 8899
+tonmen console --no-open
+tonmen --config /path/to/tonmen.toml console
+```
+
+The Console is loopback-only. State-changing browser requests require a per-process CSRF token; approval still uses the existing single-use Tool + Target Grant. See **[Console Guide](docs/CONSOLE.md)**.
+
+## Authorize a target
+
+TONMEN remains **deny-by-default**. Loopback is always authorized; external assets must be explicitly added to the project configuration.
+
+```bash
+tonmen scope add app.example.test
+tonmen scope add 10.20.30.0/24
+tonmen scope add '*.example.test'
+tonmen scope show
+```
+
+Only add targets you own or are explicitly authorized to assess. The same rules can be managed from **天域 Scope** in the visual Console.
+
+## Plan, then run
+
+```bash
+tonmen plan app.example.test
+tonmen loop app.example.test
+```
+
+Current governed path:
 
 ```text
-雲頂天宮 | TONMEN Genesis
-天樞 Core        ● Online
-天律 Guard       ● Online
-天工 Registry    ● Ready
-天機 Agent       ○ Not loaded
-
-人予其意，宮成其事。
+Intent
+  ↓
+天機 Planner
+  ↓
+天域 Scope + 天律 Policy
+  ↓
+天衡 Mission Loop
+  ↓
+天命 Coordinator → 天工 Executor
+  ↓
+Evidence → 天鑑 Intelligence → 天策 Reasoner
+  ↓
+CONTINUE / SKIP / COMPLETE / REQUEST_APPROVAL / REVIEW / STOP
 ```
 
-## Roadmap
+The built-in tool path is currently Nmap → HTTPx → Nuclei. Discovery may run inside authorized scope. Nuclei validation remains approval-gated when evidence supports it.
 
-Genesis establishes the independent TONMEN core. The next milestone will introduce the first typed tool adapters, job runtime, evidence model, and guarded MCP execution flow.
+```bash
+tonmen missions
+tonmen show <run-id>
+tonmen reason <run-id>
+tonmen resume <run-id> --approve
+```
+
+Approval tokens are never persisted.
+
+## Project config
+
+Create `tonmen.toml` with `tonmen init`, or start from [`tonmen.toml.example`](tonmen.toml.example). See **[Getting Started](docs/GETTING_STARTED.md)** for the complete first-run flow.
+
+## Current invariants
+
+- No arbitrary shell API.
+- Structured adapter argv only; Executor enforces `shell=False`.
+- External targets deny-by-default.
+- Unknown tool parameters are rejected.
+- Validation/intrusive actions require a bound, single-use grant.
+- Planner, Coordinator, Intelligence, Reasoner and Mission Loop cannot self-approve.
+- Mission Loop cannot add tools or expand target scope.
+- Approval tokens are never persisted.
+- Intelligence facts must point to Evidence IDs.
+- Unparseable output remains evidence; it does not become a guessed fact.
+- Every loop session has bounded iterations, executions, duration and repeat tolerance.
+- Reasoning and loop-governance provenance persist through Chronicle.
+- Visual Console is loopback-only and cannot bypass Scope, Policy or Approval.
+
+> **所知必有據，所斷必有源；萬器可行，必先有衡。**
+
+TONMEN is intended for authorized security testing and defensive research.

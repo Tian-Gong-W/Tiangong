@@ -1,0 +1,219 @@
+:root{--tonmen-header-h:94px}
+
+/* Viewport resilience: controls must remain reachable on laptop/short screens. */
+html,body{min-height:100%}
+.console-frame{min-height:100vh;min-height:100dvh}
+.console-workspace{min-height:0}
+.main-stage{min-width:0}
+.content{min-width:0}
+
+/* Native sidebar navigation: module entries are real links, not scroll buttons. */
+.nav a.nav-item{text-decoration:none;color:inherit}
+.nav a.nav-item:visited{color:inherit}
+.nav a.nav-item:focus-visible{outline:1px solid var(--cyan);outline-offset:2px}
+
+/* Central command deck: all common actions are available from the overview. */
+.command-deck{
+  display:grid;
+  grid-template-columns:minmax(190px,.75fr) minmax(480px,2fr) minmax(260px,1fr);
+  align-items:center;
+  gap:12px;
+  margin:0 0 10px;
+  padding:10px 12px;
+  border:1px solid #244459;
+  border-radius:10px;
+  background:linear-gradient(180deg,rgba(12,29,43,.98),rgba(7,21,32,.98));
+  box-shadow:0 12px 32px rgba(0,0,0,.18),inset 0 1px rgba(255,255,255,.02);
+}
+.deck-title{display:flex;align-items:center;gap:10px;min-width:0}
+.deck-title .deck-emblem{width:36px;height:36px;border:1px solid var(--cyan);border-radius:9px;display:grid;place-items:center;color:var(--cyan);font-size:17px;background:#071823;box-shadow:0 0 18px rgba(35,214,223,.08)}
+.deck-title strong{display:block;font-size:13px;letter-spacing:.06em}
+.deck-title small{display:block;margin-top:2px;color:#688799;font-size:9px;letter-spacing:.08em;text-transform:uppercase}
+.deck-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;min-width:0}
+.deck-actions button{padding:7px 10px;min-height:34px;white-space:nowrap}
+.deck-actions .deck-approve:not(:disabled){background:linear-gradient(180deg,#c43a48,#982533);border-color:#e54d5a}
+.deck-actions .deck-resume:not(:disabled){border-color:#167c8b;color:#84f4f6}
+.deck-actions .deck-evidence:not(:disabled){border-color:#655090;color:#ceb3ff}
+.deck-scope{display:flex;align-items:center;gap:6px;min-width:0}
+.deck-scope input{min-width:0;flex:1 1 180px;color:var(--text);background:#061520;border:1px solid #26485d;border-radius:7px;padding:8px 9px;outline:none}
+.deck-scope input:focus{border-color:#2d899d;box-shadow:0 0 0 2px rgba(35,214,223,.08)}
+.deck-scope button{flex:0 0 auto;padding:7px 9px}
+.deck-current{grid-column:1/-1;display:flex;align-items:center;gap:8px;padding-top:7px;border-top:1px solid rgba(40,69,88,.6);font-size:10px;color:#6f899a;min-width:0}
+.deck-current strong{color:#bed2dd;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.deck-current .deck-hint{margin-left:auto;color:#566f80}
+
+/* The left rail used to clip Approval / Settings on ~768px-high screens. */
+.sidebar{
+  min-height:0;
+  max-height:calc(100vh - var(--tonmen-header-h));
+  max-height:calc(100dvh - var(--tonmen-header-h));
+  overflow-y:auto;
+  overflow-x:hidden;
+  overscroll-behavior:contain;
+  scrollbar-width:thin;
+  scrollbar-color:#31546a transparent;
+}
+.sidebar::-webkit-scrollbar{width:6px}
+.sidebar::-webkit-scrollbar-track{background:transparent}
+.sidebar::-webkit-scrollbar-thumb{background:#31546a;border-radius:999px}
+.sidebar .nav,.sidebar-art,.sidebar-poem{flex:0 0 auto}
+
+/* Action groups should wrap instead of disappearing outside narrow cards. */
+.panel-head,.mission-selector,.inline-form,.top-actions,.header-actions{min-width:0}
+.mission-selector{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px}
+.mission-selector select{min-width:160px;max-width:min(320px,48vw)}
+.inline-form{flex-wrap:wrap}
+.inline-form input{min-width:180px;flex:1 1 220px}
+.inline-form button{flex:0 0 auto}
+button{min-height:32px}
+
+/* Approval and modal actions must remain visible without guessing where to scroll. */
+.approval-body{overflow:visible}
+.approval-body button{min-height:38px}
+dialog{max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);overflow:auto}
+.dialog-card{max-height:calc(100vh - 48px);max-height:calc(100dvh - 48px);overflow:auto}
+.dialog-actions{position:sticky;bottom:0;z-index:2;padding-top:10px;padding-bottom:4px;background:linear-gradient(180deg,rgba(8,22,34,0),#081622 28%)}
+
+/* Compact vertical rhythm for typical 1366x768 / 1440x810 laptops. */
+@media (max-height:850px){
+  :root{--tonmen-header-h:76px}
+  .global-header{min-height:76px;height:76px;padding-top:8px;padding-bottom:8px}
+  .header-slogan span{font-size:20px}
+  .header-slogan small{font-size:8px}
+  .sidebar{padding-top:8px;padding-bottom:8px}
+  .nav{gap:1px}
+  .nav-item{padding-top:7px;padding-bottom:7px;min-height:38px}
+  .sidebar-art{display:none}
+  .sidebar-poem{display:none}
+  .content{padding-top:10px}
+  .command-deck{padding-top:8px;padding-bottom:8px}
+  .deck-current{display:none}
+  .status-card{min-height:82px;padding-top:11px;padding-bottom:11px}
+  .panel-head{min-height:48px;padding-top:8px;padding-bottom:8px}
+  .mission-layout{padding-top:10px;padding-bottom:10px}
+  .approval-body{padding-top:14px;padding-bottom:14px}
+}
+
+@media (max-height:700px){
+  :root{--tonmen-header-h:68px}
+  .global-header{min-height:68px;height:68px}
+  .brand-tagline,.header-slogan small{display:none}
+  .nav-item{padding-top:5px;padding-bottom:5px;min-height:34px}
+  .nav-item small{display:none}
+  .status-grid{gap:7px}
+  .status-card{min-height:70px;padding:9px}
+}
+
+/* Narrow screens: preserve buttons by stacking controls before hiding anything. */
+@media (max-width:1380px){
+  .command-deck{grid-template-columns:minmax(170px,.65fr) minmax(420px,1.6fr)}
+  .deck-scope{grid-column:1/-1}
+}
+@media (max-width:1180px){
+  .command-deck{grid-template-columns:1fr}
+  .deck-scope{grid-column:auto}
+  .deck-current{grid-column:auto}
+  .mission-selector{width:100%;justify-content:flex-start}
+  .mission-selector select{flex:1 1 220px;max-width:none}
+  .panel-head.compact-head{flex-wrap:wrap}
+}
+@media (max-width:760px){
+  .deck-actions button{flex:1 1 130px}
+  .deck-scope{flex-wrap:wrap}
+  .deck-scope input{flex-basis:100%}
+  .deck-scope button{width:100%}
+}
+
+/* --------------------------------------------------------------------------
+   Lean Overview / utility-first control room
+
+   The Overview answers only five questions:
+   1) Is the runtime healthy? 2) What is running? 3) What needs attention?
+   4) What can I do next? 5) What happened recently?
+   Detailed Intelligence, Reasoning, Loop, Scope and Evidence views belong to
+   their routed module workspaces and are intentionally not duplicated here.
+   -------------------------------------------------------------------------- */
+
+/* Remove non-functional chrome and decorative furniture. */
+.brand-tagline,.header-icon,.operator-card,.sidebar-art,.sidebar-poem{display:none!important}
+.global-header{background:#06111b;border-bottom-color:#1b3343;box-shadow:none}
+.header-slogan span{font-size:19px;letter-spacing:.16em;color:#d6c391}
+.header-slogan small{opacity:.55}
+.header-actions{gap:0}
+.health{box-shadow:none;background:#081722}
+
+/* Flatten the visual language: borders carry structure, not glow and gradients. */
+#overview .panel,#overview .command-deck,#overview .status-card{
+  box-shadow:none!important;
+  background:#091925!important;
+  border-color:#20394b!important;
+}
+#overview .status-card:after{display:none}
+#overview .status-dot{box-shadow:none}
+#overview .status-icon{box-shadow:none!important;background:#081620!important}
+
+/* System state becomes a compact strip instead of six presentation cards. */
+#overview .status-grid{gap:6px;margin-bottom:8px}
+#overview .status-card{min-height:58px;padding:9px 11px;border-radius:7px}
+#overview .status-icon{width:30px;height:30px;margin-right:8px;font-size:12px}
+#overview .status-card small{font-size:10px}
+#overview .status-card strong{font-size:12px;margin-top:2px}
+#overview .status-dot{width:6px;height:6px;right:9px;bottom:9px}
+
+/* Command Deck is a compact action bar, not a hero panel. */
+#overview .command-deck{
+  grid-template-columns:auto minmax(0,1fr) minmax(260px,.8fr);
+  gap:8px;
+  padding:8px 10px;
+  border-radius:7px;
+  margin-bottom:8px;
+}
+#overview .deck-title .deck-emblem{width:30px;height:30px;border-radius:6px;box-shadow:none}
+#overview .deck-title small{display:none}
+#overview .deck-actions{gap:5px}
+#overview .deck-actions button{min-height:30px;padding:5px 8px;font-size:11px}
+#overview .deck-current{display:none}
+#overview .deck-scope input{padding:6px 8px}
+#overview .deck-scope button{min-height:30px;padding:5px 8px;font-size:11px}
+
+/* Overview contains only the current mission. Full Scope lives at /scope. */
+#overview .top-grid{grid-template-columns:1fr;margin-bottom:8px}
+#overview .scope-panel{display:none!important}
+#overview .mission-panel{border-radius:7px}
+#overview .mission-layout{grid-template-columns:1fr;padding:10px 12px}
+#overview .loop-visual{display:none!important}
+#overview .mission-meta{padding:8px 12px}
+#overview .steps{gap:5px}
+#overview .step{padding:7px 9px;border-radius:6px;background:#081722}
+#overview .step-index{width:28px;height:28px;font-size:11px}
+#overview .step small{font-size:9px}
+
+/* Detailed intelligence/reasoning and the decorative graph are module concerns. */
+#overview #intel-panel,#overview #reason-panel,#overview .graph-panel{display:none!important}
+#overview .middle-grid{grid-template-columns:1fr;margin-bottom:8px}
+#overview .bottom-grid{grid-template-columns:1fr;margin-bottom:0}
+
+/* An idle approval card is noise. Show it only when there is something to decide. */
+#overview #approval-panel:has(.approval-body.idle){display:none!important}
+#overview .middle-grid:not(:has(#approval-panel .approval-body:not(.idle))){display:none!important}
+#overview #approval-panel{border-color:#553039!important}
+#overview #approval-panel .panel-head{min-height:40px}
+#overview #approval-panel .approval-body{min-height:0;padding:10px 14px;display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;text-align:left}
+#overview #approval-panel .approval-icon{margin:0;width:32px;height:32px}
+#overview #approval-panel .approval-body h3{margin:0;font-size:13px}
+#overview #approval-panel .approval-body p{margin:0;max-width:none;font-size:10px}
+#overview #approval-panel .approval-body button{width:auto;margin:0;min-height:32px;padding:6px 10px}
+#overview #approval-panel .approval-foot{display:none}
+
+/* Chronicle is the only persistent summary below the mission: recent activity. */
+#overview #chronicle-panel{border-radius:7px}
+#overview #chronicle-panel .panel-head{min-height:40px}
+#overview .timeline{max-height:180px;padding:8px 12px}
+#overview .timeline-row{padding:4px 0}
+
+@media (max-width:1180px){
+  #overview .command-deck{grid-template-columns:1fr}
+  #overview .deck-scope{grid-column:auto}
+  #overview #approval-panel .approval-body{grid-template-columns:auto 1fr}
+  #overview #approval-panel .approval-body button{width:100%}
+}

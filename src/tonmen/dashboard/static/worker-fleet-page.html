@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="tonmen-csrf" content="__TONMEN_CSRF__">
+  <title>执行节点 | 云顶天宫</title>
+  <link rel="stylesheet" href="/assets/app.css?v=worker-fleet-2">
+  <link rel="stylesheet" href="/assets/viewport.css?v=worker-fleet-2">
+  <link rel="stylesheet" href="/assets/worker-fleet-page.css?v=worker-fleet-2">
+</head>
+<body>
+  <!-- Worker Fleet · APPROVAL TOKEN stays on the control plane -->
+  <div class="console-frame worker-console">
+    <header class="global-header">
+      <div class="header-brand">
+        <div class="brand-emblem" aria-hidden="true"><span>役</span></div>
+        <div class="brand-name"><strong>雲頂天宮</strong><i></i><b>云顶天宫</b></div>
+        <div class="brand-tagline">执行节点</div>
+      </div>
+      <div class="header-slogan"><span>查看节点状态和任务负载</span></div>
+      <div class="fleet-refresh"><span id="fleet-updated">—</span><button class="ghost" id="fleet-refresh" type="button">↻ 刷新</button></div>
+    </header>
+
+    <div class="console-workspace">
+      <aside class="sidebar">
+        <nav class="nav" aria-label="TONMEN navigation">
+          <a class="nav-item" href="/"><span>◉</span><b>总览</b></a>
+          <a class="nav-item" href="/missions"><span>◎</span><b>任务</b></a>
+          <a class="nav-item" href="/scope"><span>◌</span><b>授权范围 <small>天域</small></b></a>
+          <a class="nav-item" href="/guard"><span>◇</span><b>安全策略 <small>天律</small></b></a>
+          <a class="nav-item" href="/tools"><span>⌁</span><b>工具 <small>天工</small></b></a>
+          <a class="nav-item active" href="/workers"><span>♜</span><b>执行节点 <small>天役</small></b></a>
+          <a class="nav-item" href="/intelligence"><span>◉</span><b>情报 <small>天鑑</small></b></a>
+          <a class="nav-item" href="/reasoner"><span>✺</span><b>AI 推理 <small>天策</small></b></a>
+          <a class="nav-item" href="/lead"><span>♜</span><b>AI 配置 <small>主導</small></b></a>
+          <a class="nav-item" href="/loop"><span>∞</span><b>任务流程 <small>天衡</small></b></a>
+          <a class="nav-item" href="/chronicle"><span>▤</span><b>任务记录 <small>天冊</small></b></a>
+          <a class="nav-item" href="/approval"><span>♙</span><b>人工确认</b></a>
+          <a class="nav-item" href="/settings"><span>⚙</span><b>设置</b></a>
+        </nav>
+        <div class="sidebar-art" aria-hidden="true"><div class="temple-roof">⌁  亠  ⌁</div><div class="temple-lines">╱╲  ╱╲<br>⌒⌒⌒⌒⌒</div></div>
+      </aside>
+
+      <main class="main-stage worker-stage">
+        <section class="worker-page">
+          <div class="worker-page-head"><div><h1>执行节点</h1><p>查看节点状态、负载和任务分配。</p></div></div>
+          <div id="fleet-alert" class="fleet-alert hidden"></div>
+          <section id="fleet-summary" class="fleet-summary"></section>
+
+          <div class="fleet-layout">
+            <section class="fleet-panel fleet-panel-wide">
+              <div class="fleet-panel-head"><div><h2>节点</h2><small>状态与历史</small></div><span id="fleet-mode" class="module-badge blue">读取中</span></div>
+              <div id="worker-grid" class="worker-grid"><div class="fleet-empty">正在读取…</div></div>
+            </section>
+
+            <section class="fleet-panel">
+              <div class="fleet-panel-head"><div><h2>安全边界</h2></div></div>
+              <div class="boundary-flow">
+                <div><b>1</b><strong>主控授权</strong><span>先检查范围、风险和人工确认</span></div>
+                <div><b>2</b><strong>节点执行</strong><span>节点再次检查后执行工具</span></div>
+                <div><b>3</b><strong>回传证据</strong><span>结果和执行来源回到主控</span></div>
+              </div>
+            </section>
+
+            <section class="fleet-panel">
+              <div class="fleet-panel-head"><div><h2>调度</h2><small>队列与分配</small></div></div>
+              <div id="routing-state" class="routing-state"></div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/assets/worker-fleet-page.js?v=worker-fleet-2"></script>
+</body>
+</html>

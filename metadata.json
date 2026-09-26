@@ -1,0 +1,8 @@
+{
+  "name": "云顶天宫控制台",
+  "description": "受治理的自主安全运行时控制台",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

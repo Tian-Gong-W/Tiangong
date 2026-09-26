@@ -1,0 +1,70 @@
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+from enum import Enum
+
+from tonmen.missions import MissionRun
+from tonmen.reasoning import ReasoningDecision
+
+
+def _resolved_ip_coverage_enabled() -> bool:
+    return (os.getenv("TONMEN_RESOLVED_IP_COVERAGE") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _default_max_iterations() -> int:
+    return 16 if _resolved_ip_coverage_enabled() else 8
+
+
+def _default_max_executions() -> int:
+    return 16 if _resolved_ip_coverage_enabled() else 3
+
+
+class LoopStopReason(str, Enum):
+    COMPLETE = "complete"
+    CONVERGED = "converged"
+    NO_EXECUTABLE_ACTION = "no_executable_action"
+    APPROVAL_REQUIRED = "approval_required"
+    REVIEW_REQUIRED = "review_required"
+    TERMINAL = "terminal"
+    EXECUTION_BUDGET = "execution_budget"
+    MAX_ITERATIONS = "max_iterations"
+    REPEATED_DECISION = "repeated_decision"
+    TIME_BUDGET = "time_budget"
+
+
+@dataclass(frozen=True, slots=True)
+class MissionLoopPolicy:
+    max_iterations: int = field(default_factory=_default_max_iterations)
+    max_executions: int = field(default_factory=_default_max_executions)
+    max_repeat_decisions: int = 2
+    max_duration_seconds: int = 1200
+    # Council review is opt-in. These are hard ceilings, not a prescribed cadence.
+    assessment_rounds: int = 0
+    subagents_per_round: int = 0
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.max_iterations <= 64:
+            raise ValueError("max_iterations must be between 1 and 64")
+        if not 1 <= self.max_executions <= 16:
+            raise ValueError("max_executions must be between 1 and 16")
+        if not 1 <= self.max_repeat_decisions <= 8:
+            raise ValueError("max_repeat_decisions must be between 1 and 8")
+        if not 1 <= self.max_duration_seconds <= 10800:
+            raise ValueError("max_duration_seconds must be between 1 and 10800")
+        if not 0 <= self.assessment_rounds <= 10:
+            raise ValueError("assessment_rounds must be between 0 and 10")
+        if not 0 <= self.subagents_per_round <= 5:
+            raise ValueError("subagents_per_round must be between 0 and 5")
+        if (self.assessment_rounds == 0) != (self.subagents_per_round == 0):
+            raise ValueError("assessment_rounds and subagents_per_round must both be zero or both be enabled")
+
+
+@dataclass(frozen=True, slots=True)
+class MissionLoopResult:
+    run: MissionRun
+    stop_reason: LoopStopReason
+    iterations: int
+    executions: int
+    session_id: str
+    last_decision: ReasoningDecision | None = None

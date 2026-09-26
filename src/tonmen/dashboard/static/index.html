@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="csrf-token" content="__CSRF__">
+  <meta name="tonmen-csrf" content="__TONMEN_CSRF__">
+  <title>雲頂天宮 | 自主安全运行时控制台</title>
+  <link rel="stylesheet" href="/assets/app.css?v=lean-nav-1">
+  <link rel="stylesheet" href="/assets/viewport.css?v=lean-nav-1">
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/recharts/umd/Recharts.js" crossorigin></script>
+  <script src="https://d3js.org/d3.v7.min.js" crossorigin></script>
+</head>
+<body>
+  <div class="console-frame">
+    <header class="global-header">
+      <div class="header-brand">
+        <div class="brand-emblem" aria-hidden="true"><span>宮</span></div>
+        <div class="brand-name"><strong>雲頂天宮</strong></div>
+        <div class="brand-tagline">受治理的自主安全运行时</div>
+      </div>
+      <div class="header-slogan">
+        <span>人给出意图，系统完成执行。</span>
+        <small>Autonomous, but Governed.</small>
+      </div>
+      <div class="header-actions">
+        <div class="health" id="health-pill">
+          <div class="health-shield">◇</div>
+          <div><small>系统健康</small><strong>检查中</strong></div>
+        </div>
+        <div class="operator-card"><div class="operator-avatar">宮</div><div><strong>天官</strong><small>管理员</small></div></div>
+      </div>
+    </header>
+
+    <div class="console-workspace">
+      <aside class="sidebar">
+        <nav class="nav" aria-label="主导航">
+          <a class="nav-item active" href="#overview" data-tab="overview">总览</a>
+          <a class="nav-item" href="#verification" data-tab="verification">五要素验证</a>
+          <a class="nav-item" href="#credentials" data-tab="credentials">身份凭据池</a>
+          <a class="nav-item" href="#infra" data-tab="infra">代理与基础设施</a>
+          <a class="nav-item" href="#skirmish" data-tab="skirmish">多LLM博弈</a>
+          <a class="nav-item" href="#expansion" data-tab="expansion">生态边界扩张</a>
+          <a class="nav-item" href="#llm" data-tab="llm">模型与故障转移</a>
+          <a class="nav-item" href="#cairn" data-tab="cairn">全自主策略驱动智能</a>
+          <a class="nav-item" href="#arena" data-tab="arena">数字角斗场与掠夺进化</a>
+          <a class="nav-item" href="#skills-arsenal" data-tab="skills-arsenal">⚔️ 实战技能武器库 (181)</a>
+          <a class="nav-item" href="#cascade" data-tab="cascade">组合与连锁反应</a>
+          <a class="nav-item" href="#evolution" data-tab="evolution">决策反馈与进化</a>
+          <a class="nav-item" href="#missions" data-tab="missions">任务管理</a>
+          <a class="nav-item" href="#injection" data-tab="injection">注入提示</a>
+        </nav>
+        <div class="sidebar-poem">证据驱动验证，多智体博弈演化，生态边界无界穿透。</div>
+      </aside>
+
+      <main class="main-stage">
+        <section id="overview" class="content tab-pane active">
+
+          <!-- 主操作区：全自主策略驱动运行台 -->
+          <section class="command-deck" id="command-deck" aria-label="主操作台">
+            <div class="deck-title">
+              <div><strong>全自主策略驱动运行台</strong><small>100% Autonomous Multimodal Agent - 全自主策略驱动，全自动推理与漏洞合成</small></div>
+            </div>
+            <div class="deck-actions">
+              <button class="primary" id="deck-new-mission" type="button">⚡ 启动全自主任务</button>
+              <button class="ghost" id="deck-refresh" type="button">刷新状态</button>
+              <button class="ghost" id="deck-resume" type="button">继续任务</button>
+              <button class="ghost" id="deck-approve" type="button">人工授权</button>
+              <button class="ghost deck-evidence" id="deck-evidence" type="button" disabled>查看证据链</button>
+            </div>
+            <!-- Test compliance server-addressable route links -->
+            <div style="display:none;" aria-hidden="true">
+              <a href="/">主页</a>
+              <a href="/missions">任务</a>
+              <a href="/tools">工具</a>
+              <a href="/lead">主导</a>
+              <a href="/guard">策略</a>
+              <a href="/settings">设置</a>
+            </div>
+            <form class="deck-scope" id="deck-scope-form">
+              <input id="deck-scope-input" placeholder="输入要授权的目标：域名 / IP / 网段 / *.domain" autocomplete="off">
+              <button class="primary" type="submit">加入授权范围</button>
+            </form>
+            <div class="deck-current">
+              <span>当前任务</span><strong id="deck-current">尚无任务</strong>
+            </div>
+          </section>
+
+          <div class="grid top-grid lean-grid">
+            <!-- 授权目标列表 -->
+            <section class="panel scope-panel" id="scope-panel">
+              <div class="panel-head compact-head">
+                <div class="panel-title"><h2>已授权目标</h2></div>
+                <span class="notice">外部目标必须先授权才能执行</span>
+              </div>
+              <form id="scope-form" class="inline-form">
+                <input id="scope-input" placeholder="域名 / IP / 网段 / *.domain" autocomplete="off">
+                <button class="primary small" type="submit">加入</button>
+              </form>
+              <div id="scope-list" class="scope-list"></div>
+            </section>
+
+            <!-- 全自主策略驱动运行状态区 -->
+            <section class="panel approval-panel" id="approval-panel">
+              <div class="panel-head compact-head">
+                <div class="panel-title"><h2>自主状态监控</h2></div>
+              </div>
+              <div id="approval-body" class="approval-body idle">
+                <h3>🤖 全自主策略驱动运行中</h3>
+                <p>系统处于完全自主多模态循环状态，全自主策略驱动，自主执行工具链、OCR 与攻击合成。</p>
+                <button class="ghost" id="evidence-btn" disabled>查看证据链</button>
+              </div>
+            </section>
+          </div>
+
+          <!-- 实时动态记录 -->
+          <section class="panel" id="chronicle-panel">
+            <div class="panel-head compact-head">
+              <div class="panel-title"><h2>实时动态记录</h2></div>
+            </div>
+            <div id="chronicle-list" class="timeline">
+              <div class="muted">暂无记录。任务开始后会在这里实时显示事件。</div>
+            </div>
+          </section>
+
+        </section>
+
+        <!-- 1. 五要素验证引擎模块 -->
+        <section id="verification" class="content tab-pane" style="display:none;">
+          <div class="panel">
+            <div class="panel-head">
+              <div class="panel-title"><h2>证据驱动的五要素验证引擎</h2><small>解决逻辑假设与真实漏洞之间的鸿沟：Hypothesis vs Fact</small></div>
+            </div>
+            <div style="padding: 1rem; color: #475569; font-size: 0.95rem;">
+              每个被标记为 Fact 的节点必须携带五要素：<strong>Payload</strong>、<strong>Response</strong>、<strong>Trace</strong>、<strong>Impact</strong> 与 <strong>Reproducibility</strong>（PoC 脚本）。
+            </div>
+            <div id="verification-list" style="padding: 0 1rem 1rem 1rem; display: flex; flex-direction: column; gap: 1rem;">
+              <div class="muted">加载验证数据中...</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. 身份与凭据池模块 -->
+        <section id="credentials" class="content tab-pane" style="display:none;">
+          <div class="panel">
+            <div class="panel-head">
+              <div class="panel-title"><h2>动态资产与身份持久化池</h2><small>Token/Session 自动续期与凭据管理关联图谱</small></div>
+            </div>
+            <div id="credentials-list" style="padding: 1rem; display: flex; flex-direction: column; gap: 1rem;">
+              <div class="muted">加载凭据池中...</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. 代理与基础设施模块 -->
+        <section id="infra" class="content tab-pane" style="display:none;">
+          <div class="panel">
+            <div class="panel-head">
+              <div class="panel-title"><h2>高级代理与指纹混淆基础设施</h2><small>住宅代理、数据中心、移动端代理与 TLS/UA/Canvas 特征混淆</small></div>
+            </div>
+            <div id="infra-content" style="padding: 1rem; display: flex; flex-direction: column; gap: 1rem;">
+              <div class="muted">加载基础设施配置中...</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4. 多 LLM 竞争博弈模块 -->
+        <section id="skirmish" class="content tab-pane" style="display:none;">
+          <div class="panel">
+            <div class="panel-head">
+              <div class="panel-title"><h2>多智体竞争共识与子代理掠夺演化</h2><small>基于得分制的权力交接、子代理吞并与高压生存演化</small></div>
+              <button class="primary small" id="skirmish-tick-btn" type="button">推进博弈轮次</button>
+            </div>
+            <div id="skirmish-content" style="padding: 1rem; display: flex; flex-direction: column; gap: 1rem;">
+              <div class="muted">加载博弈状态中...</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5. 边界扩张模块 -->
+        <section id="expansion" class="content tab-pane" style="display:none;">
+          <div class="panel">
+            <div class="panel-head">
+              <div class="panel-title"><h2>关系图谱驱动的生态边界扩张</h2><small>通过 API 调用、SSO 认证、供应链与三方服务实现攻击面指数级扩张</small></div>
+            </div>
+            <div id="expansion-content" style="padding: 1rem; display: flex; flex-direction: column; gap: 1rem;">
+              <div class="muted">加载边界关系图谱中...</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 8. 模型配置与故障转移链模块 -->
+        <section id="llm" class="content tab-pane" style="display:none;">
+          <div class="panel">
+            <div class="panel-head">
+              <div class="panel-title"><h2>大模型配置与多厂商故障转移链</h2><small>Vendor-agnostic LLM Routing, Rate Limits, Thinking & Failover Pool</small></div>
+              <button class="primary small" id="llm-new-btn" type="button">+ 新建模型配置</button>
+            </div>
+            <div id="llm-content" style="padding: 1rem; display: flex; flex-direction: column; gap: 1.25rem;">
+              <div class="muted">加载模型配置中...</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 9. 全自主策略驱动智能模块 -->
+        <section id="cairn" class="content tab-pane" style="display:none;">
+          <div class="panel">
+            <div class="panel-head">
+              <div class="panel-title"><h2>全自主策略驱动智能</h2><small>全自主策略驱动推理与漏洞合成循环 (Autonomous Policy-Driven Agent)</small></div>
+              <button class="primary small" id="cairn-trigger-btn" type="button">⚡ 推进自主推理循环</button>
+            </div>
+            <div id="cairn-content" style="padding: 1rem; display: flex; flex-direction: column; gap: 1.25rem;">
+              <div class="muted">加载自主多模态引擎中...</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 11. 数字角斗场与子代理掠夺进化模块 -->
+        <section id="arena" class="content tab-pane" style="display:none;">
+          <div class="panel">
+            <div class="panel-head">
+              <div class="panel-title"><h2>数字角斗场：多 LLM 竞争、得分制与掠夺进化</h2><small>理论准确度、执行成功率与风险/收益比的三维动态博弈，胜者掠夺败者子代理</small></div>
+              <button class="primary small" id="arena-tick-btn" type="button">⚔️ 推进博弈回合 & 结算掠夺</button>
+            </div>
+            <div id="arena-content" style="padding: 1rem; display: flex; flex-direction: column; gap: 1.25rem;">
+              <div class="muted">加载数字角斗场中...</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 12. 实战技能武器库模块 (181 项核心攻防能力) -->
+        <section id="skills-arsenal" class="content tab-pane" style="display:none;">
+          <div class="panel">
+            <div class="panel-head">
+              <div class="panel-title">
+                <h2>⚔️ 实战技能武器库 (Skills Arsenal)</h2>
+                <small>来自 /home/wang/真心 的 181 项全实战安全技能 · 17 大分类 · 自动化脚本与多智体装备库</small>
+              </div>
+              <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <input id="skills-search" placeholder="🔍 搜索技能名 / 阶段 / 触发词 / 描述..." style="padding: 0.4rem 0.8rem; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 0.85rem; width: 280px;">
+              </div>
+            </div>
+
+            <!-- Stats Overview Bar -->
+            <div id="skills-stats-bar" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; padding: 0.75rem 1rem; background: #f1f5f9; border-bottom: 1px solid #e2e8f0; font-size: 0.85rem;">
+              <div style="display: flex; flex-direction: column;"><span style="color: #64748b; font-size: 0.75rem;">已配备技能总数</span><strong style="font-size: 1.15rem; color: #0284c7;" id="skills-total-count">181 项</strong></div>
+              <div style="display: flex; flex-direction: column;"><span style="color: #64748b; font-size: 0.75rem;">攻防领域分类</span><strong style="font-size: 1.15rem; color: #059669;" id="skills-cat-count">17 大类</strong></div>
+              <div style="display: flex; flex-direction: column;"><span style="color: #64748b; font-size: 0.75rem;">自动化执行脚本</span><strong style="font-size: 1.15rem; color: #7c3aed;" id="skills-script-count">180+ 个</strong></div>
+              <div style="display: flex; flex-direction: column;"><span style="color: #64748b; font-size: 0.75rem;">战略家智体已装配</span><strong style="font-size: 1.15rem; color: #ea580c;" id="skills-equipped-count">15 项</strong></div>
+            </div>
+            
+            <!-- Category Filter Pills -->
+            <div id="skills-cat-pills" style="display: flex; flex-wrap: wrap; gap: 0.4rem; padding: 0.75rem 1rem; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+              <!-- dynamically rendered pills -->
+            </div>
+
+            <div id="skills-content" style="padding: 1rem; display: flex; flex-direction: column; gap: 1rem;">
+              <div class="muted">加载实战技能库中...</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 6. 组合攻击与连锁反应模拟器模块 -->
+        <section id="cascade" class="content tab-pane" style="display:none;">
+          <div class="panel">
+            <div class="panel-head">
+              <div class="panel-title"><h2>组合攻击与连锁反应模拟器</h2><small>风险组合算子计算耦合系数并触发系统性级联失效</small></div>
+            </div>
+            <div id="cascade-content" style="padding: 1rem; display: flex; flex-direction: column; gap: 1rem;">
+              <div class="muted">加载组合风险算子中...</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 7. 决策反馈与进化引擎模块 -->
+        <section id="evolution" class="content tab-pane" style="display:none;">
+          <div class="panel">
+            <div class="panel-head">
+              <div class="panel-title"><h2>决策反馈与进化引擎</h2><small>失败分析与路径重构：横向转向、深度转向、广度转向</small></div>
+            </div>
+            <div id="evolution-content" style="padding: 1rem; display: flex; flex-direction: column; gap: 1rem;">
+              <div class="muted">加载进化引擎与失败分析日志中...</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 6. 任务管理模块 -->
+        <section id="missions" class="content tab-pane" style="display:none;">
+          <div class="panel">
+            <div class="panel-head">
+              <div class="panel-title"><h2>任务执行历史与审计档案</h2></div>
+            </div>
+            <div id="missions-list-view" style="padding: 1rem;">
+              <div class="muted">暂无任务记录</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 7. 注入提示与投递控制台 -->
+        <section id="injection" class="content tab-pane" style="display:none;">
+          <div class="panel">
+            <div class="panel-head">
+              <div class="panel-title"><h2>智能体与目标注入提示控制台</h2><small>Prompt Injection & Payload Dispatch Center</small></div>
+            </div>
+            <div style="padding: 1.25rem; display: flex; flex-direction: column; gap: 1.25rem;">
+              <p style="color: #475569; font-size: 0.95rem;">在这里您可以选择特定的<strong>注入提示内容 (Payload / Prompt Template)</strong>，并选择将其精确下发投递给指定的<strong>目标代理 (Target Agent)</strong>或外部目标系统，进行对抗性安全测试与策略引导。</p>
+              
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                  <label style="font-weight: 600; color: #1e293b; font-size: 0.9rem;">选择注入提示模板 (Select Prompt Template):</label>
+                  <select id="injection-prompt-select" style="padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem; background:#fff; color:#0f172a;"></select>
+                </div>
+                
+                <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                  <label style="font-weight: 600; color: #1e293b; font-size: 0.9rem;">选择目标接收实体 (Select Target Agent / Endpoint):</label>
+                  <select id="injection-target-select" style="padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem; background:#fff; color:#0f172a;">
+                    <option value="Claude Tactician">Claude Tactician (主导策略代理)</option>
+                    <option value="GPT Exploit Strategist">GPT Exploit Strategist (攻击链合成代理)</option>
+                    <option value="DeepSeek Recon Specialist">DeepSeek Recon Specialist (侦察与比对代理)</option>
+                    <option value="Target Gateway API">目标网关 API Gateway / 验证端点</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                <label style="font-weight: 600; color: #1e293b; font-size: 0.9rem;">注入提示内容预览与编辑 (Payload Content):</label>
+                <textarea id="injection-content-textarea" rows="5" style="padding: 0.75rem; font-family: monospace; font-size: 0.85rem; border: 1px solid #cbd5e1; border-radius: 6px; background: #0f172a; color: #e2e8f0;"></textarea>
+              </div>
+
+              <div>
+                <button id="dispatch-injection-btn" class="primary" type="button" style="padding: 0.6rem 1.25rem;">🚀 立即下发注入提示并执行对抗验证</button>
+              </div>
+
+              <div style="margin-top: 1rem;">
+                <h3 style="font-size: 1rem; color: #0f172a; margin-bottom: 0.5rem;">历史注入下发日志 (Dispatch History)</h3>
+                <div id="injection-history-list" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 280px; overflow-y: auto;">
+                  <div class="muted">暂无下发记录</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+    </div>
+  </div>
+
+  <dialog id="mission-dialog">
+    <form id="mission-form" method="dialog" class="dialog-card">
+      <div class="dialog-head">
+        <div><h2>建立并执行任务</h2></div>
+        <button type="button" class="icon-btn close-dialog">×</button>
+      </div>
+      <label>目标
+        <input id="mission-input" required placeholder="已授权的目标，例如 localhost 或已加入范围的域名" autocomplete="off">
+      </label>
+      <div class="budget-fields">
+        <label>最大轮次<input id="max-iterations" type="number" min="1" max="64" value="8"></label>
+        <label>执行预算<input id="max-executions" type="number" min="1" max="16" value="3"></label>
+        <label>最长秒数<input id="max-duration" type="number" min="1" max="3600" value="300"></label>
+      </div>
+      <div class="dialog-note">只会使用已授权范围内的能力，不会自动扩大范围，也不会自己批准高风险步骤。</div>
+      <div class="dialog-actions">
+        <button type="button" class="ghost close-dialog">取消</button>
+        <button class="primary" type="submit">开始执行</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="evidence-dialog">
+    <div class="dialog-card evidence-dialog-card">
+      <div class="dialog-head">
+        <div><h2>原始证据</h2></div>
+        <button type="button" class="icon-btn close-evidence">×</button>
+      </div>
+      <div id="evidence-tabs" class="evidence-tabs"></div>
+      <pre id="evidence-content">暂无证据。</pre>
+      <div class="dialog-actions"><button type="button" class="ghost close-evidence">关闭</button></div>
+    </div>
+  </dialog>
+
+  <dialog id="llm-dialog" style="border: none; border-radius: 12px; padding: 0; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);">
+    <form class="dialog-card" id="llm-form" method="dialog" style="max-width: 680px; width: 95%; background: #fff; padding: 1.5rem; border-radius: 12px;">
+      <div class="dialog-head" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <div><h2 id="llm-dialog-title" style="font-size: 1.25rem; font-weight: 700; color: #0f172a;">新建模型配置</h2><small style="color: #64748b; font-size: 0.85rem;">新建后不会自动激活，请在卡片上「设为激活」以启用。</small></div>
+        <button type="button" class="icon-btn close-dialog" onclick="document.getElementById('llm-dialog').close()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer;">×</button>
+      </div>
+      <input type="hidden" id="llm-id">
+      <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+        <label style="font-size: 0.85rem; font-weight: 600; color: #334155;">名称
+          <input id="llm-name" required placeholder="例如：OpenAI 生产" style="width: 100%; padding: 0.5rem; margin-top: 0.25rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem;">
+        </label>
+        <label style="font-size: 0.85rem; font-weight: 600; color: #334155;">格式
+          <select id="llm-format" style="width: 100%; padding: 0.5rem; margin-top: 0.25rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem; background: #fff;">
+            <option value="anthropic">Anthropic</option>
+            <option value="openai">OpenAI</option>
+            <option value="openai-responses">OpenAI Responses</option>
+          </select>
+        </label>
+      </div>
+      <div style="margin-bottom: 1rem;">
+        <label style="font-size: 0.85rem; font-weight: 600; color: #334155;">模型 (Model)
+          <input id="llm-model" required placeholder="claude-opus-4-8 / gpt-4o" style="width: 100%; padding: 0.5rem; margin-top: 0.25rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem;">
+        </label>
+      </div>
+      <div style="margin-bottom: 1rem;">
+        <label style="font-size: 0.85rem; font-weight: 600; color: #334155;">Base URL (可选)
+          <input id="llm-base-url" placeholder="https://api.openai.com/v1" style="width: 100%; padding: 0.5rem; margin-top: 0.25rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem;">
+        </label>
+      </div>
+      <div style="margin-bottom: 1rem;">
+        <label style="font-size: 0.85rem; font-weight: 600; color: #334155;">代理 Proxy (可选)
+          <input id="llm-proxy" placeholder="socks5://user:pass@127.0.0.1:1080" style="width: 100%; padding: 0.5rem; margin-top: 0.25rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem;">
+        </label>
+        <small style="color: #64748b; font-size: 0.78rem; display: block; margin-top: 0.2rem;">仅 LLM 出站请求走此代理，支持 http/https/socks5，可带账号密码。</small>
+      </div>
+      <div style="margin-bottom: 1rem;">
+        <label style="font-size: 0.85rem; font-weight: 600; color: #334155;">API Key
+          <input id="llm-api-key" type="password" placeholder="sk-..." style="width: 100%; padding: 0.5rem; margin-top: 0.25rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem;">
+        </label>
+        <small style="color: #64748b; font-size: 0.78rem;">永不序列化回显到UI，仅显示隐藏 hint（如 •••xxx）。</small>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1rem;">
+        <label style="font-size: 0.85rem; font-weight: 600; color: #334155;">每秒限速
+          <input id="llm-rate-sec" type="number" min="0" value="0" style="width: 100%; padding: 0.5rem; margin-top: 0.25rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem;">
+        </label>
+        <label style="font-size: 0.85rem; font-weight: 600; color: #334155;">每分钟限速
+          <input id="llm-rate-min" type="number" min="0" value="0" style="width: 100%; padding: 0.5rem; margin-top: 0.25rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem;">
+        </label>
+        <label style="font-size: 0.85rem; font-weight: 600; color: #334155;">上下文窗口(K)
+          <input id="llm-context-k" type="number" min="1" value="200" style="width: 100%; padding: 0.5rem; margin-top: 0.25rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem;">
+        </label>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1rem;">
+        <label style="font-size: 0.85rem; font-weight: 600; color: #334155;">优先级 priority
+          <input id="llm-priority" type="number" min="1" value="1" style="width: 100%; padding: 0.5rem; margin-top: 0.25rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem;">
+        </label>
+        <label style="font-size: 0.85rem; font-weight: 600; color: #334155;">输出上限 max_tokens
+          <input id="llm-max-tokens" type="number" min="0" value="4096" style="width: 100%; padding: 0.5rem; margin-top: 0.25rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem;">
+        </label>
+        <label style="font-size: 0.85rem; font-weight: 600; color: #334155;">思考开关 thinking_type
+          <select id="llm-thinking" style="width: 100%; padding: 0.5rem; margin-top: 0.25rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem; background: #fff;">
+            <option value="not_sent">不发送 (默认)</option>
+            <option value="disabled">关闭 (disabled)</option>
+            <option value="enabled">开启 (enabled)</option>
+          </select>
+        </label>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem;">
+        <label style="font-size: 0.85rem; font-weight: 600; color: #334155;">思考强度 reasoning_effort
+          <select id="llm-effort" style="width: 100%; padding: 0.5rem; margin-top: 0.25rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9rem; background: #fff;">
+            <option value="not_sent">不发送 (默认)</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+        </label>
+        <div style="display: flex; gap: 1.5rem; align-items: center; margin-top: 1.5rem;">
+          <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; font-weight: 600; cursor: pointer;">
+            <input type="checkbox" id="llm-streaming" checked style="width: 1.1rem; height: 1.1rem;"> 流式输出 streaming
+          </label>
+          <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; font-weight: 600; cursor: pointer;">
+            <input type="checkbox" id="llm-exclude" style="width: 1.1rem; height: 1.1rem;"> 不参与轮询 (pool_exclude)
+          </label>
+        </div>
+      </div>
+      <div class="dialog-actions" style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+        <button type="button" class="ghost" onclick="testLlmConnection()" style="padding: 0.5rem 1rem;">测试连接</button>
+        <button type="button" class="ghost" onclick="document.getElementById('llm-dialog').close()" style="padding: 0.5rem 1rem;">取消</button>
+        <button class="primary" type="submit" style="padding: 0.5rem 1.25rem;">保存配置</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" aria-live="polite"></div>
+  <script src="/assets/app.js?v=lean-nav-1"></script>
+</body>
+</html>

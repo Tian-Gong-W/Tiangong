@@ -1,0 +1,4255 @@
+{
+  "total": 181,
+  "categories": {
+    "Linux提权类": {
+      "en": "linux-privesc",
+      "icon": "🐧",
+      "desc": "Linux 内核、SUID、Sudo、容器逃逸与提权链"
+    },
+    "Web攻击类": {
+      "en": "web-attack",
+      "icon": "🌐",
+      "desc": "SQL注入、XSS、SSRF、CSRF、逻辑漏洞与认证绕过"
+    },
+    "Windows-AD攻击类": {
+      "en": "windows-ad",
+      "icon": "🪟",
+      "desc": "Active Directory、Kerberos、域横向移动与哈希传递"
+    },
+    "云平台攻击类": {
+      "en": "cloud-security",
+      "icon": "☁️",
+      "desc": "AWS、Azure、GCP、IAM 权限提升与元数据渗透"
+    },
+    "免杀规避类": {
+      "en": "evasion",
+      "icon": "🥷",
+      "desc": "EDR/沙箱规避、内存加载、混淆与白名单利用"
+    },
+    "利用类-漏洞利用": {
+      "en": "exploit",
+      "icon": "💥",
+      "desc": "二进制漏洞利用、ROP链构造、Webshell与内存马"
+    },
+    "探测类-侦察信息收集": {
+      "en": "recon",
+      "icon": "🔍",
+      "desc": "资产发现、端口扫描、子域名与指纹识别"
+    },
+    "数据渗出类": {
+      "en": "exfil",
+      "icon": "📤",
+      "desc": "DNS/ICMP 隐蔽隧道、隐写术与 C2 渗出通道"
+    },
+    "方法论框架类": {
+      "en": "methodology",
+      "icon": "📐",
+      "desc": "ATT&CK、PTES 攻防演练方法论与渗透规范"
+    },
+    "漏洞数据库类": {
+      "en": "vulndb",
+      "icon": "📚",
+      "desc": "CVE/NVD、0day 情报与官方安全公告库"
+    },
+    "爆破类-口令哈希破解": {
+      "en": "cracking",
+      "icon": "🔑",
+      "desc": "离线/在线密码爆破、GPU加速与哈希识别"
+    },
+    "社工钓鱼类": {
+      "en": "phishing",
+      "icon": "🎣",
+      "desc": "鱼叉式钓鱼、高管鲸钓、OAuth 诱骗与克隆"
+    },
+    "移动端攻击类": {
+      "en": "mobile-attack",
+      "icon": "📱",
+      "desc": "Frida Hook、APK 逆向、流量抓包与存储泄漏"
+    },
+    "综合框架类": {
+      "en": "frameworks",
+      "icon": "🧰",
+      "desc": "CobaltStrike、Metasploit 等综合渗透平台"
+    },
+    "网络中间人类": {
+      "en": "mitm",
+      "icon": "📡",
+      "desc": "ARP/DNS 欺骗、TLS 劫持与流量篡改"
+    },
+    "逆向分析类": {
+      "en": "reverse-engineering",
+      "icon": "🔬",
+      "desc": "PE/ELF 逆向、脱壳、混淆还原与动态调试"
+    },
+    "靶场漏洞环境类": {
+      "en": "vuln-labs",
+      "icon": "🎯",
+      "desc": "靶场环境、CTF 题库与漏洞复现矩阵"
+    }
+  },
+  "skills": [
+    {
+      "id": "linux-privesc-capabilities-permissions",
+      "name": "Capabilities与特殊权限",
+      "english_name": "capabilities-&-permissions",
+      "category": "Linux提权类",
+      "category_en": "linux-privesc",
+      "category_icon": "🐧",
+      "phase": "1/10",
+      "phase_name": "Capabilities与特殊权限",
+      "description": "Linux PrivEsc Chain Phase 1/Capabilities与特殊权限. 触发词: Capabilities与特殊权限。",
+      "trigger_words": [
+        "Capabilities与特殊权限。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1920,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Linux提权类/Capabilities与特殊权限"
+    },
+    {
+      "id": "linux-privesc-docker-container-escape",
+      "name": "Docker与容器逃逸",
+      "english_name": "docker-&-container-escape",
+      "category": "Linux提权类",
+      "category_en": "linux-privesc",
+      "category_icon": "🐧",
+      "phase": "2/10",
+      "phase_name": "Docker与容器逃逸",
+      "description": "Linux PrivEsc Chain Phase 2/Docker与容器逃逸. 触发词: Docker与容器逃逸。",
+      "trigger_words": [
+        "Docker与容器逃逸。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1575,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Linux提权类/Docker与容器逃逸"
+    },
+    {
+      "id": "linux-privesc-nfs-shared-dir",
+      "name": "NFS与共享目录",
+      "english_name": "nfs-&-shared-dir",
+      "category": "Linux提权类",
+      "category_en": "linux-privesc",
+      "category_icon": "🐧",
+      "phase": "3/10",
+      "phase_name": "NFS与共享目录",
+      "description": "Linux PrivEsc Chain Phase 3/NFS与共享目录. 触发词: NFS与共享目录。",
+      "trigger_words": [
+        "NFS与共享目录。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1560,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Linux提权类/NFS与共享目录"
+    },
+    {
+      "id": "linux-privesc-path-env-hijack",
+      "name": "PATH与环境变量劫持",
+      "english_name": "path-&-env-hijack",
+      "category": "Linux提权类",
+      "category_en": "linux-privesc",
+      "category_icon": "🐧",
+      "phase": "4/10",
+      "phase_name": "PATH与环境变量劫持",
+      "description": "Linux PrivEsc Chain Phase 4/PATH与环境变量劫持. 触发词: PATH与环境变量劫持。",
+      "trigger_words": [
+        "PATH与环境变量劫持。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1593,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Linux提权类/PATH与环境变量劫持"
+    },
+    {
+      "id": "linux-privesc-suid-privileged-binaries",
+      "name": "SUID与特权二进制",
+      "english_name": "suid-&-privileged-binaries",
+      "category": "Linux提权类",
+      "category_en": "linux-privesc",
+      "category_icon": "🐧",
+      "phase": "5/10",
+      "phase_name": "SUID与特权二进制",
+      "description": "Linux PrivEsc Chain Phase 5/SUID与特权二进制. 触发词: SUID与特权二进制。",
+      "trigger_words": [
+        "SUID与特权二进制。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1905,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Linux提权类/SUID与特权二进制"
+    },
+    {
+      "id": "linux-privesc-sudo-abuse",
+      "name": "sudo滥用",
+      "english_name": "sudo-abuse",
+      "category": "Linux提权类",
+      "category_en": "linux-privesc",
+      "category_icon": "🐧",
+      "phase": "6/10",
+      "phase_name": "sudo滥用",
+      "description": "Linux PrivEsc Chain Phase 6/sudo滥用. 触发词: sudo滥用。",
+      "trigger_words": [
+        "sudo滥用。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1869,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Linux提权类/sudo滥用"
+    },
+    {
+      "id": "linux-privesc-kernel-exploitation",
+      "name": "内核漏洞利用",
+      "english_name": "kernel-exploitation",
+      "category": "Linux提权类",
+      "category_en": "linux-privesc",
+      "category_icon": "🐧",
+      "phase": "7/10",
+      "phase_name": "内核漏洞利用",
+      "description": "Linux PrivEsc Chain Phase 7/内核漏洞利用. 触发词: 内核漏洞利用。",
+      "trigger_words": [
+        "内核漏洞利用。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1560,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Linux提权类/内核漏洞利用"
+    },
+    {
+      "id": "linux-privesc-writable-files-config",
+      "name": "可写文件与配置",
+      "english_name": "writable-files-&-config",
+      "category": "Linux提权类",
+      "category_en": "linux-privesc",
+      "category_icon": "🐧",
+      "phase": "8/10",
+      "phase_name": "可写文件与配置",
+      "description": "Linux PrivEsc Chain Phase 8/可写文件与配置. 触发词: 可写文件与配置。",
+      "trigger_words": [
+        "可写文件与配置。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1569,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Linux提权类/可写文件与配置"
+    },
+    {
+      "id": "linux-privesc-cron-job-hijacking",
+      "name": "定时任务劫持",
+      "english_name": "cron-job-hijacking",
+      "category": "Linux提权类",
+      "category_en": "linux-privesc",
+      "category_icon": "🐧",
+      "phase": "9/10",
+      "phase_name": "定时任务劫持",
+      "description": "Linux PrivEsc Chain Phase 9/定时任务劫持. 触发词: 定时任务劫持。",
+      "trigger_words": [
+        "定时任务劫持。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1572,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Linux提权类/定时任务劫持"
+    },
+    {
+      "id": "linux-privesc-privesc-enumeration",
+      "name": "提权枚举",
+      "english_name": "privesc-enumeration",
+      "category": "Linux提权类",
+      "category_en": "linux-privesc",
+      "category_icon": "🐧",
+      "phase": "10/10",
+      "phase_name": "提权枚举",
+      "description": "Linux PrivEsc Chain Phase 10/提权枚举. 触发词: 提权枚举。",
+      "trigger_words": [
+        "提权枚举。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "linpeas_light.py",
+          "size": 3033,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Linux提权类/提权枚举"
+    },
+    {
+      "id": "web-attack-api-attacks",
+      "name": "API攻击",
+      "english_name": "api-attacks",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "1/25",
+      "phase_name": "API攻击",
+      "description": "Web Attack Chain Phase 1/API攻击. 触发词: API攻击。",
+      "trigger_words": [
+        "API攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1866,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/API攻击"
+    },
+    {
+      "id": "web-attack-cors-misconfig",
+      "name": "CORS错误配置",
+      "english_name": "cors-misconfig",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "2/25",
+      "phase_name": "CORS错误配置",
+      "description": "Web Attack Chain Phase 2/CORS错误配置. 触发词: CORS错误配置。",
+      "trigger_words": [
+        "CORS错误配置。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1560,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/CORS错误配置"
+    },
+    {
+      "id": "web-attack-crlf-injection",
+      "name": "CRLF注入",
+      "english_name": "crlf-injection",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "3/25",
+      "phase_name": "CRLF注入",
+      "description": "Web Attack Chain Phase 3/CRLF注入. 触发词: CRLF注入。",
+      "trigger_words": [
+        "CRLF注入。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1548,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/CRLF注入"
+    },
+    {
+      "id": "web-attack-csrf",
+      "name": "CSRF",
+      "english_name": "csrf",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "4/25",
+      "phase_name": "CSRF",
+      "description": "Web Attack Chain Phase 4/CSRF. 触发词: CSRF。",
+      "trigger_words": [
+        "CSRF。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1524,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/CSRF"
+    },
+    {
+      "id": "web-attack-graphql-attacks",
+      "name": "GraphQL攻击",
+      "english_name": "graphql-attacks",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "5/25",
+      "phase_name": "GraphQL攻击",
+      "description": "Web Attack Chain Phase 5/GraphQL攻击. 触发词: GraphQL攻击。",
+      "trigger_words": [
+        "GraphQL攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1533,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/GraphQL攻击"
+    },
+    {
+      "id": "web-attack-jwt-attack",
+      "name": "JWT攻击",
+      "english_name": "jwt-attack",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "6/25",
+      "phase_name": "JWT攻击",
+      "description": "Web Attack Chain Phase 6/JWT攻击. 触发词: JWT攻击。",
+      "trigger_words": [
+        "JWT攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "jwt_attack.py",
+          "size": 4129,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/JWT攻击"
+    },
+    {
+      "id": "web-attack-nosql-injection",
+      "name": "NoSQL注入",
+      "english_name": "nosql-injection",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "7/25",
+      "phase_name": "NoSQL注入",
+      "description": "Web Attack Chain Phase 7/NoSQL注入. 触发词: NoSQL注入。",
+      "trigger_words": [
+        "NoSQL注入。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1551,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/NoSQL注入"
+    },
+    {
+      "id": "web-attack-oauth-sso-attacks",
+      "name": "OAuth与SSO攻击",
+      "english_name": "oauth-&-sso-attacks",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "8/25",
+      "phase_name": "OAuth与SSO攻击",
+      "description": "Web Attack Chain Phase 8/OAuth与SSO攻击. 触发词: OAuth与SSO攻击。",
+      "trigger_words": [
+        "OAuth与SSO攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1563,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/OAuth与SSO攻击"
+    },
+    {
+      "id": "web-attack-sql-injection",
+      "name": "SQL注入",
+      "english_name": "sql-injection",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "9/25",
+      "phase_name": "SQL注入",
+      "description": "Web Attack Chain Phase 9/SQL注入. 触发词: SQL注入。",
+      "trigger_words": [
+        "SQL注入。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "sqli_detector.py",
+          "size": 5363,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/SQL注入"
+    },
+    {
+      "id": "web-attack-ssrf",
+      "name": "SSRF",
+      "english_name": "ssrf",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "10/25",
+      "phase_name": "SSRF",
+      "description": "Web Attack Chain Phase 10/SSRF. 触发词: SSRF。",
+      "trigger_words": [
+        "SSRF。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "ssrf_probe.py",
+          "size": 2568,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/SSRF"
+    },
+    {
+      "id": "web-attack-websocket-attacks",
+      "name": "WebSocket攻击",
+      "english_name": "websocket-attacks",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "11/25",
+      "phase_name": "WebSocket攻击",
+      "description": "Web Attack Chain Phase 11/WebSocket攻击. 触发词: WebSocket攻击。",
+      "trigger_words": [
+        "WebSocket攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1563,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/WebSocket攻击"
+    },
+    {
+      "id": "web-attack-web-vulnerability-scanners",
+      "name": "Web扫描器",
+      "english_name": "web-vulnerability-scanners",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "12/25",
+      "phase_name": "Web扫描器",
+      "description": "Web Attack Chain Phase 12/Web扫描器. 触发词: Web扫描器。",
+      "trigger_words": [
+        "Web扫描器。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1548,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/Web扫描器"
+    },
+    {
+      "id": "web-attack-xss-front-end-attacks",
+      "name": "XSS与前端攻击",
+      "english_name": "xss-&-front-end-attacks",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "13/25",
+      "phase_name": "XSS与前端攻击",
+      "description": "Web Attack Chain Phase 13/XSS与前端攻击. 触发词: XSS与前端攻击。",
+      "trigger_words": [
+        "XSS与前端攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "xss_detector.py",
+          "size": 2448,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/XSS与前端攻击"
+    },
+    {
+      "id": "web-attack-xxe",
+      "name": "XXE",
+      "english_name": "xxe",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "14/25",
+      "phase_name": "XXE",
+      "description": "Web Attack Chain Phase 14/XXE. 触发词: XXE。",
+      "trigger_words": [
+        "XXE。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1527,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/XXE"
+    },
+    {
+      "id": "web-attack-command-injection",
+      "name": "命令注入",
+      "english_name": "command-injection",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "15/25",
+      "phase_name": "命令注入",
+      "description": "Web Attack Chain Phase 15/命令注入. 触发词: 命令注入。",
+      "trigger_words": [
+        "命令注入。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1554,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/命令注入"
+    },
+    {
+      "id": "web-attack-",
+      "name": "子域名接管",
+      "english_name": "子域名接管",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "16/25",
+      "phase_name": "子域名接管",
+      "description": "Web Attack Chain Phase 16/子域名接管. 触发词: 子域名接管。",
+      "trigger_words": [
+        "子域名接管。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1557,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/子域名接管"
+    },
+    {
+      "id": "web-attack-file-upload-attack",
+      "name": "文件上传攻击",
+      "english_name": "file-upload-attack",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "17/25",
+      "phase_name": "文件上传攻击",
+      "description": "Web Attack Chain Phase 17/文件上传攻击. 触发词: 文件上传攻击。",
+      "trigger_words": [
+        "文件上传攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1566,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/文件上传攻击"
+    },
+    {
+      "id": "web-attack-file-inclusion-lfi-rfi",
+      "name": "文件包含LFI-RFI",
+      "english_name": "file-inclusion-lfi/rfi",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "18/25",
+      "phase_name": "文件包含LFI-RFI",
+      "description": "Web Attack Chain Phase 18/文件包含LFI-RFI. 触发词: 文件包含LFI-RFI。",
+      "trigger_words": [
+        "文件包含LFI-RFI。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1569,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/文件包含LFI-RFI"
+    },
+    {
+      "id": "web-attack-ssti",
+      "name": "模板注入SSTI",
+      "english_name": "ssti",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "19/25",
+      "phase_name": "模板注入SSTI",
+      "description": "Web Attack Chain Phase 19/模板注入SSTI. 触发词: 模板注入SSTI。",
+      "trigger_words": [
+        "模板注入SSTI。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1566,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/模板注入SSTI"
+    },
+    {
+      "id": "web-attack-source-leak-version-control",
+      "name": "源码泄露与版本控制",
+      "english_name": "source-leak-&-version-control",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "20/25",
+      "phase_name": "源码泄露与版本控制",
+      "description": "Web Attack Chain Phase 20/源码泄露与版本控制. 触发词: 源码泄露与版本控制。",
+      "trigger_words": [
+        "源码泄露与版本控制。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1593,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/源码泄露与版本控制"
+    },
+    {
+      "id": "web-attack-clickjacking",
+      "name": "点击劫持",
+      "english_name": "clickjacking",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "21/25",
+      "phase_name": "点击劫持",
+      "description": "Web Attack Chain Phase 21/点击劫持. 触发词: 点击劫持。",
+      "trigger_words": [
+        "点击劫持。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1554,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/点击劫持"
+    },
+    {
+      "id": "web-attack-directory-discovery",
+      "name": "目录与内容发现",
+      "english_name": "directory-discovery",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "22/25",
+      "phase_name": "目录与内容发现",
+      "description": "Web Attack Chain Phase 22/目录与内容发现. 触发词: 目录与内容发现。",
+      "trigger_words": [
+        "目录与内容发现。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1178,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/目录与内容发现"
+    },
+    {
+      "id": "web-attack-cache-poisoning-host-header",
+      "name": "缓存投毒与Host头注入",
+      "english_name": "cache-poisoning-&-host-header",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "23/25",
+      "phase_name": "缓存投毒与Host头注入",
+      "description": "Web Attack Chain Phase 23/缓存投毒与Host头注入. 触发词: 缓存投毒与Host头注入。",
+      "trigger_words": [
+        "缓存投毒与Host头注入。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1602,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/缓存投毒与Host头注入"
+    },
+    {
+      "id": "web-attack-auth-session-attacks",
+      "name": "认证与会话攻击",
+      "english_name": "auth-&-session-attacks",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "24/25",
+      "phase_name": "认证与会话攻击",
+      "description": "Web Attack Chain Phase 24/认证与会话攻击. 触发词: 认证与会话攻击。",
+      "trigger_words": [
+        "认证与会话攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1569,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/认证与会话攻击"
+    },
+    {
+      "id": "web-attack-business-logic-flaws",
+      "name": "逻辑漏洞",
+      "english_name": "business-logic-flaws",
+      "category": "Web攻击类",
+      "category_en": "web-attack",
+      "category_icon": "🌐",
+      "phase": "25/25",
+      "phase_name": "逻辑漏洞",
+      "description": "Web Attack Chain Phase 25/逻辑漏洞. 触发词: 逻辑漏洞。",
+      "trigger_words": [
+        "逻辑漏洞。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "idor_scanner.py",
+          "size": 4245,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Web攻击类/逻辑漏洞"
+    },
+    {
+      "id": "windows-ad-ad-reconnaissance",
+      "name": "AD侦察",
+      "english_name": "ad-reconnaissance",
+      "category": "Windows-AD攻击类",
+      "category_en": "windows-ad",
+      "category_icon": "🪟",
+      "phase": "1/14",
+      "phase_name": "AD侦察",
+      "description": "Domain Infiltration Chain Phase 1/AD侦察. 触发词: AD侦察。",
+      "trigger_words": [
+        "AD侦察。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1447,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Windows-AD攻击类/AD侦察"
+    },
+    {
+      "id": "windows-ad-as-rep-roasting",
+      "name": "AS-REP Roast",
+      "english_name": "as-rep-roasting",
+      "category": "Windows-AD攻击类",
+      "category_en": "windows-ad",
+      "category_icon": "🪟",
+      "phase": "2/14",
+      "phase_name": "AS-REP Roast",
+      "description": "Domain Infiltration Chain Phase 2/AS-REP Roast. 触发词: AS-REP Roast。",
+      "trigger_words": [
+        "AS-REP Roast。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1875,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Windows-AD攻击类/AS-REP Roast"
+    },
+    {
+      "id": "windows-ad-bloodhound-domain-analysis",
+      "name": "BloodHound域分析",
+      "english_name": "bloodhound-domain-analysis",
+      "category": "Windows-AD攻击类",
+      "category_en": "windows-ad",
+      "category_icon": "🪟",
+      "phase": "3/14",
+      "phase_name": "BloodHound域分析",
+      "description": "Domain Infiltration Chain Phase 3/BloodHound域分析. 触发词: BloodHound域分析。",
+      "trigger_words": [
+        "BloodHound域分析。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1480,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Windows-AD攻击类/BloodHound域分析"
+    },
+    {
+      "id": "windows-ad-gpp-group-policy-attacks",
+      "name": "GPP与组策略攻击",
+      "english_name": "gpp-&-group-policy-attacks",
+      "category": "Windows-AD攻击类",
+      "category_en": "windows-ad",
+      "category_icon": "🪟",
+      "phase": "4/14",
+      "phase_name": "GPP与组策略攻击",
+      "description": "Domain Infiltration Chain Phase 4/GPP与组策略攻击. 触发词: GPP与组策略攻击。",
+      "trigger_words": [
+        "GPP与组策略攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1149,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Windows-AD攻击类/GPP与组策略攻击"
+    },
+    {
+      "id": "windows-ad-kerberoasting",
+      "name": "Kerberoasting",
+      "english_name": "kerberoasting",
+      "category": "Windows-AD攻击类",
+      "category_en": "windows-ad",
+      "category_icon": "🪟",
+      "phase": "5/14",
+      "phase_name": "Kerberoasting",
+      "description": "Domain Infiltration Chain Phase 5/Kerberoasting. 触发词: Kerberoasting。",
+      "trigger_words": [
+        "Kerberoasting。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "kerberoast_prep.py",
+          "size": 2189,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Windows-AD攻击类/Kerberoasting"
+    },
+    {
+      "id": "windows-ad-ldap-query-enumeration",
+      "name": "LDAP查询与枚举",
+      "english_name": "ldap-query-&-enumeration",
+      "category": "Windows-AD攻击类",
+      "category_en": "windows-ad",
+      "category_icon": "🪟",
+      "phase": "6/14",
+      "phase_name": "LDAP查询与枚举",
+      "description": "Domain Infiltration Chain Phase 6/LDAP查询与枚举. 触发词: LDAP查询与枚举。",
+      "trigger_words": [
+        "LDAP查询与枚举。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1896,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Windows-AD攻击类/LDAP查询与枚举"
+    },
+    {
+      "id": "windows-ad-ntlm-relay-attacks",
+      "name": "NTLM中继攻击",
+      "english_name": "ntlm-relay-attacks",
+      "category": "Windows-AD攻击类",
+      "category_en": "windows-ad",
+      "category_icon": "🪟",
+      "phase": "7/14",
+      "phase_name": "NTLM中继攻击",
+      "description": "Domain Infiltration Chain Phase 7/NTLM中继攻击. 触发词: NTLM中继攻击。",
+      "trigger_words": [
+        "NTLM中继攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1560,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Windows-AD攻击类/NTLM中继攻击"
+    },
+    {
+      "id": "windows-ad-smb-attacks",
+      "name": "SMB攻击",
+      "english_name": "smb-attacks",
+      "category": "Windows-AD攻击类",
+      "category_en": "windows-ad",
+      "category_icon": "🪟",
+      "phase": "8/14",
+      "phase_name": "SMB攻击",
+      "description": "Domain Infiltration Chain Phase 8/SMB攻击. 触发词: SMB攻击。",
+      "trigger_words": [
+        "SMB攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1539,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Windows-AD攻击类/SMB攻击"
+    },
+    {
+      "id": "windows-ad-credential-theft",
+      "name": "凭据窃取",
+      "english_name": "credential-theft",
+      "category": "Windows-AD攻击类",
+      "category_en": "windows-ad",
+      "category_icon": "🪟",
+      "phase": "9/14",
+      "phase_name": "凭据窃取",
+      "description": "Domain Infiltration Chain Phase 9/凭据窃取. 触发词: 凭据窃取。",
+      "trigger_words": [
+        "凭据窃取。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1548,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Windows-AD攻击类/凭据窃取"
+    },
+    {
+      "id": "windows-ad-pass-the-hash-ticket",
+      "name": "哈希传递与票据传递",
+      "english_name": "pass-the-hash/ticket",
+      "category": "Windows-AD攻击类",
+      "category_en": "windows-ad",
+      "category_icon": "🪟",
+      "phase": "10/14",
+      "phase_name": "哈希传递与票据传递",
+      "description": "Domain Infiltration Chain Phase 10/哈希传递与票据传递. 触发词: 哈希传递与票据传递。",
+      "trigger_words": [
+        "哈希传递与票据传递。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1587,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Windows-AD攻击类/哈希传递与票据传递"
+    },
+    {
+      "id": "windows-ad-domain-persistence",
+      "name": "域持久化",
+      "english_name": "domain-persistence",
+      "category": "Windows-AD攻击类",
+      "category_en": "windows-ad",
+      "category_icon": "🪟",
+      "phase": "11/14",
+      "phase_name": "域持久化",
+      "description": "Domain Infiltration Chain Phase 11/域持久化. 触发词: 域持久化。",
+      "trigger_words": [
+        "域持久化。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1530,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Windows-AD攻击类/域持久化"
+    },
+    {
+      "id": "windows-ad-lateral-movement",
+      "name": "横向移动",
+      "english_name": "lateral-movement",
+      "category": "Windows-AD攻击类",
+      "category_en": "windows-ad",
+      "category_icon": "🪟",
+      "phase": "12/14",
+      "phase_name": "横向移动",
+      "description": "Domain Infiltration Chain Phase 12/横向移动. 触发词: 横向移动。",
+      "trigger_words": [
+        "横向移动。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1548,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Windows-AD攻击类/横向移动"
+    },
+    {
+      "id": "windows-ad-email-exchange-attacks",
+      "name": "邮件与Exchange攻击",
+      "english_name": "email-&-exchange-attacks",
+      "category": "Windows-AD攻击类",
+      "category_en": "windows-ad",
+      "category_icon": "🪟",
+      "phase": "13/14",
+      "phase_name": "邮件与Exchange攻击",
+      "description": "Domain Infiltration Chain Phase 13/邮件与Exchange攻击. 触发词: 邮件与Exchange攻击。",
+      "trigger_words": [
+        "邮件与Exchange攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1184,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Windows-AD攻击类/邮件与Exchange攻击"
+    },
+    {
+      "id": "windows-ad-golden-silver-tickets",
+      "name": "黄金白银票据",
+      "english_name": "golden-&-silver-tickets",
+      "category": "Windows-AD攻击类",
+      "category_en": "windows-ad",
+      "category_icon": "🪟",
+      "phase": "14/14",
+      "phase_name": "黄金白银票据",
+      "description": "Domain Infiltration Chain Phase 14/黄金白银票据. 触发词: 黄金白银票据。",
+      "trigger_words": [
+        "黄金白银票据。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1566,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/Windows-AD攻击类/黄金白银票据"
+    },
+    {
+      "id": "cloud-security-aws-attacks",
+      "name": "AWS攻击",
+      "english_name": "aws-attacks",
+      "category": "云平台攻击类",
+      "category_en": "cloud-security",
+      "category_icon": "☁️",
+      "phase": "1/10",
+      "phase_name": "AWS攻击",
+      "description": "Cloud Attack Chain Phase 1/AWS攻击. 触发词: AWS攻击。",
+      "trigger_words": [
+        "AWS攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1866,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/云平台攻击类/AWS攻击"
+    },
+    {
+      "id": "cloud-security-azure-attacks",
+      "name": "Azure攻击",
+      "english_name": "azure-attacks",
+      "category": "云平台攻击类",
+      "category_en": "cloud-security",
+      "category_icon": "☁️",
+      "phase": "2/10",
+      "phase_name": "Azure攻击",
+      "description": "Cloud Attack Chain Phase 2/Azure攻击. 触发词: Azure攻击。",
+      "trigger_words": [
+        "Azure攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1872,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/云平台攻击类/Azure攻击"
+    },
+    {
+      "id": "cloud-security-gcp-attacks",
+      "name": "GCP攻击",
+      "english_name": "gcp-attacks",
+      "category": "云平台攻击类",
+      "category_en": "cloud-security",
+      "category_icon": "☁️",
+      "phase": "3/10",
+      "phase_name": "GCP攻击",
+      "description": "Cloud Attack Chain Phase 3/GCP攻击. 触发词: GCP攻击。",
+      "trigger_words": [
+        "GCP攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1866,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/云平台攻击类/GCP攻击"
+    },
+    {
+      "id": "cloud-security-iam-privilege-escalation",
+      "name": "IAM与特权提升",
+      "english_name": "iam-&-privilege-escalation",
+      "category": "云平台攻击类",
+      "category_en": "cloud-security",
+      "category_icon": "☁️",
+      "phase": "4/10",
+      "phase_name": "IAM与特权提升",
+      "description": "Cloud Attack Chain Phase 4/IAM与特权提升. 触发词: IAM与特权提升。",
+      "trigger_words": [
+        "IAM与特权提升。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1572,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/云平台攻击类/IAM与特权提升"
+    },
+    {
+      "id": "cloud-security-serverless-attacks",
+      "name": "Serverless攻击",
+      "english_name": "serverless-attacks",
+      "category": "云平台攻击类",
+      "category_en": "cloud-security",
+      "category_icon": "☁️",
+      "phase": "5/10",
+      "phase_name": "Serverless攻击",
+      "description": "Cloud Attack Chain Phase 5/Serverless攻击. 触发词: Serverless攻击。",
+      "trigger_words": [
+        "Serverless攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1887,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/云平台攻击类/Serverless攻击"
+    },
+    {
+      "id": "cloud-security-cloud-metadata-ssrf",
+      "name": "云元数据与SSRF",
+      "english_name": "cloud-metadata-&-ssrf",
+      "category": "云平台攻击类",
+      "category_en": "cloud-security",
+      "category_icon": "☁️",
+      "phase": "6/10",
+      "phase_name": "云元数据与SSRF",
+      "description": "Cloud Attack Chain Phase 6/云元数据与SSRF. 触发词: 云元数据与SSRF。",
+      "trigger_words": [
+        "云元数据与SSRF。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1569,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/云平台攻击类/云元数据与SSRF"
+    },
+    {
+      "id": "cloud-security-cloud-storage-bucket-attack",
+      "name": "云存储桶攻击",
+      "english_name": "cloud-storage-bucket-attack",
+      "category": "云平台攻击类",
+      "category_en": "cloud-security",
+      "category_icon": "☁️",
+      "phase": "7/10",
+      "phase_name": "云存储桶攻击",
+      "description": "Cloud Attack Chain Phase 7/云存储桶攻击. 触发词: 云存储桶攻击。",
+      "trigger_words": [
+        "云存储桶攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "s3_bucket_enum.py",
+          "size": 2694,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/云平台攻击类/云存储桶攻击"
+    },
+    {
+      "id": "cloud-security-cloud-key-credential-attacks",
+      "name": "云密钥与凭证攻击",
+      "english_name": "cloud-key-&-credential-attacks",
+      "category": "云平台攻击类",
+      "category_en": "cloud-security",
+      "category_icon": "☁️",
+      "phase": "8/10",
+      "phase_name": "云密钥与凭证攻击",
+      "description": "Cloud Attack Chain Phase 8/云密钥与凭证攻击. 触发词: 云密钥与凭证攻击。",
+      "trigger_words": [
+        "云密钥与凭证攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1584,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/云平台攻击类/云密钥与凭证攻击"
+    },
+    {
+      "id": "cloud-security-cloud-config-audit",
+      "name": "云配置审计",
+      "english_name": "cloud-config-audit",
+      "category": "云平台攻击类",
+      "category_en": "cloud-security",
+      "category_icon": "☁️",
+      "phase": "9/10",
+      "phase_name": "云配置审计",
+      "description": "Cloud Attack Chain Phase 9/云配置审计. 触发词: 云配置审计。",
+      "trigger_words": [
+        "云配置审计。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1545,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/云平台攻击类/云配置审计"
+    },
+    {
+      "id": "cloud-security-container-k8s-attacks",
+      "name": "容器与K8s攻击",
+      "english_name": "container-&-k8s-attacks",
+      "category": "云平台攻击类",
+      "category_en": "cloud-security",
+      "category_icon": "☁️",
+      "phase": "10/10",
+      "phase_name": "容器与K8s攻击",
+      "description": "Cloud Attack Chain Phase 10/容器与K8s攻击. 触发词: 容器与K8s攻击。",
+      "trigger_words": [
+        "容器与K8s攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1566,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/云平台攻击类/容器与K8s攻击"
+    },
+    {
+      "id": "evasion-dll-hijacking-sideloading",
+      "name": "DLL劫持与侧载",
+      "english_name": "dll-hijacking-&-sideloading",
+      "category": "免杀规避类",
+      "category_en": "evasion",
+      "category_icon": "🥷",
+      "phase": "1/7",
+      "phase_name": "DLL劫持与侧载",
+      "description": "Evasion Chain Phase 1/DLL劫持与侧载. 触发词: DLL劫持与侧载。",
+      "trigger_words": [
+        "DLL劫持与侧载。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1548,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/免杀规避类/DLL劫持与侧载"
+    },
+    {
+      "id": "evasion-shellcode-encryption-encoding",
+      "name": "Shellcode加密与编码",
+      "english_name": "shellcode-encryption-&-encoding",
+      "category": "免杀规避类",
+      "category_en": "evasion",
+      "category_icon": "🥷",
+      "phase": "2/7",
+      "phase_name": "Shellcode加密与编码",
+      "description": "Evasion Chain Phase 2/Shellcode加密与编码. 触发词: Shellcode加密与编码。",
+      "trigger_words": [
+        "Shellcode加密与编码。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1584,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/免杀规避类/Shellcode加密与编码"
+    },
+    {
+      "id": "evasion-sandbox-edr-evasion",
+      "name": "沙箱与EDR规避",
+      "english_name": "sandbox-&-edr-evasion",
+      "category": "免杀规避类",
+      "category_en": "evasion",
+      "category_icon": "🥷",
+      "phase": "3/7",
+      "phase_name": "沙箱与EDR规避",
+      "description": "Evasion Chain Phase 3/沙箱与EDR规避. 触发词: 沙箱与EDR规避。",
+      "trigger_words": [
+        "沙箱与EDR规避。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1566,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/免杀规避类/沙箱与EDR规避"
+    },
+    {
+      "id": "evasion-living-off-the-land",
+      "name": "白名单LivingOffTheLand",
+      "english_name": "living-off-the-land",
+      "category": "免杀规避类",
+      "category_en": "evasion",
+      "category_icon": "🥷",
+      "phase": "4/7",
+      "phase_name": "白名单LivingOffTheLand",
+      "description": "Evasion Chain Phase 4/白名单LivingOffTheLand. 触发词: 白名单LivingOffTheLand。",
+      "trigger_words": [
+        "白名单LivingOffTheLand。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1587,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/免杀规避类/白名单LivingOffTheLand"
+    },
+    {
+      "id": "evasion-signature-pattern-bypass",
+      "name": "签名与特征绕过",
+      "english_name": "signature-&-pattern-bypass",
+      "category": "免杀规避类",
+      "category_en": "evasion",
+      "category_icon": "🥷",
+      "phase": "5/7",
+      "phase_name": "签名与特征绕过",
+      "description": "Evasion Chain Phase 5/签名与特征绕过. 触发词: 签名与特征绕过。",
+      "trigger_words": [
+        "签名与特征绕过。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1575,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/免杀规避类/签名与特征绕过"
+    },
+    {
+      "id": "evasion-payload-gen-obfuscation",
+      "name": "载荷生成与混淆",
+      "english_name": "payload-gen-&-obfuscation",
+      "category": "免杀规避类",
+      "category_en": "evasion",
+      "category_icon": "🥷",
+      "phase": "6/7",
+      "phase_name": "载荷生成与混淆",
+      "description": "Evasion Chain Phase 6/载荷生成与混淆. 触发词: 载荷生成与混淆。",
+      "trigger_words": [
+        "载荷生成与混淆。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1581,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/免杀规避类/载荷生成与混淆"
+    },
+    {
+      "id": "evasion-process-injection-memory-execution",
+      "name": "进程注入与内存执行",
+      "english_name": "process-injection-&-memory-execution",
+      "category": "免杀规避类",
+      "category_en": "evasion",
+      "category_icon": "🥷",
+      "phase": "7/7",
+      "phase_name": "进程注入与内存执行",
+      "description": "Evasion Chain Phase 7/进程注入与内存执行. 触发词: 进程注入与内存执行。",
+      "trigger_words": [
+        "进程注入与内存执行。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1599,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/免杀规避类/进程注入与内存执行"
+    },
+    {
+      "id": "exploit-rop-chain-construction",
+      "name": "ROP链构造",
+      "english_name": "rop-chain-construction",
+      "category": "利用类-漏洞利用",
+      "category_en": "exploit",
+      "category_icon": "💥",
+      "phase": "1/12",
+      "phase_name": "ROP链构造",
+      "description": "Exploit Chain Phase 1/ROP链构造. 触发词: ROP链构造。",
+      "trigger_words": [
+        "ROP链构造。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1548,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/利用类-漏洞利用/ROP链构造"
+    },
+    {
+      "id": "exploit-shellcode-crafting",
+      "name": "Shellcode编写",
+      "english_name": "shellcode-crafting",
+      "category": "利用类-漏洞利用",
+      "category_en": "exploit",
+      "category_icon": "💥",
+      "phase": "2/12",
+      "phase_name": "Shellcode编写",
+      "description": "Exploit Chain Phase 2/Shellcode编写. 触发词: Shellcode编写。",
+      "trigger_words": [
+        "Shellcode编写。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1563,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/利用类-漏洞利用/Shellcode编写"
+    },
+    {
+      "id": "exploit-targeted-web-exploitation",
+      "name": "Web漏洞定向利用",
+      "english_name": "targeted-web-exploitation",
+      "category": "利用类-漏洞利用",
+      "category_en": "exploit",
+      "category_icon": "💥",
+      "phase": "3/12",
+      "phase_name": "Web漏洞定向利用",
+      "description": "Exploit Chain Phase 3/Web漏洞定向利用. 触发词: Web漏洞定向利用。",
+      "trigger_words": [
+        "Web漏洞定向利用。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1581,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/利用类-漏洞利用/Web漏洞定向利用"
+    },
+    {
+      "id": "exploit-memory-shell-injection",
+      "name": "内存马注入",
+      "english_name": "memory-shell-injection",
+      "category": "利用类-漏洞利用",
+      "category_en": "exploit",
+      "category_icon": "💥",
+      "phase": "4/12",
+      "phase_name": "内存马注入",
+      "description": "Exploit Chain Phase 4/内存马注入. 触发词: 内存马注入。",
+      "trigger_words": [
+        "内存马注入。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1563,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/利用类-漏洞利用/内存马注入"
+    },
+    {
+      "id": "exploit-backdoors-webshells",
+      "name": "后门与Webshell",
+      "english_name": "backdoors-&-webshells",
+      "category": "利用类-漏洞利用",
+      "category_en": "exploit",
+      "category_icon": "💥",
+      "phase": "5/12",
+      "phase_name": "后门与Webshell",
+      "description": "Exploit Chain Phase 5/后门与Webshell. 触发词: 后门与Webshell。",
+      "trigger_words": [
+        "后门与Webshell。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1563,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/利用类-漏洞利用/后门与Webshell"
+    },
+    {
+      "id": "exploit-client-side-attacks",
+      "name": "客户端攻击",
+      "english_name": "client-side-attacks",
+      "category": "利用类-漏洞利用",
+      "category_en": "exploit",
+      "category_icon": "💥",
+      "phase": "6/12",
+      "phase_name": "客户端攻击",
+      "description": "Exploit Chain Phase 6/客户端攻击. 触发词: 客户端攻击。",
+      "trigger_words": [
+        "客户端攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1557,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/利用类-漏洞利用/客户端攻击"
+    },
+    {
+      "id": "exploit-stack-heap-exploitation",
+      "name": "栈与堆溢出利用",
+      "english_name": "stack-&-heap-exploitation",
+      "category": "利用类-漏洞利用",
+      "category_en": "exploit",
+      "category_icon": "💥",
+      "phase": "7/12",
+      "phase_name": "栈与堆溢出利用",
+      "description": "Exploit Chain Phase 7/栈与堆溢出利用. 触发词: 栈与堆溢出利用。",
+      "trigger_words": [
+        "栈与堆溢出利用。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1575,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/利用类-漏洞利用/栈与堆溢出利用"
+    },
+    {
+      "id": "exploit-format-string-exploitation",
+      "name": "格式化字符串利用",
+      "english_name": "format-string-exploitation",
+      "category": "利用类-漏洞利用",
+      "category_en": "exploit",
+      "category_icon": "💥",
+      "phase": "8/12",
+      "phase_name": "格式化字符串利用",
+      "description": "Exploit Chain Phase 8/格式化字符串利用. 触发词: 格式化字符串利用。",
+      "trigger_words": [
+        "格式化字符串利用。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1584,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/利用类-漏洞利用/格式化字符串利用"
+    },
+    {
+      "id": "exploit-exploit-development",
+      "name": "漏洞利用开发",
+      "english_name": "exploit-development",
+      "category": "利用类-漏洞利用",
+      "category_en": "exploit",
+      "category_icon": "💥",
+      "phase": "9/12",
+      "phase_name": "漏洞利用开发",
+      "description": "Exploit Chain Phase 9/漏洞利用开发. 触发词: 漏洞利用开发。",
+      "trigger_words": [
+        "漏洞利用开发。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1477,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/利用类-漏洞利用/漏洞利用开发"
+    },
+    {
+      "id": "exploit-exploit-frameworks",
+      "name": "漏洞利用框架",
+      "english_name": "exploit-frameworks",
+      "category": "利用类-漏洞利用",
+      "category_en": "exploit",
+      "category_icon": "💥",
+      "phase": "10/12",
+      "phase_name": "漏洞利用框架",
+      "description": "Exploit Chain Phase 10/漏洞利用框架. 触发词: 漏洞利用框架。",
+      "trigger_words": [
+        "漏洞利用框架。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1560,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/利用类-漏洞利用/漏洞利用框架"
+    },
+    {
+      "id": "exploit-vuln-reproduction-poc",
+      "name": "漏洞复现与POC验证",
+      "english_name": "vuln-reproduction-&-poc",
+      "category": "利用类-漏洞利用",
+      "category_en": "exploit",
+      "category_icon": "💥",
+      "phase": "11/12",
+      "phase_name": "漏洞复现与POC验证",
+      "description": "Exploit Chain Phase 11/漏洞复现与POC验证. 触发词: 漏洞复现与POC验证。",
+      "trigger_words": [
+        "漏洞复现与POC验证。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1584,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/利用类-漏洞利用/漏洞复现与POC验证"
+    },
+    {
+      "id": "exploit-device-protocol-exploitation",
+      "name": "设备与协议利用",
+      "english_name": "device-&-protocol-exploitation",
+      "category": "利用类-漏洞利用",
+      "category_en": "exploit",
+      "category_icon": "💥",
+      "phase": "12/12",
+      "phase_name": "设备与协议利用",
+      "description": "Exploit Chain Phase 12/设备与协议利用. 触发词: 设备与协议利用。",
+      "trigger_words": [
+        "设备与协议利用。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1575,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/利用类-漏洞利用/设备与协议利用"
+    },
+    {
+      "id": "recon-cms-fingerprinting",
+      "name": "CMS指纹识别",
+      "english_name": "cms-fingerprinting",
+      "category": "探测类-侦察信息收集",
+      "category_en": "recon",
+      "category_icon": "🔍",
+      "phase": "1/17",
+      "phase_name": "CMS指纹识别",
+      "description": "Recon Chain Phase 1/CMS指纹识别. 触发词: CMS指纹识别。",
+      "trigger_words": [
+        "CMS指纹识别。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "cms_fingerprint.py",
+          "size": 2521,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/探测类-侦察信息收集/CMS指纹识别"
+    },
+    {
+      "id": "recon-github-code-leak-search",
+      "name": "GitHub与代码泄露搜索",
+      "english_name": "github-&-code-leak-search",
+      "category": "探测类-侦察信息收集",
+      "category_en": "recon",
+      "category_icon": "🔍",
+      "phase": "2/17",
+      "phase_name": "GitHub与代码泄露搜索",
+      "description": "Recon Chain Phase 2/GitHub与代码泄露搜索. 触发词: GitHub与代码泄露搜索。",
+      "trigger_words": [
+        "GitHub与代码泄露搜索。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1593,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/探测类-侦察信息收集/GitHub与代码泄露搜索"
+    },
+    {
+      "id": "recon-js-source-api-extraction",
+      "name": "JS源码分析与API提取",
+      "english_name": "js-source-&-api-extraction",
+      "category": "探测类-侦察信息收集",
+      "category_en": "recon",
+      "category_icon": "🔍",
+      "phase": "3/17",
+      "phase_name": "JS源码分析与API提取",
+      "description": "Recon Chain Phase 3/JS源码分析与API提取. 触发词: JS源码分析与API提取。",
+      "trigger_words": [
+        "JS源码分析与API提取。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "js_endpoints.py",
+          "size": 1825,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/探测类-侦察信息收集/JS源码分析与API提取"
+    },
+    {
+      "id": "recon-waf-cdn-detection",
+      "name": "WAF与CDN识别",
+      "english_name": "waf-&-cdn-detection",
+      "category": "探测类-侦察信息收集",
+      "category_en": "recon",
+      "category_icon": "🔍",
+      "phase": "4/17",
+      "phase_name": "WAF与CDN识别",
+      "description": "Recon Chain Phase 4/WAF与CDN识别. 触发词: WAF与CDN识别。",
+      "trigger_words": [
+        "WAF与CDN识别。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1551,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/探测类-侦察信息收集/WAF与CDN识别"
+    },
+    {
+      "id": "recon-cloud-asset-discovery",
+      "name": "云资产发现",
+      "english_name": "cloud-asset-discovery",
+      "category": "探测类-侦察信息收集",
+      "category_en": "recon",
+      "category_icon": "🔍",
+      "phase": "5/17",
+      "phase_name": "云资产发现",
+      "description": "Recon Chain Phase 5/云资产发现. 触发词: 云资产发现。",
+      "trigger_words": [
+        "云资产发现。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1884,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/探测类-侦察信息收集/云资产发现"
+    },
+    {
+      "id": "recon-",
+      "name": "内容与目录发现",
+      "english_name": "内容与目录发现",
+      "category": "探测类-侦察信息收集",
+      "category_en": "recon",
+      "category_icon": "🔍",
+      "phase": "6/17",
+      "phase_name": "内容与目录发现",
+      "description": "Recon Chain Phase 6/内容与目录发现. 触发词: 内容与目录发现。",
+      "trigger_words": [
+        "内容与目录发现。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "dir_brute.py",
+          "size": 3249,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/探测类-侦察信息收集/内容与目录发现"
+    },
+    {
+      "id": "recon-parameter-endpoint-discovery",
+      "name": "参数与端点发现",
+      "english_name": "parameter-&-endpoint-discovery",
+      "category": "探测类-侦察信息收集",
+      "category_en": "recon",
+      "category_icon": "🔍",
+      "phase": "7/17",
+      "phase_name": "参数与端点发现",
+      "description": "Recon Chain Phase 7/参数与端点发现. 触发词: 参数与端点发现。",
+      "trigger_words": [
+        "参数与端点发现。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1178,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/探测类-侦察信息收集/参数与端点发现"
+    },
+    {
+      "id": "recon-employee-supply-chain-intel",
+      "name": "员工与供应链情报",
+      "english_name": "employee-&-supply-chain-intel",
+      "category": "探测类-侦察信息收集",
+      "category_en": "recon",
+      "category_icon": "🔍",
+      "phase": "8/17",
+      "phase_name": "员工与供应链情报",
+      "description": "Recon Chain Phase 8/员工与供应链情报. 触发词: 员工与供应链情报。",
+      "trigger_words": [
+        "员工与供应链情报。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1584,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/探测类-侦察信息收集/员工与供应链情报"
+    },
+    {
+      "id": "recon-subdomain-takeover-detect",
+      "name": "子域名接管检测",
+      "english_name": "subdomain-takeover-detect",
+      "category": "探测类-侦察信息收集",
+      "category_en": "recon",
+      "category_icon": "🔍",
+      "phase": "9/17",
+      "phase_name": "子域名接管检测",
+      "description": "Recon Chain Phase 9/子域名接管检测. 触发词: 子域名接管检测。",
+      "trigger_words": [
+        "子域名接管检测。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1581,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/探测类-侦察信息收集/子域名接管检测"
+    },
+    {
+      "id": "recon-subdomain-enumeration",
+      "name": "子域枚举",
+      "english_name": "subdomain-enumeration",
+      "category": "探测类-侦察信息收集",
+      "category_en": "recon",
+      "category_icon": "🔍",
+      "phase": "10/17",
+      "phase_name": "子域枚举",
+      "description": "Recon Chain Phase 10/子域枚举. 触发词: 子域枚举。",
+      "trigger_words": [
+        "子域枚举。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "subdomain_enum.py",
+          "size": 3565,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/探测类-侦察信息收集/子域枚举"
+    },
+    {
+      "id": "recon-tech-stack-fingerprinting",
+      "name": "技术栈与指纹识别",
+      "english_name": "tech-stack-fingerprinting",
+      "category": "探测类-侦察信息收集",
+      "category_en": "recon",
+      "category_icon": "🔍",
+      "phase": "11/17",
+      "phase_name": "技术栈与指纹识别",
+      "description": "Recon Chain Phase 11/技术栈与指纹识别. 触发词: 技术栈与指纹识别。",
+      "trigger_words": [
+        "技术栈与指纹识别。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "waf_detect.py",
+          "size": 3270,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/探测类-侦察信息收集/技术栈与指纹识别"
+    },
+    {
+      "id": "recon-service-version-fingerprint",
+      "name": "服务版本指纹",
+      "english_name": "service-version-fingerprint",
+      "category": "探测类-侦察信息收集",
+      "category_en": "recon",
+      "category_icon": "🔍",
+      "phase": "12/17",
+      "phase_name": "服务版本指纹",
+      "description": "Recon Chain Phase 12/服务版本指纹. 触发词: 服务版本指纹。",
+      "trigger_words": [
+        "服务版本指纹。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1477,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/探测类-侦察信息收集/服务版本指纹"
+    },
+    {
+      "id": "recon-directory-discovery",
+      "name": "目录与内容发现",
+      "english_name": "directory-discovery",
+      "category": "探测类-侦察信息收集",
+      "category_en": "recon",
+      "category_icon": "🔍",
+      "phase": "13/17",
+      "phase_name": "目录与内容发现",
+      "description": "Recon Chain Phase 13/目录与内容发现. 触发词: 目录与内容发现。",
+      "trigger_words": [
+        "目录与内容发现。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1178,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/探测类-侦察信息收集/目录与内容发现"
+    },
+    {
+      "id": "recon-port-service-scan",
+      "name": "端口与服务扫描",
+      "english_name": "port-&-service-scan",
+      "category": "探测类-侦察信息收集",
+      "category_en": "recon",
+      "category_icon": "🔍",
+      "phase": "14/17",
+      "phase_name": "端口与服务扫描",
+      "description": "Recon Chain Phase 14/端口与服务扫描. 触发词: 端口与服务扫描。",
+      "trigger_words": [
+        "端口与服务扫描。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "port_scanner.py",
+          "size": 4026,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/探测类-侦察信息收集/端口与服务扫描"
+    },
+    {
+      "id": "recon-passive-recon-osint",
+      "name": "被动侦察OSINT",
+      "english_name": "passive-recon-&-osint",
+      "category": "探测类-侦察信息收集",
+      "category_en": "recon",
+      "category_icon": "🔍",
+      "phase": "15/17",
+      "phase_name": "被动侦察OSINT",
+      "description": "Recon Chain Phase 15/被动侦察OSINT. 触发词: 被动侦察OSINT。",
+      "trigger_words": [
+        "被动侦察OSINT。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "email_hunter.py",
+          "size": 1834,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/探测类-侦察信息收集/被动侦察OSINT"
+    },
+    {
+      "id": "recon-ct-log-enumeration",
+      "name": "证书透明日志测绘",
+      "english_name": "ct-log-enumeration",
+      "category": "探测类-侦察信息收集",
+      "category_en": "recon",
+      "category_icon": "🔍",
+      "phase": "16/17",
+      "phase_name": "证书透明日志测绘",
+      "description": "Recon Chain Phase 16/证书透明日志测绘. 触发词: 证书透明日志测绘。",
+      "trigger_words": [
+        "证书透明日志测绘。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1566,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/探测类-侦察信息收集/证书透明日志测绘"
+    },
+    {
+      "id": "recon-asset-screenshot-archive",
+      "name": "资产截图与留存",
+      "english_name": "asset-screenshot-&-archive",
+      "category": "探测类-侦察信息收集",
+      "category_en": "recon",
+      "category_icon": "🔍",
+      "phase": "17/17",
+      "phase_name": "资产截图与留存",
+      "description": "Recon Chain Phase 17/资产截图与留存. 触发词: 资产截图与留存。",
+      "trigger_words": [
+        "资产截图与留存。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1575,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/探测类-侦察信息收集/资产截图与留存"
+    },
+    {
+      "id": "exfil-c2-channel-establishment",
+      "name": "C2通道建立",
+      "english_name": "c2-channel-establishment",
+      "category": "数据渗出类",
+      "category_en": "exfil",
+      "category_icon": "📤",
+      "phase": "1/6",
+      "phase_name": "C2通道建立",
+      "description": "Exfiltration Chain Phase 1/C2通道建立. 触发词: C2通道建立。",
+      "trigger_words": [
+        "C2通道建立。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1554,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/数据渗出类/C2通道建立"
+    },
+    {
+      "id": "exfil-dns-tunneling",
+      "name": "DNS隧道渗出",
+      "english_name": "dns-tunneling",
+      "category": "数据渗出类",
+      "category_en": "exfil",
+      "category_icon": "📤",
+      "phase": "2/6",
+      "phase_name": "DNS隧道渗出",
+      "description": "Exfiltration Chain Phase 2/DNS隧道渗出. 触发词: DNS隧道渗出。",
+      "trigger_words": [
+        "DNS隧道渗出。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1557,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/数据渗出类/DNS隧道渗出"
+    },
+    {
+      "id": "exfil-http-https-tunneling",
+      "name": "HTTP-HTTPS隧道",
+      "english_name": "http/https-tunneling",
+      "category": "数据渗出类",
+      "category_en": "exfil",
+      "category_icon": "📤",
+      "phase": "3/6",
+      "phase_name": "HTTP-HTTPS隧道",
+      "description": "Exfiltration Chain Phase 3/HTTP-HTTPS隧道. 触发词: HTTP-HTTPS隧道。",
+      "trigger_words": [
+        "HTTP-HTTPS隧道。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1560,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/数据渗出类/HTTP-HTTPS隧道"
+    },
+    {
+      "id": "exfil-icmp-tunneling",
+      "name": "ICMP隧道",
+      "english_name": "icmp-tunneling",
+      "category": "数据渗出类",
+      "category_en": "exfil",
+      "category_icon": "📤",
+      "phase": "4/6",
+      "phase_name": "ICMP隧道",
+      "description": "Exfiltration Chain Phase 4/ICMP隧道. 触发词: ICMP隧道。",
+      "trigger_words": [
+        "ICMP隧道。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1542,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/数据渗出类/ICMP隧道"
+    },
+    {
+      "id": "exfil-stego-exfiltration",
+      "name": "隐写术渗出",
+      "english_name": "stego-exfiltration",
+      "category": "数据渗出类",
+      "category_en": "exfil",
+      "category_icon": "📤",
+      "phase": "5/6",
+      "phase_name": "隐写术渗出",
+      "description": "Exfiltration Chain Phase 5/隐写术渗出. 触发词: 隐写术渗出。",
+      "trigger_words": [
+        "隐写术渗出。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1563,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/数据渗出类/隐写术渗出"
+    },
+    {
+      "id": "exfil-covert-channel-encoding",
+      "name": "隐蔽信道与编码",
+      "english_name": "covert-channel-&-encoding",
+      "category": "数据渗出类",
+      "category_en": "exfil",
+      "category_icon": "📤",
+      "phase": "6/6",
+      "phase_name": "隐蔽信道与编码",
+      "description": "Exfiltration Chain Phase 6/隐蔽信道与编码. 触发词: 隐蔽信道与编码。",
+      "trigger_words": [
+        "隐蔽信道与编码。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1575,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/数据渗出类/隐蔽信道与编码"
+    },
+    {
+      "id": "methodology-threat-modeling-tactics",
+      "name": "威胁建模与战术",
+      "english_name": "threat-modeling-&-tactics",
+      "category": "方法论框架类",
+      "category_en": "methodology",
+      "category_icon": "📐",
+      "phase": "1/7",
+      "phase_name": "威胁建模与战术",
+      "description": "Methodology Chain Phase 1/威胁建模与战术. 触发词: 威胁建模与战术。",
+      "trigger_words": [
+        "威胁建模与战术。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1486,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/方法论框架类/威胁建模与战术"
+    },
+    {
+      "id": "methodology-report-template-writing",
+      "name": "报告模板与撰写",
+      "english_name": "report-template-&-writing",
+      "category": "方法论框架类",
+      "category_en": "methodology",
+      "category_icon": "📐",
+      "phase": "2/7",
+      "phase_name": "报告模板与撰写",
+      "description": "Methodology Chain Phase 2/报告模板与撰写. 触发词: 报告模板与撰写。",
+      "trigger_words": [
+        "报告模板与撰写。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1575,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/方法论框架类/报告模板与撰写"
+    },
+    {
+      "id": "methodology-testing-standards",
+      "name": "测试标准方法论",
+      "english_name": "testing-standards",
+      "category": "方法论框架类",
+      "category_en": "methodology",
+      "category_icon": "📐",
+      "phase": "3/7",
+      "phase_name": "测试标准方法论",
+      "description": "Methodology Chain Phase 3/测试标准方法论. 触发词: 测试标准方法论。",
+      "trigger_words": [
+        "测试标准方法论。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1575,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/方法论框架类/测试标准方法论"
+    },
+    {
+      "id": "methodology-pentesting-workflow",
+      "name": "渗透测试流程",
+      "english_name": "pentesting-workflow",
+      "category": "方法论框架类",
+      "category_en": "methodology",
+      "category_icon": "📐",
+      "phase": "4/7",
+      "phase_name": "渗透测试流程",
+      "description": "Methodology Chain Phase 4/渗透测试流程. 触发词: 渗透测试流程。",
+      "trigger_words": [
+        "渗透测试流程。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1566,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/方法论框架类/渗透测试流程"
+    },
+    {
+      "id": "methodology-cvss-scoring",
+      "name": "漏洞评级CVSS",
+      "english_name": "cvss-scoring",
+      "category": "方法论框架类",
+      "category_en": "methodology",
+      "category_icon": "📐",
+      "phase": "5/7",
+      "phase_name": "漏洞评级CVSS",
+      "description": "Methodology Chain Phase 5/漏洞评级CVSS. 触发词: 漏洞评级CVSS。",
+      "trigger_words": [
+        "漏洞评级CVSS。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1471,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/方法论框架类/漏洞评级CVSS"
+    },
+    {
+      "id": "methodology-bug-bounty-src",
+      "name": "漏洞赏金与SRC",
+      "english_name": "bug-bounty-&-src",
+      "category": "方法论框架类",
+      "category_en": "methodology",
+      "category_icon": "📐",
+      "phase": "6/7",
+      "phase_name": "漏洞赏金与SRC",
+      "description": "Methodology Chain Phase 6/漏洞赏金与SRC. 触发词: 漏洞赏金与SRC。",
+      "trigger_words": [
+        "漏洞赏金与SRC。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1566,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/方法论框架类/漏洞赏金与SRC"
+    },
+    {
+      "id": "methodology-red-team-operations",
+      "name": "红队运营",
+      "english_name": "red-team-operations",
+      "category": "方法论框架类",
+      "category_en": "methodology",
+      "category_icon": "📐",
+      "phase": "7/7",
+      "phase_name": "红队运营",
+      "description": "Methodology Chain Phase 7/红队运营. 触发词: 红队运营。",
+      "trigger_words": [
+        "红队运营。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1530,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/方法论框架类/红队运营"
+    },
+    {
+      "id": "vulndb-zero-day-wild-exploitation",
+      "name": "0day与在野利用",
+      "english_name": "zero-day-&-wild-exploitation",
+      "category": "漏洞数据库类",
+      "category_en": "vulndb",
+      "category_icon": "📚",
+      "phase": "1/6",
+      "phase_name": "0day与在野利用",
+      "description": "Intelligence Chain Phase 1/0day与在野利用. 触发词: 0day与在野利用。",
+      "trigger_words": [
+        "0day与在野利用。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1575,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/漏洞数据库类/0day与在野利用"
+    },
+    {
+      "id": "vulndb-cve-nvd-official",
+      "name": "CVE-NVD官方库",
+      "english_name": "cve-/-nvd-official",
+      "category": "漏洞数据库类",
+      "category_en": "vulndb",
+      "category_icon": "📚",
+      "phase": "2/6",
+      "phase_name": "CVE-NVD官方库",
+      "description": "Intelligence Chain Phase 2/CVE-NVD官方库. 触发词: CVE-NVD官方库。",
+      "trigger_words": [
+        "CVE-NVD官方库。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1560,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/漏洞数据库类/CVE-NVD官方库"
+    },
+    {
+      "id": "vulndb-vendor-security-advisories",
+      "name": "厂商安全公告",
+      "english_name": "vendor-security-advisories",
+      "category": "漏洞数据库类",
+      "category_en": "vulndb",
+      "category_icon": "📚",
+      "phase": "3/6",
+      "phase_name": "厂商安全公告",
+      "description": "Intelligence Chain Phase 3/厂商安全公告. 触发词: 厂商安全公告。",
+      "trigger_words": [
+        "厂商安全公告。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1477,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/漏洞数据库类/厂商安全公告"
+    },
+    {
+      "id": "vulndb-exploit-code-repositories",
+      "name": "漏洞利用代码库",
+      "english_name": "exploit-code-repositories",
+      "category": "漏洞数据库类",
+      "category_en": "vulndb",
+      "category_icon": "📚",
+      "phase": "4/6",
+      "phase_name": "漏洞利用代码库",
+      "description": "Intelligence Chain Phase 4/漏洞利用代码库. 触发词: 漏洞利用代码库。",
+      "trigger_words": [
+        "漏洞利用代码库。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1575,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/漏洞数据库类/漏洞利用代码库"
+    },
+    {
+      "id": "vulndb-threat-intelligence-alerts",
+      "name": "漏洞情报与预警",
+      "english_name": "threat-intelligence-&-alerts",
+      "category": "漏洞数据库类",
+      "category_en": "vulndb",
+      "category_icon": "📚",
+      "phase": "5/6",
+      "phase_name": "漏洞情报与预警",
+      "description": "Intelligence Chain Phase 5/漏洞情报与预警. 触发词: 漏洞情报与预警。",
+      "trigger_words": [
+        "漏洞情报与预警。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1575,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/漏洞数据库类/漏洞情报与预警"
+    },
+    {
+      "id": "vulndb-vulnerability-aggregators",
+      "name": "漏洞聚合平台",
+      "english_name": "vulnerability-aggregators",
+      "category": "漏洞数据库类",
+      "category_en": "vulndb",
+      "category_icon": "📚",
+      "phase": "6/6",
+      "phase_name": "漏洞聚合平台",
+      "description": "Intelligence Chain Phase 6/漏洞聚合平台. 触发词: 漏洞聚合平台。",
+      "trigger_words": [
+        "漏洞聚合平台。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1566,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/漏洞数据库类/漏洞聚合平台"
+    },
+    {
+      "id": "cracking-ftp-smb-mail-brute-force",
+      "name": "FTP-SMB-邮件爆破",
+      "english_name": "ftp/smb/mail-brute-force",
+      "category": "爆破类-口令哈希破解",
+      "category_en": "cracking",
+      "category_icon": "🔑",
+      "phase": "1/14",
+      "phase_name": "FTP-SMB-邮件爆破",
+      "description": "Credential Breach Chain Phase 1/FTP-SMB-邮件爆破. 触发词: FTP-SMB-邮件爆破。",
+      "trigger_words": [
+        "FTP-SMB-邮件爆破。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1175,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/爆破类-口令哈希破解/FTP-SMB-邮件爆破"
+    },
+    {
+      "id": "cracking-gpu-distributed-cracking",
+      "name": "GPU加速与分布式破解",
+      "english_name": "gpu-&-distributed-cracking",
+      "category": "爆破类-口令哈希破解",
+      "category_en": "cracking",
+      "category_icon": "🔑",
+      "phase": "2/14",
+      "phase_name": "GPU加速与分布式破解",
+      "description": "Credential Breach Chain Phase 2/GPU加速与分布式破解. 触发词: GPU加速与分布式破解。",
+      "trigger_words": [
+        "GPU加速与分布式破解。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1587,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/爆破类-口令哈希破解/GPU加速与分布式破解"
+    },
+    {
+      "id": "cracking-ssh-rdp-brute-force",
+      "name": "SSH-RDP远程爆破",
+      "english_name": "ssh/rdp-brute-force",
+      "category": "爆破类-口令哈希破解",
+      "category_en": "cracking",
+      "category_icon": "🔑",
+      "phase": "3/14",
+      "phase_name": "SSH-RDP远程爆破",
+      "description": "Credential Breach Chain Phase 3/SSH-RDP远程爆破. 触发词: SSH-RDP远程爆破。",
+      "trigger_words": [
+        "SSH-RDP远程爆破。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1172,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/爆破类-口令哈希破解/SSH-RDP远程爆破"
+    },
+    {
+      "id": "cracking-web-login-brute-force",
+      "name": "Web登录爆破",
+      "english_name": "web-login-brute-force",
+      "category": "爆破类-口令哈希破解",
+      "category_en": "cracking",
+      "category_icon": "🔑",
+      "phase": "4/14",
+      "phase_name": "Web登录爆破",
+      "description": "Credential Breach Chain Phase 4/Web登录爆破. 触发词: Web登录爆破。",
+      "trigger_words": [
+        "Web登录爆破。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1160,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/爆破类-口令哈希破解/Web登录爆破"
+    },
+    {
+      "id": "cracking-credential-spraying",
+      "name": "凭证喷洒",
+      "english_name": "credential-spraying",
+      "category": "爆破类-口令哈希破解",
+      "category_en": "cracking",
+      "category_icon": "🔑",
+      "phase": "5/14",
+      "phase_name": "凭证喷洒",
+      "description": "Credential Breach Chain Phase 5/凭证喷洒. 触发词: 凭证喷洒。",
+      "trigger_words": [
+        "凭证喷洒。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "password_spray.py",
+          "size": 4916,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/爆破类-口令哈希破解/凭证喷洒"
+    },
+    {
+      "id": "cracking-archive-document-password",
+      "name": "压缩包与文档密码",
+      "english_name": "archive-&-document-password",
+      "category": "爆破类-口令哈希破解",
+      "category_en": "cracking",
+      "category_icon": "🔑",
+      "phase": "6/14",
+      "phase_name": "压缩包与文档密码",
+      "description": "Credential Breach Chain Phase 6/压缩包与文档密码. 触发词: 压缩包与文档密码。",
+      "trigger_words": [
+        "压缩包与文档密码。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1584,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/爆破类-口令哈希破解/压缩包与文档密码"
+    },
+    {
+      "id": "cracking-hash-id-conversion",
+      "name": "哈希识别与格式转换",
+      "english_name": "hash-id-&-conversion",
+      "category": "爆破类-口令哈希破解",
+      "category_en": "cracking",
+      "category_icon": "🔑",
+      "phase": "7/14",
+      "phase_name": "哈希识别与格式转换",
+      "description": "Credential Breach Chain Phase 7/哈希识别与格式转换. 触发词: 哈希识别与格式转换。",
+      "trigger_words": [
+        "哈希识别与格式转换。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1587,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/爆破类-口令哈希破解/哈希识别与格式转换"
+    },
+    {
+      "id": "cracking-online-brute-force",
+      "name": "在线口令爆破",
+      "english_name": "online-brute-force",
+      "category": "爆破类-口令哈希破解",
+      "category_en": "cracking",
+      "category_icon": "🔑",
+      "phase": "8/14",
+      "phase_name": "在线口令爆破",
+      "description": "Credential Breach Chain Phase 8/在线口令爆破. 触发词: 在线口令爆破。",
+      "trigger_words": [
+        "在线口令爆破。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1169,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/爆破类-口令哈希破解/在线口令爆破"
+    },
+    {
+      "id": "cracking-wordlist-rule-generation",
+      "name": "字典与规则生成",
+      "english_name": "wordlist-&-rule-generation",
+      "category": "爆破类-口令哈希破解",
+      "category_en": "cracking",
+      "category_icon": "🔑",
+      "phase": "9/14",
+      "phase_name": "字典与规则生成",
+      "description": "Credential Breach Chain Phase 9/字典与规则生成. 触发词: 字典与规则生成。",
+      "trigger_words": [
+        "字典与规则生成。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "wordlist_gen.py",
+          "size": 3691,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/爆破类-口令哈希破解/字典与规则生成"
+    },
+    {
+      "id": "cracking-database-brute-force",
+      "name": "数据库口令爆破",
+      "english_name": "database-brute-force",
+      "category": "爆破类-口令哈希破解",
+      "category_en": "cracking",
+      "category_icon": "🔑",
+      "phase": "10/14",
+      "phase_name": "数据库口令爆破",
+      "description": "Credential Breach Chain Phase 10/数据库口令爆破. 触发词: 数据库口令爆破。",
+      "trigger_words": [
+        "数据库口令爆破。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1178,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/爆破类-口令哈希破解/数据库口令爆破"
+    },
+    {
+      "id": "cracking-wireless-brute-force",
+      "name": "无线爆破",
+      "english_name": "wireless-brute-force",
+      "category": "爆破类-口令哈希破解",
+      "category_en": "cracking",
+      "category_icon": "🔑",
+      "phase": "11/14",
+      "phase_name": "无线爆破",
+      "description": "Credential Breach Chain Phase 11/无线爆破. 触发词: 无线爆破。",
+      "trigger_words": [
+        "无线爆破。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1151,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/爆破类-口令哈希破解/无线爆破"
+    },
+    {
+      "id": "cracking-special-format-cracking",
+      "name": "特定格式破解",
+      "english_name": "special-format-cracking",
+      "category": "爆破类-口令哈希破解",
+      "category_en": "cracking",
+      "category_icon": "🔑",
+      "phase": "12/14",
+      "phase_name": "特定格式破解",
+      "description": "Credential Breach Chain Phase 12/特定格式破解. 触发词: 特定格式破解。",
+      "trigger_words": [
+        "特定格式破解。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1560,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/爆破类-口令哈希破解/特定格式破解"
+    },
+    {
+      "id": "cracking-offline-hash-cracking",
+      "name": "离线哈希破解",
+      "english_name": "offline-hash-cracking",
+      "category": "爆破类-口令哈希破解",
+      "category_en": "cracking",
+      "category_icon": "🔑",
+      "phase": "13/14",
+      "phase_name": "离线哈希破解",
+      "description": "Credential Breach Chain Phase 13/离线哈希破解. 触发词: 离线哈希破解。",
+      "trigger_words": [
+        "离线哈希破解。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1560,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/爆破类-口令哈希破解/离线哈希破解"
+    },
+    {
+      "id": "cracking-",
+      "name": "线下哈希破解",
+      "english_name": "线下哈希破解",
+      "category": "爆破类-口令哈希破解",
+      "category_en": "cracking",
+      "category_icon": "🔑",
+      "phase": "14/14",
+      "phase_name": "线下哈希破解",
+      "description": "Credential Breach Chain Phase 14/线下哈希破解. 触发词: 线下哈希破解。",
+      "trigger_words": [
+        "线下哈希破解。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "hash_id.py",
+          "size": 3269,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/爆破类-口令哈希破解/线下哈希破解"
+    },
+    {
+      "id": "phishing-oauth-phishing",
+      "name": "OAuth钓鱼",
+      "english_name": "oauth-phishing",
+      "category": "社工钓鱼类",
+      "category_en": "phishing",
+      "category_icon": "🎣",
+      "phase": "1/13",
+      "phase_name": "OAuth钓鱼",
+      "description": "Social Engineering Chain Phase 1/OAuth钓鱼. 触发词: OAuth钓鱼。",
+      "trigger_words": [
+        "OAuth钓鱼。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1545,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/社工钓鱼类/OAuth钓鱼"
+    },
+    {
+      "id": "phishing-qr-code-phishing",
+      "name": "QR二维码钓鱼",
+      "english_name": "qr-code-phishing",
+      "category": "社工钓鱼类",
+      "category_en": "phishing",
+      "category_icon": "🎣",
+      "phase": "2/13",
+      "phase_name": "QR二维码钓鱼",
+      "description": "Social Engineering Chain Phase 2/QR二维码钓鱼. 触发词: QR二维码钓鱼。",
+      "trigger_words": [
+        "QR二维码钓鱼。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1563,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/社工钓鱼类/QR二维码钓鱼"
+    },
+    {
+      "id": "phishing-smishing-sms-phishing",
+      "name": "Smishing短信钓鱼",
+      "english_name": "smishing-/-sms-phishing",
+      "category": "社工钓鱼类",
+      "category_en": "phishing",
+      "category_icon": "🎣",
+      "phase": "3/13",
+      "phase_name": "Smishing短信钓鱼",
+      "description": "Social Engineering Chain Phase 3/Smishing短信钓鱼. 触发词: Smishing短信钓鱼。",
+      "trigger_words": [
+        "Smishing短信钓鱼。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1572,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/社工钓鱼类/Smishing短信钓鱼"
+    },
+    {
+      "id": "phishing-usb-drop-rubber-ducky",
+      "name": "USB掉落攻击",
+      "english_name": "usb-drop-/-rubber-ducky",
+      "category": "社工钓鱼类",
+      "category_en": "phishing",
+      "category_icon": "🎣",
+      "phase": "4/13",
+      "phase_name": "USB掉落攻击",
+      "description": "Social Engineering Chain Phase 4/USB掉落攻击. 触发词: USB掉落攻击。",
+      "trigger_words": [
+        "USB掉落攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1557,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/社工钓鱼类/USB掉落攻击"
+    },
+    {
+      "id": "phishing-vishing-voice-phishing",
+      "name": "Vishing电话钓鱼",
+      "english_name": "vishing-/-voice-phishing",
+      "category": "社工钓鱼类",
+      "category_en": "phishing",
+      "category_icon": "🎣",
+      "phase": "5/13",
+      "phase_name": "Vishing电话钓鱼",
+      "description": "Social Engineering Chain Phase 5/Vishing电话钓鱼. 触发词: Vishing电话钓鱼。",
+      "trigger_words": [
+        "Vishing电话钓鱼。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1569,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/社工钓鱼类/Vishing电话钓鱼"
+    },
+    {
+      "id": "phishing-wi-fi-phishing-evil-twin",
+      "name": "Wi-Fi钓鱼",
+      "english_name": "wi-fi-phishing-/-evil-twin",
+      "category": "社工钓鱼类",
+      "category_en": "phishing",
+      "category_icon": "🎣",
+      "phase": "6/13",
+      "phase_name": "Wi-Fi钓鱼",
+      "description": "Social Engineering Chain Phase 6/Wi-Fi钓鱼. 触发词: Wi-Fi钓鱼。",
+      "trigger_words": [
+        "Wi-Fi钓鱼。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1545,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/社工钓鱼类/Wi-Fi钓鱼"
+    },
+    {
+      "id": "phishing-mitm-phishing-evilginx",
+      "name": "中间人钓鱼",
+      "english_name": "mitm-phishing-/-evilginx",
+      "category": "社工钓鱼类",
+      "category_en": "phishing",
+      "category_icon": "🎣",
+      "phase": "7/13",
+      "phase_name": "中间人钓鱼",
+      "description": "Social Engineering Chain Phase 7/中间人钓鱼. 触发词: 中间人钓鱼。",
+      "trigger_words": [
+        "中间人钓鱼。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1539,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/社工钓鱼类/中间人钓鱼"
+    },
+    {
+      "id": "phishing-watering-hole-attacks",
+      "name": "水坑攻击",
+      "english_name": "watering-hole-attacks",
+      "category": "社工钓鱼类",
+      "category_en": "phishing",
+      "category_icon": "🎣",
+      "phase": "8/13",
+      "phase_name": "水坑攻击",
+      "description": "Social Engineering Chain Phase 8/水坑攻击. 触发词: 水坑攻击。",
+      "trigger_words": [
+        "水坑攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1554,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/社工钓鱼类/水坑攻击"
+    },
+    {
+      "id": "phishing-social-engineering-methodology",
+      "name": "社工方法论",
+      "english_name": "social-engineering-methodology",
+      "category": "社工钓鱼类",
+      "category_en": "phishing",
+      "category_icon": "🎣",
+      "phase": "9/13",
+      "phase_name": "社工方法论",
+      "description": "Social Engineering Chain Phase 9/社工方法论. 触发词: 社工方法论。",
+      "trigger_words": [
+        "社工方法论。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "url_phish_check.py",
+          "size": 3427,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/社工钓鱼类/社工方法论"
+    },
+    {
+      "id": "phishing-phishing-email-attacks",
+      "name": "钓鱼邮件攻击",
+      "english_name": "phishing-email-attacks",
+      "category": "社工钓鱼类",
+      "category_en": "phishing",
+      "category_icon": "🎣",
+      "phase": "10/13",
+      "phase_name": "钓鱼邮件攻击",
+      "description": "Social Engineering Chain Phase 10/钓鱼邮件攻击. 触发词: 钓鱼邮件攻击。",
+      "trigger_words": [
+        "钓鱼邮件攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1566,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/社工钓鱼类/钓鱼邮件攻击"
+    },
+    {
+      "id": "phishing-phishing-page-cloning",
+      "name": "钓鱼页面克隆",
+      "english_name": "phishing-page-cloning",
+      "category": "社工钓鱼类",
+      "category_en": "phishing",
+      "category_icon": "🎣",
+      "phase": "11/13",
+      "phase_name": "钓鱼页面克隆",
+      "description": "Social Engineering Chain Phase 11/钓鱼页面克隆. 触发词: 钓鱼页面克隆。",
+      "trigger_words": [
+        "钓鱼页面克隆。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1566,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/社工钓鱼类/钓鱼页面克隆"
+    },
+    {
+      "id": "phishing-spear-phishing",
+      "name": "鱼叉式钓鱼",
+      "english_name": "spear-phishing",
+      "category": "社工钓鱼类",
+      "category_en": "phishing",
+      "category_icon": "🎣",
+      "phase": "12/13",
+      "phase_name": "鱼叉式钓鱼",
+      "description": "Social Engineering Chain Phase 12/鱼叉式钓鱼. 触发词: 鱼叉式钓鱼。",
+      "trigger_words": [
+        "鱼叉式钓鱼。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1557,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/社工钓鱼类/鱼叉式钓鱼"
+    },
+    {
+      "id": "phishing-whaling-executive-phishing",
+      "name": "鲸钓-高管钓鱼",
+      "english_name": "whaling-/-executive-phishing",
+      "category": "社工钓鱼类",
+      "category_en": "phishing",
+      "category_icon": "🎣",
+      "phase": "13/13",
+      "phase_name": "鲸钓-高管钓鱼",
+      "description": "Social Engineering Chain Phase 13/鲸钓-高管钓鱼. 触发词: 鲸钓-高管钓鱼。",
+      "trigger_words": [
+        "鲸钓-高管钓鱼。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1563,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/社工钓鱼类/鲸钓-高管钓鱼"
+    },
+    {
+      "id": "mobile-attack-apk-static-analysis",
+      "name": "APK静态分析",
+      "english_name": "apk-static-analysis",
+      "category": "移动端攻击类",
+      "category_en": "mobile-attack",
+      "category_icon": "📱",
+      "phase": "1/7",
+      "phase_name": "APK静态分析",
+      "description": "Mobile Attack Chain Phase 1/APK静态分析. 触发词: APK静态分析。",
+      "trigger_words": [
+        "APK静态分析。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1468,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/移动端攻击类/APK静态分析"
+    },
+    {
+      "id": "mobile-attack-app-dynamic-debugging",
+      "name": "App动态调试",
+      "english_name": "app-dynamic-debugging",
+      "category": "移动端攻击类",
+      "category_en": "mobile-attack",
+      "category_icon": "📱",
+      "phase": "2/7",
+      "phase_name": "App动态调试",
+      "description": "Mobile Attack Chain Phase 2/App动态调试. 触发词: App动态调试。",
+      "trigger_words": [
+        "App动态调试。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1563,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/移动端攻击类/App动态调试"
+    },
+    {
+      "id": "mobile-attack-frida-hook-injection",
+      "name": "Frida Hook与注入",
+      "english_name": "frida-hook-&-injection",
+      "category": "移动端攻击类",
+      "category_en": "mobile-attack",
+      "category_icon": "📱",
+      "phase": "3/7",
+      "phase_name": "Frida Hook与注入",
+      "description": "Mobile Attack Chain Phase 3/Frida Hook与注入. 触发词: Frida Hook与注入。",
+      "trigger_words": [
+        "Frida Hook与注入。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1575,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/移动端攻击类/Frida Hook与注入"
+    },
+    {
+      "id": "mobile-attack-mobile-data-storage-leak",
+      "name": "移动数据存储泄露",
+      "english_name": "mobile-data-storage-leak",
+      "category": "移动端攻击类",
+      "category_en": "mobile-attack",
+      "category_icon": "📱",
+      "phase": "4/7",
+      "phase_name": "移动数据存储泄露",
+      "description": "Mobile Attack Chain Phase 4/移动数据存储泄露. 触发词: 移动数据存储泄露。",
+      "trigger_words": [
+        "移动数据存储泄露。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1584,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/移动端攻击类/移动数据存储泄露"
+    },
+    {
+      "id": "mobile-attack-mobile-traffic-analysis-capture",
+      "name": "移动流量分析与抓包",
+      "english_name": "mobile-traffic-analysis-&-capture",
+      "category": "移动端攻击类",
+      "category_en": "mobile-attack",
+      "category_icon": "📱",
+      "phase": "5/7",
+      "phase_name": "移动流量分析与抓包",
+      "description": "Mobile Attack Chain Phase 5/移动流量分析与抓包. 触发词: 移动流量分析与抓包。",
+      "trigger_words": [
+        "移动流量分析与抓包。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1504,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/移动端攻击类/移动流量分析与抓包"
+    },
+    {
+      "id": "mobile-attack-mobile-pentesting-frameworks",
+      "name": "移动渗透框架",
+      "english_name": "mobile-pentesting-frameworks",
+      "category": "移动端攻击类",
+      "category_en": "mobile-attack",
+      "category_icon": "📱",
+      "phase": "6/7",
+      "phase_name": "移动渗透框架",
+      "description": "Mobile Attack Chain Phase 6/移动渗透框架. 触发词: 移动渗透框架。",
+      "trigger_words": [
+        "移动渗透框架。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1477,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/移动端攻击类/移动渗透框架"
+    },
+    {
+      "id": "mobile-attack-mobile-network-layer-attack",
+      "name": "移动网络层攻击",
+      "english_name": "mobile-network-layer-attack",
+      "category": "移动端攻击类",
+      "category_en": "mobile-attack",
+      "category_icon": "📱",
+      "phase": "7/7",
+      "phase_name": "移动网络层攻击",
+      "description": "Mobile Attack Chain Phase 7/移动网络层攻击. 触发词: 移动网络层攻击。",
+      "trigger_words": [
+        "移动网络层攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1575,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/移动端攻击类/移动网络层攻击"
+    },
+    {
+      "id": "frameworks-c2-frameworks",
+      "name": "C2框架",
+      "english_name": "c2-frameworks",
+      "category": "综合框架类",
+      "category_en": "frameworks",
+      "category_icon": "🧰",
+      "phase": "1/5",
+      "phase_name": "C2框架",
+      "description": "Framework Chain Phase 1/C2框架. 触发词: C2框架。",
+      "trigger_words": [
+        "C2框架。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1542,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/综合框架类/C2框架"
+    },
+    {
+      "id": "frameworks-collaboration-reporting",
+      "name": "协作与报告平台",
+      "english_name": "collaboration-&-reporting",
+      "category": "综合框架类",
+      "category_en": "frameworks",
+      "category_icon": "🧰",
+      "phase": "2/5",
+      "phase_name": "协作与报告平台",
+      "description": "Framework Chain Phase 2/协作与报告平台. 触发词: 协作与报告平台。",
+      "trigger_words": [
+        "协作与报告平台。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1569,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/综合框架类/协作与报告平台"
+    },
+    {
+      "id": "frameworks-multi-purpose-attack-frameworks",
+      "name": "多功能攻击框架",
+      "english_name": "multi-purpose-attack-frameworks",
+      "category": "综合框架类",
+      "category_en": "frameworks",
+      "category_icon": "🧰",
+      "phase": "3/5",
+      "phase_name": "多功能攻击框架",
+      "description": "Framework Chain Phase 3/多功能攻击框架. 触发词: 多功能攻击框架。",
+      "trigger_words": [
+        "多功能攻击框架。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1575,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/综合框架类/多功能攻击框架"
+    },
+    {
+      "id": "frameworks-pentesting-distributions",
+      "name": "渗透测试发行版",
+      "english_name": "pentesting-distributions",
+      "category": "综合框架类",
+      "category_en": "frameworks",
+      "category_icon": "🧰",
+      "phase": "4/5",
+      "phase_name": "渗透测试发行版",
+      "description": "Framework Chain Phase 4/渗透测试发行版. 触发词: 渗透测试发行版。",
+      "trigger_words": [
+        "渗透测试发行版。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1575,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/综合框架类/渗透测试发行版"
+    },
+    {
+      "id": "frameworks-vulnerability-management",
+      "name": "漏洞管理平台",
+      "english_name": "vulnerability-management",
+      "category": "综合框架类",
+      "category_en": "frameworks",
+      "category_icon": "🧰",
+      "phase": "5/5",
+      "phase_name": "漏洞管理平台",
+      "description": "Framework Chain Phase 5/漏洞管理平台. 触发词: 漏洞管理平台。",
+      "trigger_words": [
+        "漏洞管理平台。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1566,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/综合框架类/漏洞管理平台"
+    },
+    {
+      "id": "mitm-arp-dns-spoofing",
+      "name": "ARP-DNS欺骗",
+      "english_name": "arp/dns-spoofing",
+      "category": "网络中间人类",
+      "category_en": "mitm",
+      "category_icon": "📡",
+      "phase": "1/10",
+      "phase_name": "ARP-DNS欺骗",
+      "description": "Network Control Chain Phase 1/ARP-DNS欺骗. 触发词: ARP-DNS欺骗。",
+      "trigger_words": [
+        "ARP-DNS欺骗。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1551,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/网络中间人类/ARP-DNS欺骗"
+    },
+    {
+      "id": "mitm-dhcp-attacks",
+      "name": "DHCP攻击",
+      "english_name": "dhcp-attacks",
+      "category": "网络中间人类",
+      "category_en": "mitm",
+      "category_icon": "📡",
+      "phase": "2/10",
+      "phase_name": "DHCP攻击",
+      "description": "Network Control Chain Phase 2/DHCP攻击. 触发词: DHCP攻击。",
+      "trigger_words": [
+        "DHCP攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1548,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/网络中间人类/DHCP攻击"
+    },
+    {
+      "id": "mitm-tls-ssh-auditing",
+      "name": "TLS-SSH审计",
+      "english_name": "tls/ssh-auditing",
+      "category": "网络中间人类",
+      "category_en": "mitm",
+      "category_icon": "📡",
+      "phase": "3/10",
+      "phase_name": "TLS-SSH审计",
+      "description": "Network Control Chain Phase 3/TLS-SSH审计. 触发词: TLS-SSH审计。",
+      "trigger_words": [
+        "TLS-SSH审计。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1539,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/网络中间人类/TLS-SSH审计"
+    },
+    {
+      "id": "mitm-vlan-hopping-l2",
+      "name": "VLAN跳跃与二层攻击",
+      "english_name": "vlan-hopping-&-l2",
+      "category": "网络中间人类",
+      "category_en": "mitm",
+      "category_icon": "📡",
+      "phase": "4/10",
+      "phase_name": "VLAN跳跃与二层攻击",
+      "description": "Network Control Chain Phase 4/VLAN跳跃与二层攻击. 触发词: VLAN跳跃与二层攻击。",
+      "trigger_words": [
+        "VLAN跳跃与二层攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1581,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/网络中间人类/VLAN跳跃与二层攻击"
+    },
+    {
+      "id": "mitm-protocol-exploitation",
+      "name": "协议漏洞利用",
+      "english_name": "protocol-exploitation",
+      "category": "网络中间人类",
+      "category_en": "mitm",
+      "category_icon": "📡",
+      "phase": "5/10",
+      "phase_name": "协议漏洞利用",
+      "description": "Network Control Chain Phase 5/协议漏洞利用. 触发词: 协议漏洞利用。",
+      "trigger_words": [
+        "协议漏洞利用。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1566,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/网络中间人类/协议漏洞利用"
+    },
+    {
+      "id": "mitm-slow-dos-flooding",
+      "name": "慢速DoS与泛洪",
+      "english_name": "slow-dos-&-flooding",
+      "category": "网络中间人类",
+      "category_en": "mitm",
+      "category_icon": "📡",
+      "phase": "6/10",
+      "phase_name": "慢速DoS与泛洪",
+      "description": "Network Control Chain Phase 6/慢速DoS与泛洪. 触发词: 慢速DoS与泛洪。",
+      "trigger_words": [
+        "慢速DoS与泛洪。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1566,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/网络中间人类/慢速DoS与泛洪"
+    },
+    {
+      "id": "mitm-packet-capture-protocol-analysis",
+      "name": "抓包与协议分析",
+      "english_name": "packet-capture-&-protocol-analysis",
+      "category": "网络中间人类",
+      "category_en": "mitm",
+      "category_icon": "📡",
+      "phase": "7/10",
+      "phase_name": "抓包与协议分析",
+      "description": "Network Control Chain Phase 7/抓包与协议分析. 触发词: 抓包与协议分析。",
+      "trigger_words": [
+        "抓包与协议分析。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1486,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/网络中间人类/抓包与协议分析"
+    },
+    {
+      "id": "mitm-wireless-attacks",
+      "name": "无线攻击",
+      "english_name": "wireless-attacks",
+      "category": "网络中间人类",
+      "category_en": "mitm",
+      "category_icon": "📡",
+      "phase": "8/10",
+      "phase_name": "无线攻击",
+      "description": "Network Control Chain Phase 8/无线攻击. 触发词: 无线攻击。",
+      "trigger_words": [
+        "无线攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1548,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/网络中间人类/无线攻击"
+    },
+    {
+      "id": "mitm-traffic-replay-editing",
+      "name": "流量重放与编辑",
+      "english_name": "traffic-replay-&-editing",
+      "category": "网络中间人类",
+      "category_en": "mitm",
+      "category_icon": "📡",
+      "phase": "9/10",
+      "phase_name": "流量重放与编辑",
+      "description": "Network Control Chain Phase 9/流量重放与编辑. 触发词: 流量重放与编辑。",
+      "trigger_words": [
+        "流量重放与编辑。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1581,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/网络中间人类/流量重放与编辑"
+    },
+    {
+      "id": "mitm-bluetooth-nfc-attacks",
+      "name": "蓝牙与NFC攻击",
+      "english_name": "bluetooth-&-nfc-attacks",
+      "category": "网络中间人类",
+      "category_en": "mitm",
+      "category_icon": "📡",
+      "phase": "10/10",
+      "phase_name": "蓝牙与NFC攻击",
+      "description": "Network Control Chain Phase 10/蓝牙与NFC攻击. 触发词: 蓝牙与NFC攻击。",
+      "trigger_words": [
+        "蓝牙与NFC攻击。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1566,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/网络中间人类/蓝牙与NFC攻击"
+    },
+    {
+      "id": "reverse-engineering-net-java-reverse-engineering",
+      "name": ".NET-Java逆向",
+      "english_name": ".net-&-java-reverse-engineering",
+      "category": "逆向分析类",
+      "category_en": "reverse-engineering",
+      "category_icon": "🔬",
+      "phase": "1/11",
+      "phase_name": ".NET-Java逆向",
+      "description": "Reverse Engineering Chain Phase 1/.NET-Java逆向. 触发词: .NET-Java逆向。",
+      "trigger_words": [
+        ".NET-Java逆向。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1131,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/逆向分析类/.NET-Java逆向"
+    },
+    {
+      "id": "reverse-engineering-elf-file-analysis",
+      "name": "ELF文件分析",
+      "english_name": "elf-file-analysis",
+      "category": "逆向分析类",
+      "category_en": "reverse-engineering",
+      "category_icon": "🔬",
+      "phase": "2/11",
+      "phase_name": "ELF文件分析",
+      "description": "Reverse Engineering Chain Phase 2/ELF文件分析. 触发词: ELF文件分析。",
+      "trigger_words": [
+        "ELF文件分析。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1468,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/逆向分析类/ELF文件分析"
+    },
+    {
+      "id": "reverse-engineering-pe-file-analysis",
+      "name": "PE文件分析",
+      "english_name": "pe-file-analysis",
+      "category": "逆向分析类",
+      "category_en": "reverse-engineering",
+      "category_icon": "🔬",
+      "phase": "3/11",
+      "phase_name": "PE文件分析",
+      "description": "Reverse Engineering Chain Phase 3/PE文件分析. 触发词: PE文件分析。",
+      "trigger_words": [
+        "PE文件分析。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1465,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/逆向分析类/PE文件分析"
+    },
+    {
+      "id": "reverse-engineering-packing-unpacking",
+      "name": "加壳与脱壳",
+      "english_name": "packing-&-unpacking",
+      "category": "逆向分析类",
+      "category_en": "reverse-engineering",
+      "category_icon": "🔬",
+      "phase": "4/11",
+      "phase_name": "加壳与脱壳",
+      "description": "Reverse Engineering Chain Phase 4/加壳与脱壳. 触发词: 加壳与脱壳。",
+      "trigger_words": [
+        "加壳与脱壳。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1551,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/逆向分析类/加壳与脱壳"
+    },
+    {
+      "id": "reverse-engineering-dynamic-debugging",
+      "name": "动态调试",
+      "english_name": "dynamic-debugging",
+      "category": "逆向分析类",
+      "category_en": "reverse-engineering",
+      "category_icon": "🔬",
+      "phase": "5/11",
+      "phase_name": "动态调试",
+      "description": "Reverse Engineering Chain Phase 5/动态调试. 触发词: 动态调试。",
+      "trigger_words": [
+        "动态调试。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1459,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/逆向分析类/动态调试"
+    },
+    {
+      "id": "reverse-engineering-firmware-analysis",
+      "name": "固件分析",
+      "english_name": "firmware-analysis",
+      "category": "逆向分析类",
+      "category_en": "reverse-engineering",
+      "category_icon": "🔬",
+      "phase": "6/11",
+      "phase_name": "固件分析",
+      "description": "Reverse Engineering Chain Phase 6/固件分析. 触发词: 固件分析。",
+      "trigger_words": [
+        "固件分析。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1459,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/逆向分析类/固件分析"
+    },
+    {
+      "id": "reverse-engineering-cryptographic-algorithm-identification",
+      "name": "密码算法识别",
+      "english_name": "cryptographic-algorithm-identification",
+      "category": "逆向分析类",
+      "category_en": "reverse-engineering",
+      "category_icon": "🔬",
+      "phase": "7/11",
+      "phase_name": "密码算法识别",
+      "description": "Reverse Engineering Chain Phase 7/密码算法识别. 触发词: 密码算法识别。",
+      "trigger_words": [
+        "密码算法识别。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1560,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/逆向分析类/密码算法识别"
+    },
+    {
+      "id": "reverse-engineering-malware-sample-analysis",
+      "name": "恶意样本分析",
+      "english_name": "malware-sample-analysis",
+      "category": "逆向分析类",
+      "category_en": "reverse-engineering",
+      "category_icon": "🔬",
+      "phase": "8/11",
+      "phase_name": "恶意样本分析",
+      "description": "Reverse Engineering Chain Phase 8/恶意样本分析. 触发词: 恶意样本分析。",
+      "trigger_words": [
+        "恶意样本分析。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1477,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/逆向分析类/恶意样本分析"
+    },
+    {
+      "id": "reverse-engineering-obfuscation-deobfuscation",
+      "name": "混淆还原",
+      "english_name": "obfuscation-deobfuscation",
+      "category": "逆向分析类",
+      "category_en": "reverse-engineering",
+      "category_icon": "🔬",
+      "phase": "9/11",
+      "phase_name": "混淆还原",
+      "description": "Reverse Engineering Chain Phase 9/混淆还原. 触发词: 混淆还原。",
+      "trigger_words": [
+        "混淆还原。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1548,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/逆向分析类/混淆还原"
+    },
+    {
+      "id": "reverse-engineering-runtime-hook-injection",
+      "name": "运行时Hook与注入",
+      "english_name": "runtime-hook-&-injection",
+      "category": "逆向分析类",
+      "category_en": "reverse-engineering",
+      "category_icon": "🔬",
+      "phase": "10/11",
+      "phase_name": "运行时Hook与注入",
+      "description": "Reverse Engineering Chain Phase 10/运行时Hook与注入. 触发词: 运行时Hook与注入。",
+      "trigger_words": [
+        "运行时Hook与注入。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1584,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/逆向分析类/运行时Hook与注入"
+    },
+    {
+      "id": "reverse-engineering-static-analysis",
+      "name": "静态分析",
+      "english_name": "static-analysis",
+      "category": "逆向分析类",
+      "category_en": "reverse-engineering",
+      "category_icon": "🔬",
+      "phase": "11/11",
+      "phase_name": "静态分析",
+      "description": "Reverse Engineering Chain Phase 11/静态分析. 触发词: 静态分析。",
+      "trigger_words": [
+        "静态分析。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "binary_scan.py",
+          "size": 3272,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/逆向分析类/静态分析"
+    },
+    {
+      "id": "vuln-labs-active-directory-labs",
+      "name": "AD域靶场",
+      "english_name": "active-directory-labs",
+      "category": "靶场漏洞环境类",
+      "category_en": "vuln-labs",
+      "category_icon": "🎯",
+      "phase": "1/7",
+      "phase_name": "AD域靶场",
+      "description": "Lab & Training Chain Phase 1/AD域靶场. 触发词: AD域靶场。",
+      "trigger_words": [
+        "AD域靶场。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1539,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/靶场漏洞环境类/AD域靶场"
+    },
+    {
+      "id": "vuln-labs-ctf-platforms",
+      "name": "CTF平台",
+      "english_name": "ctf-platforms",
+      "category": "靶场漏洞环境类",
+      "category_en": "vuln-labs",
+      "category_icon": "🎯",
+      "phase": "2/7",
+      "phase_name": "CTF平台",
+      "description": "Lab & Training Chain Phase 2/CTF平台. 触发词: CTF平台。",
+      "trigger_words": [
+        "CTF平台。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "ctf_decode.py",
+          "size": 2613,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/靶场漏洞环境类/CTF平台"
+    },
+    {
+      "id": "vuln-labs-web-vulnerability-labs",
+      "name": "Web漏洞靶场",
+      "english_name": "web-vulnerability-labs",
+      "category": "靶场漏洞环境类",
+      "category_en": "vuln-labs",
+      "category_icon": "🎯",
+      "phase": "3/7",
+      "phase_name": "Web漏洞靶场",
+      "description": "Lab & Training Chain Phase 3/Web漏洞靶场. 触发词: Web漏洞靶场。",
+      "trigger_words": [
+        "Web漏洞靶场。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1557,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/靶场漏洞环境类/Web漏洞靶场"
+    },
+    {
+      "id": "vuln-labs-binary-pwn-labs",
+      "name": "二进制与PWN靶场",
+      "english_name": "binary-&-pwn-labs",
+      "category": "靶场漏洞环境类",
+      "category_en": "vuln-labs",
+      "category_icon": "🎯",
+      "phase": "4/7",
+      "phase_name": "二进制与PWN靶场",
+      "description": "Lab & Training Chain Phase 4/二进制与PWN靶场. 触发词: 二进制与PWN靶场。",
+      "trigger_words": [
+        "二进制与PWN靶场。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1575,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/靶场漏洞环境类/二进制与PWN靶场"
+    },
+    {
+      "id": "vuln-labs-cloud-security-labs",
+      "name": "云安全靶场",
+      "english_name": "cloud-security-labs",
+      "category": "靶场漏洞环境类",
+      "category_en": "vuln-labs",
+      "category_icon": "🎯",
+      "phase": "5/7",
+      "phase_name": "云安全靶场",
+      "description": "Lab & Training Chain Phase 5/云安全靶场. 触发词: 云安全靶场。",
+      "trigger_words": [
+        "云安全靶场。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1557,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/靶场漏洞环境类/云安全靶场"
+    },
+    {
+      "id": "vuln-labs-red-vs-blue-platforms",
+      "name": "攻防演练平台",
+      "english_name": "red-vs-blue-platforms",
+      "category": "靶场漏洞环境类",
+      "category_en": "vuln-labs",
+      "category_icon": "🎯",
+      "phase": "6/7",
+      "phase_name": "攻防演练平台",
+      "description": "Lab & Training Chain Phase 6/攻防演练平台. 触发词: 攻防演练平台。",
+      "trigger_words": [
+        "攻防演练平台。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1566,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/靶场漏洞环境类/攻防演练平台"
+    },
+    {
+      "id": "vuln-labs-vulnerability-reproduction",
+      "name": "真实漏洞复现环境",
+      "english_name": "vulnerability-reproduction",
+      "category": "靶场漏洞环境类",
+      "category_en": "vuln-labs",
+      "category_icon": "🎯",
+      "phase": "7/7",
+      "phase_name": "真实漏洞复现环境",
+      "description": "Lab & Training Chain Phase 7/真实漏洞复现环境. 触发词: 真实漏洞复现环境。",
+      "trigger_words": [
+        "真实漏洞复现环境。"
+      ],
+      "has_scripts": true,
+      "scripts": [
+        {
+          "filename": "script.py",
+          "size": 1584,
+          "executable": true
+        }
+      ],
+      "path": "/home/wang/真心/靶场漏洞环境类/真实漏洞复现环境"
+    }
+  ]
+}

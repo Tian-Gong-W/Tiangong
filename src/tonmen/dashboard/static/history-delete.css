@@ -1,0 +1,9 @@
+.mission-history-tools{grid-template-columns:minmax(220px,1fr) 150px auto auto!important}
+.mission-history-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;min-width:max-content}
+.mission-history-actions button{min-height:32px;padding:5px 9px;font-size:10px;white-space:nowrap}
+.mission-history-delete:not(:disabled){border-color:#7a3940;color:#e3a1a7}
+.mission-history-delete:not(:disabled):hover{border-color:#a94a54;color:#ffd3d7;background:#211116}
+.mission-history-cleanup{border-color:#6a5530!important;color:#d5b36f!important}
+.mission-history-cleanup:hover{border-color:#9b7940!important;color:#f1ce82!important;background:#1d180d!important}
+@media (max-width:1080px){.mission-history-tools{grid-template-columns:minmax(180px,1fr) 130px auto!important}.mission-history-tools>small{display:none}.mission-history-actions{grid-column:1/-1;justify-content:flex-start}}
+@media (max-width:620px){.mission-history-actions{display:grid;grid-template-columns:1fr 1fr;width:100%}.mission-history-actions button{width:100%}}
