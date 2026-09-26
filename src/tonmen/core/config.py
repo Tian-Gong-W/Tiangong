@@ -14,6 +14,8 @@ except ModuleNotFoundError:  # Python 3.10
 CONFIG_FILENAME = "tonmen.toml"
 DEFAULT_ALLOWED_TARGETS = ("127.0.0.1", "::1", "localhost")
 DEFAULT_TOOL_TIMEOUTS = (("nmap", 300), ("httpx", 120), ("nuclei", 240))
+DEFAULT_COMMAND_TIMEOUT_SECONDS = 120
+COMMAND_TIMEOUT_ENV = "TONMEN_COMMAND_TIMEOUT_SECONDS"
 _TOOL_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 
 
@@ -30,6 +32,25 @@ def _normalize_rules(values) -> tuple[str, ...]:
 
 def _toml_array(values: tuple[str, ...]) -> str:
     return "[" + ", ".join(json.dumps(item, ensure_ascii=False) for item in values) + "]"
+
+
+def _env_command_timeout_seconds() -> int | None:
+    """Deployment-level override for the default command timeout.
+
+    Lets a hosted deployment raise the execution ceiling through configuration
+    instead of patching the executor from outside the image.
+    """
+
+    raw = (os.getenv(COMMAND_TIMEOUT_ENV) or "").strip()
+    if not raw:
+        return None
+    try:
+        seconds = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{COMMAND_TIMEOUT_ENV} must be an integer number of seconds") from exc
+    if not 1 <= seconds <= 7200:
+        raise ValueError(f"{COMMAND_TIMEOUT_ENV} must be within 1-7200 seconds")
+    return seconds
 
 
 def _normalize_tool_timeouts(values) -> tuple[tuple[str, int], ...]:
@@ -53,7 +74,7 @@ class TonmenConfig:
     bind_host: str = "127.0.0.1"
     bind_port: int = 8888
     allow_arbitrary_shell: bool = False
-    command_timeout_seconds: int = 120
+    command_timeout_seconds: int = DEFAULT_COMMAND_TIMEOUT_SECONDS
     tool_timeouts: tuple[tuple[str, int], ...] = DEFAULT_TOOL_TIMEOUTS
     allowed_targets: tuple[str, ...] = DEFAULT_ALLOWED_TARGETS
     denied_targets: tuple[str, ...] = ()
@@ -77,7 +98,11 @@ class TonmenConfig:
         path = path.resolve()
         if path.exists():
             return cls.load(path)
-        return cls(workspace=(path.parent / ".tonmen").resolve(), config_path=path)
+        return cls(
+            workspace=(path.parent / ".tonmen").resolve(),
+            command_timeout_seconds=_env_command_timeout_seconds() or DEFAULT_COMMAND_TIMEOUT_SECONDS,
+            config_path=path,
+        )
 
     @classmethod
     def load(cls, path: Path | str) -> "TonmenConfig":
@@ -105,7 +130,9 @@ class TonmenConfig:
         allowed = _normalize_rules((*DEFAULT_ALLOWED_TARGETS, *configured_allowed))
         denied = _normalize_rules(configured_denied)
 
-        timeout = int(runtime.get("command_timeout_seconds", 120))
+        timeout = _env_command_timeout_seconds() or int(
+            runtime.get("command_timeout_seconds", DEFAULT_COMMAND_TIMEOUT_SECONDS)
+        )
         bind_port = int(runtime.get("bind_port", 8888))
         if not 1 <= timeout <= 7200:
             raise ValueError("command_timeout_seconds must be within 1-7200 seconds")

@@ -51,6 +51,33 @@ def test_config_has_bounded_validation_timeout_and_supports_override(tmp_path):
     assert loaded.timeout_for("nmap") == 300
 
 
+def test_command_timeout_env_override_applies_to_default_and_loaded_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("TONMEN_COMMAND_TIMEOUT_SECONDS", "240")
+    monkeypatch.chdir(tmp_path)
+
+    generated = TonmenConfig.default()
+    assert generated.command_timeout_seconds == 240
+    assert generated.timeout_for("codex") == 240
+
+    path = tmp_path / "tonmen.toml"
+    path.write_text(
+        """[tonmen]\nworkspace = '.tonmen'\ncommand_timeout_seconds = 120\n\n[scope]\nallowed_targets = ['localhost']\ndenied_targets = []\n""",
+        encoding="utf-8",
+    )
+    assert TonmenConfig.load(path).command_timeout_seconds == 240
+
+    monkeypatch.setenv("TONMEN_COMMAND_TIMEOUT_SECONDS", "0")
+    try:
+        TonmenConfig.load(path)
+    except ValueError as exc:
+        assert "1-7200" in str(exc)
+    else:  # pragma: no cover - guard against silently accepting invalid values
+        raise AssertionError("out-of-range override must be rejected")
+
+    monkeypatch.delenv("TONMEN_COMMAND_TIMEOUT_SECONDS")
+    assert TonmenConfig.load(path).command_timeout_seconds == 120
+
+
 def test_executor_uses_tool_specific_timeout_for_nuclei():
     registry = ToolRegistry()
     registry.register(NucleiAdapter())

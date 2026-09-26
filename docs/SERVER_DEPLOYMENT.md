@@ -107,6 +107,21 @@ denied_targets = []
 
 Only add targets that are explicitly authorized. Worker Scope should be the same as, or narrower than, the control-plane Scope.
 
+## Execution timeout override
+
+Hosted deployments (e.g. Railway) often need a longer default command timeout than
+the built-in 120s, without shipping a container-local `tonmen.toml`. Set:
+
+```bash
+TONMEN_COMMAND_TIMEOUT_SECONDS=240
+```
+
+It overrides `[tonmen] command_timeout_seconds` from the config file, must be within
+1-7200 seconds, and per-tool ceilings in `[timeouts]` still take precedence for those
+tools. Never patch the executor by pointing `PYTHONPATH` at a directory outside the
+image: a stale `tonmen` package there shadows the installed one and breaks imports
+such as `tonmen.web_server`.
+
 ## Provider and budget environment
 
 Store AI credentials in a root/service-readable environment file rather than `tonmen.toml`.
