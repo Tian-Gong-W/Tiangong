@@ -1,0 +1,11 @@
+{
+  "version": "1.0",
+  "generatedBy": "ecc-tools",
+  "profile": "research",
+  "sharedSkills": [
+    ".claude/skills/TONMEN/SKILL.md",
+    ".agents/skills/TONMEN/SKILL.md"
+  ],
+  "commandFiles": [],
+  "updatedAt": "2026-08-16T00:40:32.031Z"
+}
